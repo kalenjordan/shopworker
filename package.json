@@ -16,7 +16,6 @@
     "delete-all-webhooks": "node cli.js delete-all-topic-webhooks"
   },
   "dependencies": {
-    "shopify-api-node": "^3.12.5",
     "commander": "^13.1.0",
     "dotenv": "^16.0.3"
   }

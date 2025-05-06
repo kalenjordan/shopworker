@@ -2,12 +2,14 @@
 
 import dotenv from 'dotenv';
 import { Command } from 'commander';
-import Shopify from 'shopify-api-node';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { loadJobConfig, loadTriggerConfig } from './utils/job-loader.js';
-import { createGraphQLClient, wrapShopifyClient } from './utils/shopify-utils.js';
+import { createShopifyClient } from './utils/shopify-client.js';
+import WEBHOOK_CREATE_MUTATION from './graphql/webhookSubscriptionCreate.js';
+import WEBHOOK_DELETE_MUTATION from './graphql/webhookSubscriptionDelete.js';
+import GET_WEBHOOKS_QUERY from './graphql/getWebhooks.js';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -27,18 +29,24 @@ const program = new Command();
 // Initialize Shopify API
 function initShopify() {
   try {
-    // With shopify-api-node, we only need the shop name and access token
-    const shopName = process.env.SHOP.replace('.myshopify.com', '');
+    // Get shop domain and access token from environment
+    const shopDomain = process.env.SHOP;
+    const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
 
-    // Create the base Shopify client
-    const shopifyClient = new Shopify({
-      shopName,
-      accessToken: process.env.SHOPIFY_ACCESS_TOKEN,
-      apiVersion: '2025-04'
+    if (!shopDomain) {
+      throw new Error('SHOP environment variable is not set');
+    }
+
+    if (!accessToken) {
+      throw new Error('SHOPIFY_ACCESS_TOKEN environment variable is not set');
+    }
+
+    // Create Shopify client using our shared implementation
+    return createShopifyClient({
+      shopDomain,
+      accessToken,
+      apiVersion: '2024-07'
     });
-
-    // Wrap the client with our error handler
-    return wrapShopifyClient(shopifyClient);
   } catch (error) {
     console.error('Failed to initialize Shopify API:', error);
     process.exit(1);
@@ -108,8 +116,7 @@ async function runJobTest(jobName, queryParam) {
     // Dynamically import the job module
     const jobModule = await import(`./jobs/${jobName}/job.js`);
 
-    // For manual triggers, we call the run function without any data
-    // and pass the necessary objects as props
+    // Initialize Shopify client
     const shopify = initShopify();
 
     // Create logger
@@ -285,13 +292,32 @@ program
       console.log(`Topic: ${triggerConfig.webhook.topic}`);
       console.log(`Worker URL: ${webhookAddress}`);
 
-      // Create webhook using Shopify API
-      const webhook = await shopify.webhook.create({
-        topic: triggerConfig.webhook.topic,
-        address: webhookAddress,
-        format: 'json'
-      });
+      // Convert the trigger topic to match the GraphQL enum format (e.g., "products/update" to "PRODUCTS_UPDATE")
+      const graphqlTopic = triggerConfig.webhook.topic.toUpperCase().replace('/', '_');
 
+      // Create webhook using GraphQL
+      const variables = {
+        topic: graphqlTopic,
+        webhookSubscription: {
+          callbackUrl: webhookAddress,
+          format: "JSON"
+        }
+      };
+
+      const response = await shopify.graphql(WEBHOOK_CREATE_MUTATION, variables);
+
+      if (!response.data || !response.data.webhookSubscriptionCreate) {
+        console.log('Response structure:', JSON.stringify(response, null, 2));
+        throw new Error('Unexpected response format from Shopify GraphQL API');
+      }
+
+      if (response.data.webhookSubscriptionCreate.userErrors &&
+          response.data.webhookSubscriptionCreate.userErrors.length > 0) {
+        const errors = response.data.webhookSubscriptionCreate.userErrors.map(err => err.message).join(", ");
+        throw new Error(`Failed to create webhook: ${errors}`);
+      }
+
+      const webhook = response.data.webhookSubscriptionCreate.webhookSubscription;
       console.log(`Successfully registered webhook with ID: ${webhook.id}`);
       console.log('Job enabled successfully!');
     } catch (error) {
@@ -350,15 +376,52 @@ program
       console.log(`Topic: ${triggerConfig.webhook.topic}`);
       console.log(`Worker URL: ${webhookAddress}`);
 
-      // Get all webhooks for the specified topic
-      const webhooks = await shopify.webhook.list({ topic: triggerConfig.webhook.topic });
+      // Get all webhooks
+      const getResponse = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
-      // Filter webhooks by address
-      const matchingWebhooks = webhooks.filter(webhook => webhook.address === webhookAddress);
+      // Check if response has the expected structure
+      if (!getResponse.data || !getResponse.data.webhookSubscriptions || !getResponse.data.webhookSubscriptions.nodes) {
+        console.log('Response structure:', JSON.stringify(getResponse, null, 2));
+        throw new Error('Unexpected response format from Shopify GraphQL API');
+      }
+
+      const webhooks = getResponse.data.webhookSubscriptions.nodes;
+
+      // Convert the trigger topic to match the GraphQL enum format (e.g., "products/update" to "PRODUCTS_UPDATE")
+      const graphqlTopic = triggerConfig.webhook.topic.toUpperCase().replace('/', '_');
+
+      // Filter webhooks by topic and callback URL
+      const matchingWebhooks = webhooks.filter(webhook =>
+        webhook.topic === graphqlTopic &&
+        webhook.endpoint &&
+        webhook.endpoint.__typename === 'WebhookHttpEndpoint' &&
+        webhook.endpoint.callbackUrl === webhookAddress
+      );
+
+      if (matchingWebhooks.length === 0) {
+        console.log('No matching webhooks found to disable');
+        return;
+      }
 
       // Delete each matching webhook
       for (const webhook of matchingWebhooks) {
-        const deleteResult = await shopify.webhook.delete(webhook.id);
+        const deleteResponse = await shopify.graphql(WEBHOOK_DELETE_MUTATION, { id: webhook.id });
+
+        if (!deleteResponse.data ||
+            !deleteResponse.data.webhookSubscriptionDelete ||
+            (deleteResponse.data.webhookSubscriptionDelete.userErrors &&
+             deleteResponse.data.webhookSubscriptionDelete.userErrors.length > 0)) {
+
+          if (deleteResponse.data?.webhookSubscriptionDelete?.userErrors) {
+            const errors = deleteResponse.data.webhookSubscriptionDelete.userErrors.map(err => err.message).join(", ");
+            console.error(`Error deleting webhook ${webhook.id}: ${errors}`);
+          } else {
+            console.error(`Error deleting webhook ${webhook.id}: Unexpected response format`);
+            console.log(JSON.stringify(deleteResponse, null, 2));
+          }
+          continue;
+        }
+
         console.log(`Successfully deleted webhook with ID: ${webhook.id}`);
       }
 
@@ -404,24 +467,39 @@ program
       console.log(`Checking webhooks for job: ${jobName}`);
       console.log(`Topic: ${triggerConfig.webhook.topic}`);
 
-      // Get all webhooks
-      const webhooks = await shopify.webhook.list();
+      // Get all webhooks using GraphQL
+      const response = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
+
+      // Check if response has the expected structure
+      if (!response.data || !response.data.webhookSubscriptions || !response.data.webhookSubscriptions.nodes) {
+        console.log('Response structure:', JSON.stringify(response, null, 2));
+        throw new Error('Unexpected response format from Shopify GraphQL API');
+      }
+
+      const webhooks = response.data.webhookSubscriptions.nodes;
 
       // Filter webhooks by topic
+      // Convert the trigger topic to match the GraphQL enum format (e.g., "products/update" to "PRODUCTS_UPDATE")
+      const graphqlTopic = triggerConfig.webhook.topic.toUpperCase().replace('/', '_');
+
       const matchingWebhooks = webhooks.filter(webhook =>
-        webhook.topic === triggerConfig.webhook.topic
+        webhook.topic === graphqlTopic
       );
 
       if (matchingWebhooks.length === 0) {
-        console.log(`No webhooks found for topic: ${triggerConfig.webhook.topic}`);
+        console.log(`No webhooks found for topic: ${triggerConfig.webhook.topic} (${graphqlTopic})`);
       } else {
-        console.log(`Found ${matchingWebhooks.length} webhook(s) for topic: ${triggerConfig.webhook.topic}`);
+        console.log(`Found ${matchingWebhooks.length} webhook(s) for topic: ${triggerConfig.webhook.topic} (${graphqlTopic})`);
 
         matchingWebhooks.forEach(webhook => {
           console.log(`\nWebhook ID: ${webhook.id}`);
-          console.log(`Address: ${webhook.address}`);
-          console.log(`Format: ${webhook.format}`);
-          console.log(`Created at: ${webhook.created_at}`);
+          if (webhook.endpoint && webhook.endpoint.__typename === 'WebhookHttpEndpoint') {
+            console.log(`Address: ${webhook.endpoint.callbackUrl}`);
+          } else {
+            console.log(`Endpoint Type: ${webhook.endpoint ? webhook.endpoint.__typename : 'Unknown'}`);
+          }
+          console.log(`Topic: ${webhook.topic}`);
+          console.log(`Created at: ${webhook.createdAt}`);
           console.log(`Active: Yes`);
         });
       }

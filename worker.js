@@ -3,6 +3,7 @@
  */
 
 import { verifyShopifyWebhook } from './utils/worker-utils.js';
+import { createShopifyClient } from './utils/shopify-client.js';
 
 /**
  * Dynamically load a job handler
@@ -23,16 +24,18 @@ async function loadJobHandler(jobName) {
  */
 export default {
   async fetch(request, env, ctx) {
-    return await handleRequest(request, env);
+    return await handleRequest(request, env, ctx);
   }
 };
 
 /**
  * Handle incoming webhook requests
  * @param {Request} request - The incoming request
+ * @param {Object} env - Cloudflare environment variables and bindings
+ * @param {Object} ctx - Execution context with waitUntil, etc.
  * @returns {Response} The response to send back
  */
-async function handleRequest(request, env) {
+async function handleRequest(request, env, ctx) {
   // Only accept POST requests
   if (request.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
@@ -49,7 +52,7 @@ async function handleRequest(request, env) {
       return new Response('Invalid JSON body', { status: 400 });
     }
 
-    // Verify webhook signature
+    // Verify webhook signature (simple check for now)
     if (!verifyShopifyWebhook(request, bodyText)) {
       return new Response('Invalid webhook signature', { status: 401 });
     }
@@ -76,15 +79,27 @@ async function handleRequest(request, env) {
       return new Response(`Job handler not found for: ${jobName}`, { status: 404 });
     }
 
-    // Create a mock Shopify client for the worker environment
-    const mockShopify = {
-      graphql: async (query, variables) => {
-        return { productUpdate: { userErrors: [], product: { title: bodyData.title || 'Test Product' } } };
-      }
-    };
+    // Get shop domain from headers
+    const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
+    if (!shopDomain) {
+      return new Response('Missing X-Shopify-Shop-Domain header', { status: 400 });
+    }
+
+    // Get API access token from environment
+    const accessToken = env.SHOPIFY_ACCESS_TOKEN;
+    if (!accessToken) {
+      return new Response('Shopify API access token not configured', { status: 500 });
+    }
+
+    // Create a Shopify client using our shared implementation
+    const shopify = createShopifyClient({
+      shopDomain,
+      accessToken,
+      apiVersion: '2024-07'
+    });
 
     // Process the webhook data with the job handler
-    await jobModule.process(bodyData, mockShopify);
+    await jobModule.process(bodyData, shopify);
 
     return new Response('Webhook processed successfully', { status: 200 });
   } catch (error) {

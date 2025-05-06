@@ -68,7 +68,7 @@ export function wrapShopifyClient(shopifyClient) {
   // Store the original graphql method
   const originalGraphql = shopifyClient.graphql.bind(shopifyClient);
 
-  // Replace with wrapped version that uses console.log directly
+  // Replace with wrapped version that handles errors properly in a worker environment
   shopifyClient.graphql = async (query, options) => {
     try {
       // Make the original GraphQL call
@@ -86,9 +86,8 @@ export function wrapShopifyClient(shopifyClient) {
         // Print a simplified error message
         console.error(`GraphQL Error: ${errorMessages}`);
 
-        // Exit the process with error code
-        console.error('Terminating process due to Shopify API error');
-        process.exit(1);
+        // Throw error instead of exiting process (we're in a worker environment)
+        throw new Error(`GraphQL Error: ${errorMessages}`);
       }
 
       // Return the result data directly
@@ -96,7 +95,7 @@ export function wrapShopifyClient(shopifyClient) {
     } catch (error) {
       // This catches both our custom errors and request-level errors
 
-      // Print helpful error details without the stack trace
+      // Print helpful error details
       console.error('Shopify API Error:', error.message);
       console.error('Query:', truncateQuery(query));
 
@@ -104,9 +103,8 @@ export function wrapShopifyClient(shopifyClient) {
         console.error('Variables:', JSON.stringify(options, null, 2));
       }
 
-      // Exit the process with error code
-      console.error('Terminating process due to Shopify API error');
-      process.exit(1);
+      // Rethrow the error instead of exiting process
+      throw error;
     }
   };
 
