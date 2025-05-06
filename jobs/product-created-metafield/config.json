@@ -2,5 +2,5 @@
   "name": "product-updated-metafield",
   "description": "Updates a product metafield with the last modified date",
   "version": "1.0.0",
-  "trigger": "product-updated"
+  "trigger": "product-created"
 }

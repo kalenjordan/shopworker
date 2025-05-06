@@ -1,0 +1,9 @@
+{
+  "name": "product-create",
+  "description": "Creates a new product with a random name",
+  "version": "1.0.0",
+  "trigger": "manual-trigger",
+  "test": {
+    "skip_query": true
+  }
+}

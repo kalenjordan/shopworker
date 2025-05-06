@@ -1,0 +1,9 @@
+{
+  "name": "Product Created",
+  "webhook": {
+    "topic": "products/create"
+  },
+  "test": {
+    "query": "GetRecentProducts"
+  }
+}
