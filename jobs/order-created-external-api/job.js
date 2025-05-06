@@ -33,9 +33,6 @@ export async function process(order, shopify) {
     customMessage: customMessage
   };
 
-  console.log(`Using variables: ${JSON.stringify(variables, null, 2)}`);
-
-  console.log("graphql: ", OrderInvoiceSend);
   const result = await shopify.graphql(OrderInvoiceSend, variables);
 
   if (result.orderInvoiceSend.userErrors && result.orderInvoiceSend.userErrors.length > 0) {

@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { loadJobConfig, loadTriggerConfig } from './utils/job-loader.js';
+import { createGraphQLClient } from './utils/shopify-utils.js';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -86,68 +87,113 @@ function detectJobDirectory(specifiedDir) {
  * Run a test for a specific job
  */
 async function runJobTest(jobName, queryParam) {
-  try {
-    // Load job config
-    const jobConfig = loadJobConfig(jobName);
-    if (!jobConfig.trigger) {
-      console.error(`Job ${jobName} doesn't have a trigger defined`);
-      return;
-    }
+  // Load job config
+  const jobConfig = loadJobConfig(jobName);
+  if (!jobConfig.trigger) {
+    console.error(`Job ${jobName} doesn't have a trigger defined`);
+    return;
+  }
 
-    // Load trigger config
-    const triggerConfig = loadTriggerConfig(jobConfig.trigger);
-    if (!triggerConfig.test || !triggerConfig.test.query) {
-      console.error(`Trigger ${jobConfig.trigger} doesn't have a test query defined`);
-      return;
-    }
+  // Load trigger config
+  const triggerConfig = loadTriggerConfig(jobConfig.trigger);
 
-    // Initialize Shopify API client
-    const shopify = initShopify();
-
-    // Dynamically import the GraphQL query specified in the trigger
-    const queryModule = await import(`./graphql/${triggerConfig.test.query}.js`);
-    const query = queryModule.default;
-
-    console.log("Fetching most recent data...");
-
-    // Prepare GraphQL variables
-    const variables = { first: 1 };
-
-    // Add query parameter if provided
-    if (queryParam) {
-      console.log(`Using query filter: ${queryParam}`);
-      variables.query = queryParam;
-    }
-
-    // Execute GraphQL query with variables
-    const response = await shopify.graphql(query, variables);
-
-    // Find the first top-level field in the response that has edges
-    const topLevelKey = Object.keys(response).find(key =>
-      response[key] && typeof response[key] === 'object' && response[key].edges
-    );
-
-    if (!topLevelKey || !response[topLevelKey].edges || response[topLevelKey].edges.length === 0) {
-      console.error(`No ${topLevelKey || 'data'} found in response`);
-      return;
-    }
-
-    // Extract the first node from the results
-    const item = response[topLevelKey].edges[0].node;
-    const itemName = item.name || item.title || item.id;
-
-    console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${itemName}...`);
+  // Check if this is a manual trigger that should skip the query
+  if (triggerConfig.test && triggerConfig.test.skipQuery) {
+    console.log(`Manual trigger detected for job: ${jobName}`);
 
     // Dynamically import the job module
     const jobModule = await import(`./jobs/${jobName}/job.js`);
 
-    // Pass data to job handler
-    await jobModule.process(item, shopify);
+    // For manual triggers, we call the run function without any data
+    // and pass the necessary objects as props
+    const shopify = initShopify();
+
+    // Create logger
+    const logger = {
+      info: (message) => console.log(`[INFO] ${message}`),
+      warn: (message) => console.warn(`[WARN] ${message}`),
+      error: (message) => console.error(`[ERROR] ${message}`)
+    };
+
+    // Create a wrapped graphql client that handles userErrors automatically
+    const wrappedGraphql = createGraphQLClient(
+      (query, options) => shopify.graphql(query, options),
+      logger
+    );
+
+    // Create admin object with wrapped graphql method
+    const admin = {
+      graphql: async (query, options) => {
+        return {
+          json: async () => {
+            const result = await wrappedGraphql(query, options);
+            return result;
+          }
+        };
+      }
+    };
+
+    // Call the run function with props
+    await jobModule.run({
+      admin,
+      inputParams: {},
+      logger
+    });
 
     console.log('Processing complete!');
-  } catch (error) {
-    console.error('Error running test:', error);
+    return;
   }
+
+  // For non-manual triggers that require a query
+  if (!triggerConfig.test || !triggerConfig.test.query) {
+    console.error(`Trigger ${jobConfig.trigger} doesn't have a test query defined`);
+    return;
+  }
+
+  // Initialize Shopify API client
+  const shopify = initShopify();
+
+  // Dynamically import the GraphQL query specified in the trigger
+  const queryModule = await import(`./graphql/${triggerConfig.test.query}.js`);
+  const query = queryModule.default;
+
+  console.log("Fetching most recent data...");
+
+  // Prepare GraphQL variables
+  const variables = { first: 1 };
+
+  // Add query parameter if provided
+  if (queryParam) {
+    console.log(`Using query filter: ${queryParam}`);
+    variables.query = queryParam;
+  }
+
+  // Execute GraphQL query with variables
+  const response = await shopify.graphql(query, variables);
+
+  // Find the first top-level field in the response that has edges
+  const topLevelKey = Object.keys(response).find(key =>
+    response[key] && typeof response[key] === 'object' && response[key].edges
+  );
+
+  if (!topLevelKey || !response[topLevelKey].edges || response[topLevelKey].edges.length === 0) {
+    console.error(`No ${topLevelKey || 'data'} found in response`);
+    return;
+  }
+
+  // Extract the first node from the results
+  const item = response[topLevelKey].edges[0].node;
+  const itemName = item.name || item.title || item.id;
+
+  console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${itemName}...`);
+
+  // Dynamically import the job module
+  const jobModule = await import(`./jobs/${jobName}/job.js`);
+
+  // Pass data to job handler
+  await jobModule.process(item, shopify);
+
+  console.log('Processing complete!');
 }
 
 program

@@ -1,0 +1,8 @@
+{
+  "name": "Manual Trigger",
+  "description": "A trigger type for jobs intended to be run manually via CLI",
+  "test": {
+    "skipQuery": true,
+    "data": {}
+  }
+}
