@@ -1,0 +1,30 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Jobs Structure
+
+Jobs are the core processing units of the Shopworker CLI. Each job is contained in its own directory under the `jobs/` folder.
+
+## Job Directory Structure
+
+A job directory contains:
+- [config.json](mdc:jobs/order-created-tag-skus/config.json) - Configuration file specifying the trigger to use
+- [job.js](mdc:jobs/order-created-tag-skus/job.js) - The implementation of the job's processing logic
+
+## Example Job
+
+The `order-created-tag-skus` job:
+- Is triggered when a new order is created
+- Extracts SKUs from line items in the order
+- Adds these SKUs as tags to the order
+- Uses [OrderUpdate.graphql](mdc:graphql/OrderUpdate.graphql) to update the order via Shopify's API
+
+## Creating New Jobs
+
+To create a new job:
+1. Create a new directory under `jobs/`
+2. Add a `config.json` file to specify the trigger
+3. Implement the job's logic in `job.js` with an exported `process` function
+4. The `process` function will receive the Shopify data object and the Shopify API client

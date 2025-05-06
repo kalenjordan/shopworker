@@ -1,0 +1,24 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Shopworker CLI Overview
+
+The Shopworker CLI is a Node.js tool for working with Shopify orders using API version 2025-04.
+
+## Main Components
+
+- [cli.js](mdc:cli.js) - Main entry point and command definitions
+- `jobs/` - Contains job implementations
+- `triggers/` - Contains webhook trigger definitions
+- `graphql/` - Contains GraphQL queries and mutations
+- `utils/` - Contains utility functions
+
+## Workflow
+
+1. The CLI detects which job to run from the directory or command arguments
+2. It loads the job configuration from the job's directory
+3. It uses the trigger defined in the job config to determine which GraphQL query to execute
+4. It fetches data from Shopify and passes it to the job's processing function
+5. The job processes the data (e.g., tagging orders with SKUs)

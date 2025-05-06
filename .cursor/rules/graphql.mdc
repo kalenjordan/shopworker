@@ -1,0 +1,33 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# GraphQL Structure
+
+The Shopworker CLI uses GraphQL to interact with the Shopify API. All GraphQL queries and mutations are stored in the `graphql/` directory.
+
+## File Naming Convention
+
+File names must match the operation name in the query or mutation:
+- [GetRecentOrders.graphql](mdc:graphql/GetRecentOrders.graphql) - Query to fetch recent orders
+- [GetOrderById.graphql](mdc:graphql/GetOrderById.graphql) - Query to fetch a specific order by ID
+- [OrderUpdate.graphql](mdc:graphql/OrderUpdate.graphql) - Mutation to update an order
+
+## Usage Pattern
+
+GraphQL queries are loaded dynamically by the CLI using the `loadGraphQLQuery` utility function:
+
+```javascript
+import { loadGraphQLQuery } from '../../utils/graphql-utils.js';
+
+// Load a query by name (without .graphql extension)
+const query = loadGraphQLQuery('GetRecentOrders');
+
+// Or with the full filename
+const mutation = loadGraphQLQuery('OrderUpdate.graphql');
+```
+
+## Trigger Integration
+
+Queries for testing are specified in trigger configurations which reference the GraphQL file to use.
