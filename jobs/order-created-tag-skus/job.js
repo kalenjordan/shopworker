@@ -1,19 +1,12 @@
 import { loadGraphQLQuery } from '../../utils/graphql-utils.js';
 
 /**
- * Process an order to tag the customer with the SKUs from their purchased items
+ * Process an order to tag it with the SKUs from its line items
  * @param {Object} order - The order object from Shopify GraphQL API
  * @param {Object} shopify - Shopify API client
  */
 export async function process(order, shopify) {
   try {
-    if (!order.customer) {
-      console.log('No customer associated with this order');
-      return;
-    }
-
-    const customerId = order.customer.id.split('/').pop();
-
     // Extract SKUs from line items
     const skus = [];
     if (order.lineItems && order.lineItems.edges) {
@@ -35,7 +28,7 @@ export async function process(order, shopify) {
     console.log(`Found SKUs: ${skus.join(', ')}`);
 
     // Current tags should be available in the order response
-    const currentTags = order.customer.tags || [];
+    const currentTags = order.tags || [];
 
     // Add SKUs as tags if they don't already exist
     const newTags = [...currentTags];
@@ -51,24 +44,24 @@ export async function process(order, shopify) {
       return;
     }
 
-    // Load the customer update mutation
-    const updateMutation = loadGraphQLQuery('customer-update');
+    // Load the order update mutation
+    const updateMutation = loadGraphQLQuery('orderUpdate');
 
     const response = await shopify.graphql(updateMutation, {
       input: {
-        id: order.customer.id,
+        id: order.id,
         tags: newTags
       }
     });
 
-    const result = response.customerUpdate;
+    const result = response.orderUpdate;
 
     if (result.userErrors && result.userErrors.length > 0) {
-      console.error('Error updating customer tags:', result.userErrors);
+      console.error('Error updating order tags:', result.userErrors);
       return;
     }
 
-    console.log(`Successfully updated customer tags: ${result.customer.tags.join(', ')}`);
+    console.log(`Successfully updated order tags: ${result.order.tags.join(', ')}`);
   } catch (error) {
     console.error('Error processing order:', error);
   }

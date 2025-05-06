@@ -2,6 +2,7 @@ query GetOrderById($id: ID!) {
   order(id: $id) {
     id
     name
+    tags
     customer {
       id
       email

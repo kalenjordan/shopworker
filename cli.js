@@ -116,7 +116,7 @@ function detectJobDirectory(specifiedDir) {
 /**
  * Run a test for a specific job
  */
-async function runJobTest(jobName) {
+async function runJobTest(jobName, queryParam) {
   try {
     console.log(`Testing job ${jobName}...`);
 
@@ -142,8 +142,17 @@ async function runJobTest(jobName) {
 
     console.log("Fetching most recent data...");
 
-    // Execute GraphQL query to get the most recent data
-    const response = await shopify.graphql(query, { first: 1 });
+    // Prepare GraphQL variables
+    const variables = { first: 1 };
+
+    // Add query parameter if provided
+    if (queryParam) {
+      console.log(`Using query filter: ${queryParam}`);
+      variables.query = queryParam;
+    }
+
+    // Execute GraphQL query with variables
+    const response = await shopify.graphql(query, variables);
 
     // Find the first top-level field in the response that has edges
     const topLevelKey = Object.keys(response).find(key =>
@@ -182,6 +191,7 @@ program
   .command('test [jobName]')
   .description('Test a job with the most recent order')
   .option('-d, --dir <jobDirectory>', 'Job directory name (used when npm script is run from project root)')
+  .option('-q, --query <queryString>', 'Query string to filter results (e.g. "status:any")')
   .action(async (jobName, options) => {
     // If jobName is not provided, try to detect from directory or options
     if (!jobName) {
@@ -210,17 +220,25 @@ program
       }
     }
 
-    await runJobTest(jobName);
+    await runJobTest(jobName, options.query);
   });
 
 program
   .command('runtest')
   .description('Run test for the current job directory')
   .option('-d, --dir <jobDirectory>', 'Job directory name (used when npm script is run from project root)')
+  .option('-q, --query <queryString>', 'Query string to filter results (e.g. "status:any")')
   .option('--source-dir <sourceDirectory>', 'Source directory from where the command was run')
   .action(async (options) => {
-    // Delegate to the test command
-    await program.parseAsync(['test', options.dir], { from: 'user' });
+    // Detect job directory
+    const jobName = detectJobDirectory(options.dir);
+    if (!jobName) {
+      console.error('Could not detect job directory');
+      return;
+    }
+
+    // Run test directly with all options
+    await runJobTest(jobName, options.query);
   });
 
 program.parse(process.argv);

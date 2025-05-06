@@ -1,10 +1,11 @@
-query GetRecentOrders($first: Int!) {
-  orders(first: $first, sortKey: CREATED_AT, reverse: true) {
+query GetRecentOrders($first: Int!, $query: String) {
+  orders(first: $first, sortKey: CREATED_AT, reverse: true, query: $query) {
     edges {
       node {
         id
         name
         createdAt
+        tags
         customer {
           id
           email

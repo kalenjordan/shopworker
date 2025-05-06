@@ -2,6 +2,6 @@
   "name": "Order Created",
   "topic": "orders/create",
   "test": {
-    "query": "orders-get.graphql"
+    "query": "GetRecentOrders.graphql"
   }
 }
