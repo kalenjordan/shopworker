@@ -6,8 +6,6 @@ import OrderInvoiceSend from "../../graphql/OrderInvoiceSend.js";
  * @param {Object} shopify - Shopify API client
  */
 export async function process(order, shopify) {
-  console.log(`Payload: ${JSON.stringify(order, null, 2)}`);
-
   // Fetch data from the external API
   const response = await fetch("https://jsonplaceholder.typicode.com/posts/1");
 
