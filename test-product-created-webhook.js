@@ -25,7 +25,7 @@ async function main() {
 
     // Create sample product payload
     const payload = {
-      id: "gid://shopify/Product/8126033625274",
+      id: "8126033625274",
       title: "Rustic Mirror",
       handle: "rustic-mirror",
       createdAt: "2025-05-06T15:33:48Z",
