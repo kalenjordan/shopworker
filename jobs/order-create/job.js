@@ -57,8 +57,8 @@ export const run = async (props) => {
   // Create the order
   logger.info("Creating order");
   const orderResponse = await admin.graphql(`
-    mutation CreateOrder($input: OrderInput!) {
-      orderCreate(input: $input) {
+    mutation CreateOrder($order: OrderCreateOrderInput!) {
+      orderCreate(order: $order) {
         order {
           id
           name
@@ -76,24 +76,22 @@ export const run = async (props) => {
       }
     }
   `, {
-    variables: {
-      input: {
-        customerId: customer.id,
-        email: customer.email,
-        shippingAddress: shippingAddress,
-        billingAddress: shippingAddress,
-        lineItems: [
-          {
-            variantId: variant.id,
-            quantity: quantity
-          }
-        ]
-      }
+    order: {
+      customerId: customer.id,
+      email: customer.email,
+      shippingAddress: shippingAddress,
+      billingAddress: shippingAddress,
+      lineItems: [
+        {
+          variantId: variant.id,
+          quantity: quantity
+        }
+      ]
     }
   });
 
   const orderData = await orderResponse.json();
-  const order = orderData.data.orderCreate.order;
+  const order = orderData.orderCreate.order;
 
   logger.info(`Order created successfully: ${order.name}`);
 
