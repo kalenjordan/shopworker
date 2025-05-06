@@ -169,3 +169,7 @@ CLOUDFLARE_WORKER_URL=https://your-worker-url.workers.dev
 - `SHOPIFY_ACCESS_TOKEN`: Your Shopify admin API access token
 - `SHOP`: Your shop URL
 - `CLOUDFLARE_WORKER_URL`: URL for your Cloudflare worker (for webhook delivery)
+
+## TODOS:
+
+- Webhook signature validation!! 
