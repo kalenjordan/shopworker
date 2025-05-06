@@ -1,6 +1,6 @@
 # Shopworker CLI
 
-A CLI tool for working with Shopify orders and customers.
+A CLI tool for working with Shopify orders, using API version 2025-04.
 
 ## Installation
 
@@ -23,21 +23,25 @@ A CLI tool for working with Shopify orders and customers.
 
 ### Test Command
 
-The test command runs a job with a specific resource ID:
+The test command runs a job using the most recent data from Shopify:
 
 ```
-shopworker test <jobName> <resourceId>
+shopworker test <jobName> [options]
 ```
+
+Options:
+- `-d, --dir <jobDirectory>`: Job directory name (used when running from project root)
+- `-q, --query <queryString>`: Filter for the GraphQL query (e.g. `status:any`)
 
 Example:
 ```
-shopworker test order-created-tag-skus 1234567890
+shopworker test order-created-tag-skus --query "created_at:>2023-01-01"
 ```
 
 This command:
 1. Loads the job configuration from `jobs/<jobName>/config.json`
 2. Finds the trigger associated with the job
-3. Uses the test query specified in the trigger to fetch data from Shopify
+3. Uses the test query specified in the trigger to fetch the most recent data from Shopify
 4. Passes the data to the job for processing
 
 ### Testing from Job Directories
@@ -51,11 +55,11 @@ npm test
 
 This will automatically detect the job from the directory name and run the test command.
 
-You can also specify a resource ID:
+You can also add a query parameter:
 
 ```
 cd jobs/order-created-tag-skus
-npm test -- 9876543210
+npm test -- --query "status:any"
 ```
 
 ## Project Structure
@@ -66,20 +70,28 @@ Jobs are located in the `jobs/` directory. Each job has its own directory contai
 - `config.json`: Configuration including the trigger to use
 - `job.js`: The actual job implementation
 
+Example job: `order-created-tag-skus` - tags orders with the SKUs from their line items.
+
 ### Triggers
 
 Triggers are defined in the `triggers/` directory as JSON files:
 - `name`: Display name of the trigger
 - `topic`: Shopify webhook topic
-- `test`: Test configuration with query reference
+- `test`: Test configuration with GraphQL query reference
 
 ### GraphQL Queries
 
-GraphQL queries are stored in the `graphql/` directory and referenced by triggers.
+GraphQL queries are stored in the `graphql/` directory. File names match the query/mutation names:
+- `GetRecentOrders.graphql`: Query to get recent orders
+- `GetOrderById.graphql`: Query to get a specific order by ID
+- `OrderUpdate.graphql`: Mutation to update an order
+- `CustomerUpdate.graphql`: Mutation to update a customer
+
+### Utilities
+
+- `utils/graphql-utils.js`: Helper functions for loading GraphQL queries
 
 ## Environment Variables
 
-- `SHOPIFY_API_KEY`: Your Shopify API key
-- `SHOPIFY_API_SECRET`: Your Shopify API secret
 - `SHOPIFY_ACCESS_TOKEN`: Your Shopify access token
 - `SHOP`: Your shop URL (e.g., your-shop.myshopify.com)

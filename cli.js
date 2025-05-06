@@ -31,7 +31,8 @@ function initShopify() {
 
     return new Shopify({
       shopName,
-      accessToken: process.env.SHOPIFY_ACCESS_TOKEN
+      accessToken: process.env.SHOPIFY_ACCESS_TOKEN,
+      apiVersion: '2025-04'
     });
   } catch (error) {
     console.error('Failed to initialize Shopify API:', error);
