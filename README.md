@@ -107,6 +107,55 @@ export async function process(data, shopify) {
 - **product-create**: Creates a new product with random details
 - **product-created-metafield**: Adds a metafield to newly created products
 
+## Deployment
+
+### Deploying to Cloudflare Workers
+
+To deploy your jobs to Cloudflare Workers:
+
+1. Install Wrangler CLI:
+   ```bash
+   npm install -g wrangler
+   ```
+
+2. Create a `wrangler.toml` file using the example template:
+   ```bash
+   cp wrangler.toml.example wrangler.toml
+   ```
+
+3. Update your `wrangler.toml` file with your account details and environment variables:
+   ```toml
+   name = "shopworker"
+   main = "worker.js"
+   compatibility_date = "2023-06-01"
+
+   [vars]
+   SHOP = "your-shop.myshopify.com"
+   # Add any other environment variables your worker needs
+   ```
+
+4. Authenticate with Cloudflare:
+   ```bash
+   wrangler login
+   ```
+
+5. Deploy the worker:
+   ```bash
+   wrangler publish
+   ```
+
+6. Once deployed, update your `.env` file with the worker URL:
+   ```
+   CLOUDFLARE_WORKER_URL=https://shopworker.your-account.workers.dev
+   ```
+
+7. Enable your jobs using the CLI to register webhooks pointing to your worker:
+   ```bash
+   npm run enable -- your-job-name
+   ```
+
+For more details on Cloudflare Workers, see the [Cloudflare Workers documentation](https://developers.cloudflare.com/workers/).
+
 ## Environment Variables
 
 Create a `.env` file with:
