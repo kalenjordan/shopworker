@@ -35,10 +35,5 @@ export async function process(product, shopify) {
 
   const result = response.productUpdate;
 
-  if (result.userErrors && result.userErrors.length > 0) {
-    console.error("Error updating product metafield:", result.userErrors);
-    return;
-  }
-
   console.log(`Successfully updated metafield for product: ${result.product.title}`);
 }
