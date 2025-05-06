@@ -45,13 +45,4 @@ export async function process(product, shopify) {
   }
 
   console.log(`Successfully updated metafield for product: ${result.product.title}`);
-
-  // Log the updated metafields
-  if (result.product.metafields && result.product.metafields.edges) {
-    console.log("Updated metafields:");
-    for (const edge of result.product.metafields.edges) {
-      const metafield = edge.node;
-      console.log(`  ${metafield.namespace}.${metafield.key}: ${metafield.value}`);
-    }
-  }
 }

@@ -28,3 +28,10 @@ To create a new job:
 2. Add a `config.json` file to specify the trigger
 3. Implement the job's logic in `job.js` with an exported `process` function
 4. The `process` function will receive the Shopify data object and the Shopify API client
+
+## Error Handling
+
+When implementing jobs, follow these guidelines:
+- Do not use try/catch blocks in jobs - errors should bubble up to the main handler
+- The CLI framework will handle logging and reporting of errors
+- Only catch errors if you need to perform specific error handling or recovery
