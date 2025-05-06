@@ -3,41 +3,6 @@
  * This replaces the file-system based utilities with ones that work in Workers
  */
 
-// Store job configurations in global variable to persist across requests
-let cachedJobs = null;
-
-/**
- * Get job configurations from environment variables or KV storage
- * During deployment we'll bundle these into environment variables
- * @returns {Object} Map of job names to their configurations
- */
-export async function getJobsConfig() {
-  // Return cached config if available
-  if (cachedJobs !== null) {
-    return cachedJobs;
-  }
-
-  // Hard-coded job configuration for testing
-  cachedJobs = {
-    "order-created-tag-skus": {
-      "name": "order-created-tag-skus",
-      "description": "Tags customers with SKUs from their order",
-      "version": "1.0.0",
-      "trigger": "order-created",
-      "webhookTopic": "orders/create"
-    },
-    "product-updated-metafield": {
-      "name": "product-updated-metafield",
-      "description": "Updates product metafield with last modified date",
-      "version": "1.0.0",
-      "trigger": "product-updated",
-      "webhookTopic": "products/update"
-    }
-  };
-
-  return cachedJobs;
-}
-
 /**
  * Verify Shopify webhook signature
  * @param {Request} request - The incoming request

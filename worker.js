@@ -2,34 +2,7 @@
  * Cloudflare Worker entry point for Shopify webhooks
  */
 
-import { getJobsConfig, verifyShopifyWebhook } from './utils/worker-utils.js';
-
-// Map of webhook topics to job handlers
-let topicToJobMap = null;
-
-/**
- * Initialize the mapping of webhook topics to job handlers
- * This is done once on cold start
- */
-async function initializeJobMapping() {
-  if (topicToJobMap !== null) return;
-
-  topicToJobMap = {};
-  const jobs = await getJobsConfig();
-
-  for (const jobName in jobs) {
-    const job = jobs[jobName];
-    if (job.webhookTopic) {
-      // Store job configs by topic for lookup
-      if (!topicToJobMap[job.webhookTopic]) {
-        topicToJobMap[job.webhookTopic] = [];
-      }
-      topicToJobMap[job.webhookTopic].push({
-        name: jobName
-      });
-    }
-  }
-}
+import { verifyShopifyWebhook } from './utils/worker-utils.js';
 
 /**
  * Dynamically load a job handler
@@ -66,8 +39,6 @@ async function handleRequest(request, env) {
   }
 
   try {
-    await initializeJobMapping();
-
     // Get the request body as text and as JSON
     const bodyText = await request.clone().text();
     let bodyData;
@@ -86,37 +57,23 @@ async function handleRequest(request, env) {
     // Get the webhook topic from the headers
     const topic = request.headers.get('X-Shopify-Topic');
 
-    if (!topic || !topicToJobMap[topic]) {
-      return new Response(`No handler registered for topic: ${topic}`, { status: 404 });
+    if (!topic) {
+      return new Response('Missing X-Shopify-Topic header', { status: 400 });
     }
 
-    // Get job name from URL parameter
+    // Get job name from URL parameter - this is required
     const url = new URL(request.url);
-    const jobNameFromUrl = url.searchParams.get('job');
+    const jobName = url.searchParams.get('job');
 
-    // If we have a job name from URL, use that specific job
-    let jobInfo = null;
-
-    if (jobNameFromUrl) {
-      // Find the job with the matching name
-      jobInfo = topicToJobMap[topic].find(job => job.name === jobNameFromUrl);
-
-      if (!jobInfo) {
-        return new Response(`Job '${jobNameFromUrl}' not found for topic: ${topic}`, { status: 404 });
-      }
-    } else if (topicToJobMap[topic].length === 1) {
-      // If no job name specified but only one job for this topic, use that
-      jobInfo = topicToJobMap[topic][0];
-    } else {
-      // Multiple jobs for this topic but no job name specified
-      return new Response(`Multiple handlers for topic '${topic}', job name required in URL`, { status: 400 });
+    if (!jobName) {
+      return new Response('Job name must be specified in the URL', { status: 400 });
     }
 
     // Dynamically load the job handler
-    const jobModule = await loadJobHandler(jobInfo.name);
+    const jobModule = await loadJobHandler(jobName);
 
     if (!jobModule) {
-      return new Response(`Job handler not found for: ${jobInfo.name}`, { status: 500 });
+      return new Response(`Job handler not found for: ${jobName}`, { status: 404 });
     }
 
     // Create a mock Shopify client for the worker environment

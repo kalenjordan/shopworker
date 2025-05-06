@@ -5,7 +5,7 @@ import ProductMetafieldUpdate from "../../graphql/ProductMetafieldUpdate.js";
  * @param {Object} shopify - Shopify API client
  */
 export async function process(product, shopify) {
-  console.log(`Processing product: ${product.title} (${product.id})`);
+  console.log("Payload: ", JSON.stringify(product, null, 2));
 
   // Format the current date in ISO format
   const currentDate = new Date().toISOString();
