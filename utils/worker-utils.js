@@ -3,9 +3,6 @@
  * This replaces the file-system based utilities with ones that work in Workers
  */
 
-// Import GraphQL queries
-import { queries } from '../graphql/index.js';
-
 // Store job configurations in global variable to persist across requests
 let cachedJobs = null;
 
@@ -28,6 +25,13 @@ export async function getJobsConfig() {
       "version": "1.0.0",
       "trigger": "order-created",
       "webhookTopic": "orders/create"
+    },
+    "product-updated-metafield": {
+      "name": "product-updated-metafield",
+      "description": "Updates product metafield with last modified date",
+      "version": "1.0.0",
+      "trigger": "product-updated",
+      "webhookTopic": "products/update"
     }
   };
 

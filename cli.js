@@ -6,7 +6,6 @@ import Shopify from 'shopify-api-node';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { loadGraphQLQuery } from './utils/graphql-utils.js';
 import { loadJobConfig, loadTriggerConfig } from './utils/job-loader.js';
 
 // Get directory name in ESM
@@ -105,8 +104,9 @@ async function runJobTest(jobName, queryParam) {
     // Initialize Shopify API client
     const shopify = initShopify();
 
-    // Load the GraphQL query specified in the trigger
-    const query = await loadGraphQLQuery(triggerConfig.test.query);
+    // Dynamically import the GraphQL query specified in the trigger
+    const queryModule = await import(`./graphql/${triggerConfig.test.query}.js`);
+    const query = queryModule.default;
 
     console.log("Fetching most recent data...");
 
@@ -206,8 +206,11 @@ program
       }
     }
 
-    if (!options.worker) {
-      console.error('Cloudflare worker URL is required. Provide using --worker flag or set CLOUDFLARE_WORKER_URL env variable.');
+    // Use worker URL from options (which defaults to env var) or directly from env
+    const workerUrl = options.worker || process.env.CLOUDFLARE_WORKER_URL;
+
+    if (!workerUrl) {
+      console.error('Cloudflare worker URL is required. Please set CLOUDFLARE_WORKER_URL in your .env file.');
       return;
     }
 
@@ -231,12 +234,12 @@ program
 
       console.log(`Registering webhook for job: ${jobName}`);
       console.log(`Topic: ${triggerConfig.webhook.topic}`);
-      console.log(`Worker URL: ${options.worker}`);
+      console.log(`Worker URL: ${workerUrl}`);
 
       // Create webhook using Shopify API
       const webhook = await shopify.webhook.create({
         topic: triggerConfig.webhook.topic,
-        address: options.worker,
+        address: workerUrl,
         format: 'json'
       });
 
@@ -244,6 +247,143 @@ program
       console.log('Deployment complete!');
     } catch (error) {
       console.error('Error deploying job:', error);
+    }
+  });
+
+program
+  .command('status [jobName]')
+  .description('Check the status of webhooks for a job')
+  .option('-d, --dir <jobDirectory>', 'Job directory name')
+  .action(async (jobName, options) => {
+    // If jobName is not provided, try to detect from directory or options
+    if (!jobName) {
+      jobName = detectJobDirectory(options.dir);
+
+      if (!jobName) {
+        console.error('Could not detect job directory');
+        return;
+      }
+    }
+
+    try {
+      // Load job config
+      const jobConfig = loadJobConfig(jobName);
+      if (!jobConfig.trigger) {
+        console.error(`Job ${jobName} doesn't have a trigger defined`);
+        return;
+      }
+
+      // Load trigger config
+      const triggerConfig = loadTriggerConfig(jobConfig.trigger);
+      if (!triggerConfig.webhook || !triggerConfig.webhook.topic) {
+        console.error(`Trigger ${jobConfig.trigger} doesn't have a webhook topic defined`);
+        return;
+      }
+
+      // Initialize Shopify API client
+      const shopify = initShopify();
+
+      console.log(`Checking webhooks for job: ${jobName}`);
+      console.log(`Topic: ${triggerConfig.webhook.topic}`);
+
+      // Get all webhooks
+      const webhooks = await shopify.webhook.list();
+
+      // Filter webhooks by topic
+      const matchingWebhooks = webhooks.filter(webhook =>
+        webhook.topic === triggerConfig.webhook.topic
+      );
+
+      if (matchingWebhooks.length === 0) {
+        console.log(`No webhooks found for topic: ${triggerConfig.webhook.topic}`);
+      } else {
+        console.log(`Found ${matchingWebhooks.length} webhook(s) for topic: ${triggerConfig.webhook.topic}`);
+
+        matchingWebhooks.forEach(webhook => {
+          console.log(`\nWebhook ID: ${webhook.id}`);
+          console.log(`Address: ${webhook.address}`);
+          console.log(`Format: ${webhook.format}`);
+          console.log(`Created at: ${webhook.created_at}`);
+          console.log(`Active: Yes`);
+        });
+      }
+    } catch (error) {
+      console.error('Error checking webhook status:', error);
+    }
+  });
+
+program
+  .command('log-test [jobName]')
+  .description('Send a test webhook to trigger worker logging')
+  .option('-d, --dir <jobDirectory>', 'Job directory name')
+  .option('-w, --worker <workerUrl>', 'Cloudflare worker URL', process.env.CLOUDFLARE_WORKER_URL)
+  .action(async (jobName, options) => {
+    // If jobName is not provided, try to detect from directory or options
+    if (!jobName) {
+      jobName = detectJobDirectory(options.dir);
+
+      if (!jobName) {
+        console.error('Could not detect job directory');
+        return;
+      }
+    }
+
+    // Use worker URL from options (which defaults to env var) or directly from env
+    const workerUrl = options.worker || process.env.CLOUDFLARE_WORKER_URL;
+
+    if (!workerUrl) {
+      console.error('Cloudflare worker URL is required. Please set CLOUDFLARE_WORKER_URL in your .env file.');
+      return;
+    }
+
+    try {
+      // Load job config
+      const jobConfig = loadJobConfig(jobName);
+      if (!jobConfig.trigger) {
+        console.error(`Job ${jobName} doesn't have a trigger defined`);
+        return;
+      }
+
+      // Load trigger config
+      const triggerConfig = loadTriggerConfig(jobConfig.trigger);
+      if (!triggerConfig.webhook || !triggerConfig.webhook.topic) {
+        console.error(`Trigger ${jobConfig.trigger} doesn't have a webhook topic defined`);
+        return;
+      }
+
+      console.log(`Sending test webhook for job: ${jobName}`);
+      console.log(`Topic: ${triggerConfig.webhook.topic}`);
+      console.log(`Worker URL: ${workerUrl}`);
+
+      // Create a test payload
+      const testPayload = {
+        id: 'gid://shopify/Product/12345',
+        title: 'Test Product',
+        variants: {
+          edges: [
+            { node: { id: 'gid://shopify/ProductVariant/67890', title: 'Default' } }
+          ]
+        },
+        _test: true
+      };
+
+      // Send a test POST request to the worker
+      const response = await fetch(workerUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Topic': triggerConfig.webhook.topic,
+          // Skip the HMAC validation for our test
+          'X-Shopify-Hmac-Sha256': 'test'
+        },
+        body: JSON.stringify(testPayload)
+      });
+
+      console.log(`Response status: ${response.status}`);
+      console.log(`Response text: ${await response.text()}`);
+      console.log('\nCheck your worker logs with: npx wrangler tail');
+    } catch (error) {
+      console.error('Error sending test webhook:', error);
     }
   });
 

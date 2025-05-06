@@ -1,6 +1,8 @@
 {
   "name": "Product Updated",
-  "topic": "products/update",
+  "webhook": {
+    "topic": "products/update"
+  },
   "test": {
     "query": "GetRecentProducts"
   }

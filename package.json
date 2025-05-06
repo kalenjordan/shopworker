@@ -8,7 +8,10 @@
     "shopworker": "./cli.js"
   },
   "scripts": {
-    "test": "node cli.js test"
+    "test": "node cli.js test",
+    "deploy": "node cli.js deploy",
+    "status": "node cli.js status",
+    "log-test": "node cli.js log-test"
   },
   "dependencies": {
     "shopify-api-node": "^3.12.5",
