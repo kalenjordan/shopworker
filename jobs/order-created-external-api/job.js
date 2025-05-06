@@ -22,8 +22,8 @@ export async function process(order, shopify) {
 
   console.log(`Custom message from API: ${customMessage}`);
 
-  // Extract orderId
-  const orderId = order.id;
+  // Extract orderId and ensure it's in the correct GID format
+  const orderId = shopify.toGid(order.id, 'Order');
 
   console.log(`Using order ID: ${orderId}`);
 

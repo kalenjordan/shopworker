@@ -83,13 +83,13 @@ export const run = async (props) => {
   logger.info("Creating order");
   const orderResponse = await admin.graphql(OrderCreate, {
     order: {
-      customerId: customer.admin_graphql_api_id,
+      customerId: admin.toGid(customer.id, 'Customer'),
       email: customer.email,
       shippingAddress: formattedAddress,
       billingAddress: formattedAddress,
       lineItems: [
         {
-          variantId: variant.admin_graphql_api_id,
+          variantId: admin.toGid(variant.id, 'ProductVariant'),
           quantity: quantity
         }
       ]
