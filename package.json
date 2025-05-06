@@ -1,0 +1,18 @@
+{
+  "name": "shopworker",
+  "version": "1.0.0",
+  "description": "Shopify worker CLI tool",
+  "type": "module",
+  "main": "cli.js",
+  "bin": {
+    "shopworker": "./cli.js"
+  },
+  "scripts": {
+    "test": "node test-job.js"
+  },
+  "dependencies": {
+    "shopify-api-node": "^3.12.5",
+    "commander": "^13.1.0",
+    "dotenv": "^16.0.3"
+  }
+}

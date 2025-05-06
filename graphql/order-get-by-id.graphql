@@ -1,0 +1,27 @@
+query GetOrderById($id: ID!) {
+  order(id: $id) {
+    id
+    name
+    customer {
+      id
+      email
+      tags
+    }
+    lineItems(first: 50) {
+      edges {
+        node {
+          id
+          sku
+          name
+          variant {
+            id
+            sku
+            product {
+              id
+            }
+          }
+        }
+      }
+    }
+  }
+}
