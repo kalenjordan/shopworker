@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { loadJobConfig, loadTriggerConfig } from './utils/job-loader.js';
-import { createGraphQLClient } from './utils/shopify-utils.js';
+import { createGraphQLClient, wrapShopifyClient } from './utils/shopify-utils.js';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -30,11 +30,15 @@ function initShopify() {
     // With shopify-api-node, we only need the shop name and access token
     const shopName = process.env.SHOP.replace('.myshopify.com', '');
 
-    return new Shopify({
+    // Create the base Shopify client
+    const shopifyClient = new Shopify({
       shopName,
       accessToken: process.env.SHOPIFY_ACCESS_TOKEN,
       apiVersion: '2025-04'
     });
+
+    // Wrap the client with our error handler
+    return wrapShopifyClient(shopifyClient);
   } catch (error) {
     console.error('Failed to initialize Shopify API:', error);
     process.exit(1);
@@ -115,18 +119,12 @@ async function runJobTest(jobName, queryParam) {
       error: (message) => console.error(`[ERROR] ${message}`)
     };
 
-    // Create a wrapped graphql client that handles userErrors automatically
-    const wrappedGraphql = createGraphQLClient(
-      (query, options) => shopify.graphql(query, options),
-      logger
-    );
-
-    // Create admin object with wrapped graphql method
+    // Create admin object with the already wrapped graphql method
     const admin = {
       graphql: async (query, options) => {
         return {
           json: async () => {
-            const result = await wrappedGraphql(query, options);
+            const result = await shopify.graphql(query, options);
             return result;
           }
         };

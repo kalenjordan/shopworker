@@ -58,3 +58,40 @@ function findUserErrors(obj) {
 
   return null;
 }
+
+/**
+ * Wraps a Shopify client instance to handle GraphQL user errors automatically
+ * @param {Object} shopifyClient - The original Shopify client to wrap
+ * @returns {Object} - Wrapped Shopify client with error handling
+ */
+export function wrapShopifyClient(shopifyClient) {
+  // Store the original graphql method
+  const originalGraphql = shopifyClient.graphql.bind(shopifyClient);
+
+  // Replace with wrapped version that uses console.log directly
+  shopifyClient.graphql = async (query, options) => {
+    // Make the original GraphQL call
+    const result = await originalGraphql(query, options);
+
+    // Check if response contains any userErrors field at any level
+    const userErrors = findUserErrors(result.data);
+
+    if (userErrors && userErrors.length > 0) {
+      // Format error messages from userErrors
+      const errorMessages = userErrors
+        .map(error => `${error.field ? error.field + ': ' : ''}${error.message}`)
+        .join(", ");
+
+      // Log the error directly with console.error
+      console.error(`GraphQL Error: ${errorMessages}`);
+
+      // Throw error with formatted message
+      throw new Error(errorMessages);
+    }
+
+    // Return the result data directly
+    return result;
+  };
+
+  return shopifyClient;
+}
