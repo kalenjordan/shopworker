@@ -46,6 +46,15 @@ export function createShopifyClient({ shopDomain, accessToken, apiVersion = '202
       // Parse the response and unwrap the data property
       const jsonResponse = await response.json();
 
+      // Check for GraphQL errors
+      if (jsonResponse.errors) {
+        const errorMessage = jsonResponse.errors
+          .map(error => error.message)
+          .join(", ");
+        console.error("GraphQL errors:", errorMessage);
+        throw new Error(`GraphQL errors: ${errorMessage}`);
+      }
+
       // Return just the data property to simplify response handling
       // If data is missing, return the whole response to help with debugging
       return jsonResponse.data || jsonResponse;
