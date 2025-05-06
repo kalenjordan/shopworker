@@ -16,7 +16,7 @@ export async function process(product, shopify) {
       namespace: "custom",
       key: "last_modified",
       value: currentDate,
-      type: "single_line_text_field",
+      type: "date_time",
     },
   ];
 
