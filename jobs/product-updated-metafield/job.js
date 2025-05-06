@@ -1,5 +1,4 @@
-import { loadGraphQLQuery } from "../../utils/graphql-utils.js";
-
+import ProductMetafieldUpdate from "../../graphql/ProductMetafieldUpdate.js";
 /**
  * Updates a product metafield with the last modified date
  * @param {Object} product - The product object from Shopify GraphQL API
@@ -10,9 +9,6 @@ export async function process(product, shopify) {
 
   // Format the current date in ISO format
   const currentDate = new Date().toISOString();
-
-  // Load the product update mutation
-  const updateMutation = loadGraphQLQuery("ProductMetafieldUpdate");
 
   // Define metafield input
   const metafields = [
@@ -33,7 +29,7 @@ export async function process(product, shopify) {
   console.log(`Updating metafield with value: ${currentDate}`);
 
   // Execute the mutation
-  const response = await shopify.graphql(updateMutation, {
+  const response = await shopify.graphql(ProductMetafieldUpdate, {
     input: input,
   });
 

@@ -1,3 +1,4 @@
+export default `#graphql
 query GetOrderById($id: ID!) {
   order(id: $id) {
     id
@@ -26,3 +27,4 @@ query GetOrderById($id: ID!) {
     }
   }
 }
+`;

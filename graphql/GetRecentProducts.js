@@ -1,3 +1,4 @@
+export default `#graphql
 query GetRecentProducts($first: Int!, $query: String) {
   products(first: $first, sortKey: UPDATED_AT, reverse: true, query: $query) {
     edges {
@@ -33,3 +34,4 @@ query GetRecentProducts($first: Int!, $query: String) {
     }
   }
 }
+`;

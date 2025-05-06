@@ -1,4 +1,4 @@
-import { loadGraphQLQuery } from "../../utils/graphql-utils.js";
+import OrderUpdate from "../../graphql/OrderUpdate.js";
 
 /**
  * Process an order to tag it with the SKUs from its line items
@@ -43,10 +43,7 @@ export async function process(order, shopify) {
     return;
   }
 
-  // Load the order update mutation
-  const updateMutation = loadGraphQLQuery("OrderUpdate");
-
-  const response = await shopify.graphql(updateMutation, {
+  const response = await shopify.graphql(OrderUpdate, {
     input: {
       id: order.id,
       tags: newTags,

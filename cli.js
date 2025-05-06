@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { loadGraphQLQuery } from './utils/graphql-utils.js';
+import { loadJobConfig, loadTriggerConfig } from './utils/job-loader.js';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -36,38 +37,6 @@ function initShopify() {
     });
   } catch (error) {
     console.error('Failed to initialize Shopify API:', error);
-    process.exit(1);
-  }
-}
-
-/**
- * Load a job configuration file
- * @param {string} jobName - The name of the job
- * @returns {Object} The job configuration
- */
-function loadJobConfig(jobName) {
-  const configPath = path.join(__dirname, 'jobs', jobName, 'config.json');
-  try {
-    const configData = fs.readFileSync(configPath, 'utf8');
-    return JSON.parse(configData);
-  } catch (error) {
-    console.error(`Error loading job config for ${jobName}:`, error);
-    process.exit(1);
-  }
-}
-
-/**
- * Load a trigger configuration file
- * @param {string} triggerName - The name of the trigger
- * @returns {Object} The trigger configuration
- */
-function loadTriggerConfig(triggerName) {
-  const triggerPath = path.join(__dirname, 'triggers', `${triggerName}.json`);
-  try {
-    const triggerData = fs.readFileSync(triggerPath, 'utf8');
-    return JSON.parse(triggerData);
-  } catch (error) {
-    console.error(`Error loading trigger config for ${triggerName}:`, error);
     process.exit(1);
   }
 }
@@ -137,7 +106,7 @@ async function runJobTest(jobName, queryParam) {
     const shopify = initShopify();
 
     // Load the GraphQL query specified in the trigger
-    const query = loadGraphQLQuery(triggerConfig.test.query);
+    const query = await loadGraphQLQuery(triggerConfig.test.query);
 
     console.log("Fetching most recent data...");
 
@@ -219,6 +188,63 @@ program
     }
 
     await runJobTest(jobName, options.query);
+  });
+
+program
+  .command('deploy [jobName]')
+  .description('Deploy a job by registering webhooks with Shopify')
+  .option('-d, --dir <jobDirectory>', 'Job directory name')
+  .option('-w, --worker <workerUrl>', 'Cloudflare worker URL', process.env.CLOUDFLARE_WORKER_URL)
+  .action(async (jobName, options) => {
+    // If jobName is not provided, try to detect from directory or options
+    if (!jobName) {
+      jobName = detectJobDirectory(options.dir);
+
+      if (!jobName) {
+        console.error('Could not detect job directory');
+        return;
+      }
+    }
+
+    if (!options.worker) {
+      console.error('Cloudflare worker URL is required. Provide using --worker flag or set CLOUDFLARE_WORKER_URL env variable.');
+      return;
+    }
+
+    try {
+      // Load job config
+      const jobConfig = loadJobConfig(jobName);
+      if (!jobConfig.trigger) {
+        console.error(`Job ${jobName} doesn't have a trigger defined`);
+        return;
+      }
+
+      // Load trigger config
+      const triggerConfig = loadTriggerConfig(jobConfig.trigger);
+      if (!triggerConfig.webhook || !triggerConfig.webhook.topic) {
+        console.error(`Trigger ${jobConfig.trigger} doesn't have a webhook topic defined`);
+        return;
+      }
+
+      // Initialize Shopify API client
+      const shopify = initShopify();
+
+      console.log(`Registering webhook for job: ${jobName}`);
+      console.log(`Topic: ${triggerConfig.webhook.topic}`);
+      console.log(`Worker URL: ${options.worker}`);
+
+      // Create webhook using Shopify API
+      const webhook = await shopify.webhook.create({
+        topic: triggerConfig.webhook.topic,
+        address: options.worker,
+        format: 'json'
+      });
+
+      console.log(`Successfully registered webhook with ID: ${webhook.id}`);
+      console.log('Deployment complete!');
+    } catch (error) {
+      console.error('Error deploying job:', error);
+    }
   });
 
 program

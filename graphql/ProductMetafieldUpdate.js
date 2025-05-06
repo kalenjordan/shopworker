@@ -1,3 +1,4 @@
+export default `#graphql
 mutation ProductMetafieldUpdate($input: ProductInput!) {
   productUpdate(input: $input) {
     product {
@@ -20,3 +21,4 @@ mutation ProductMetafieldUpdate($input: ProductInput!) {
     }
   }
 }
+`;

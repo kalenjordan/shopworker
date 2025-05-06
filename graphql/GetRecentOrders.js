@@ -1,3 +1,4 @@
+export default `#graphql
 query GetRecentOrders($first: Int!, $query: String) {
   orders(first: $first, sortKey: CREATED_AT, reverse: true, query: $query) {
     edges {
@@ -31,3 +32,4 @@ query GetRecentOrders($first: Int!, $query: String) {
     }
   }
 }
+`;
