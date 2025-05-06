@@ -43,12 +43,13 @@ export async function process(order, shopify) {
     return;
   }
 
-  const response = await shopify.graphql(OrderUpdate, {
+  let variables = {
     input: {
       id: order.id,
       tags: newTags,
     },
-  });
+  };
+  const response = await shopify.graphql(OrderUpdate, variables);
 
   const result = response.orderUpdate;
 
