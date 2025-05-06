@@ -4,6 +4,7 @@ query GetRecentCustomers($first: Int!, $query: String) {
     edges {
       node {
         id
+        admin_graphql_api_id: id
         firstName
         lastName
         email
@@ -12,6 +13,7 @@ query GetRecentCustomers($first: Int!, $query: String) {
         updatedAt
         defaultAddress {
           id
+          admin_graphql_api_id: id
           address1
           address2
           city

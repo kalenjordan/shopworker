@@ -95,7 +95,7 @@ async function handleRequest(request, env, ctx) {
     const shopify = createShopifyClient({
       shopDomain,
       accessToken,
-      apiVersion: '2024-07'
+      apiVersion: '2025-04'
     });
 
     // Process the webhook data with the job handler

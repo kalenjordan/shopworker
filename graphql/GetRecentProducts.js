@@ -17,6 +17,7 @@ query GetRecentProducts($first: Int!, $query: String) {
           edges {
             node {
               id
+              admin_graphql_api_id: id
               sku
               price
               inventoryQuantity

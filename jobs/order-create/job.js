@@ -1,5 +1,6 @@
 import GetRecentProducts from "../../graphql/GetRecentProducts.js";
 import GetRecentCustomers from "../../graphql/GetRecentCustomers.js";
+import OrderCreate from "../../graphql/OrderCreate.js";
 
 export const run = async (props) => {
   const {
@@ -38,8 +39,18 @@ export const run = async (props) => {
     throw new Error("No active products with variants found");
   }
 
+  // Find a product with a price greater than zero
+  const productWithPrice = products.find(product => {
+    const variant = product.node.variants.edges[0].node;
+    return variant && parseFloat(variant.price) > 0;
+  });
+
+  if (!productWithPrice) {
+    throw new Error("No products found with price greater than zero");
+  }
+
   // Use the first product and its first variant
-  const product = products[0].node;
+  const product = productWithPrice.node;
   const variant = product.variants.edges[0].node;
 
   logger.info(`Selected product: ${product.title}, variant: ${variant.id}, price: ${variant.price}`);
@@ -54,36 +65,31 @@ export const run = async (props) => {
     throw new Error(`Customer ${customer.id} has no valid shipping address`);
   }
 
+  // Prepare address in the format expected by the API
+  const formattedAddress = {
+    address1: shippingAddress.address1,
+    address2: shippingAddress.address2,
+    city: shippingAddress.city,
+    company: shippingAddress.company,
+    firstName: customer.firstName,
+    lastName: customer.lastName,
+    phone: shippingAddress.phone,
+    province: shippingAddress.province,
+    zip: shippingAddress.zip,
+    country: shippingAddress.country
+  };
+
   // Create the order
   logger.info("Creating order");
-  const orderResponse = await admin.graphql(`
-    mutation CreateOrder($order: OrderCreateOrderInput!) {
-      orderCreate(order: $order) {
-        order {
-          id
-          name
-          totalPriceSet {
-            shopMoney {
-              amount
-              currencyCode
-            }
-          }
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }
-  `, {
+  const orderResponse = await admin.graphql(OrderCreate, {
     order: {
-      customerId: customer.id,
+      customerId: customer.admin_graphql_api_id,
       email: customer.email,
-      shippingAddress: shippingAddress,
-      billingAddress: shippingAddress,
+      shippingAddress: formattedAddress,
+      billingAddress: formattedAddress,
       lineItems: [
         {
-          variantId: variant.id,
+          variantId: variant.admin_graphql_api_id,
           quantity: quantity
         }
       ]

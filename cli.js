@@ -45,7 +45,7 @@ function initShopify() {
     return createShopifyClient({
       shopDomain,
       accessToken,
-      apiVersion: '2024-07'
+      apiVersion: '2025-04'
     });
   } catch (error) {
     console.error('Failed to initialize Shopify API:', error);
