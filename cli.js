@@ -118,8 +118,6 @@ function detectJobDirectory(specifiedDir) {
  */
 async function runJobTest(jobName, queryParam) {
   try {
-    console.log(`Testing job ${jobName}...`);
-
     // Load job config
     const jobConfig = loadJobConfig(jobName);
     if (!jobConfig.trigger) {
@@ -198,7 +196,6 @@ program
       jobName = detectJobDirectory(options.dir);
 
       if (jobName) {
-        console.log(`Detected job: ${jobName}`);
       } else {
         // Show available jobs
         const jobsDir = path.join(__dirname, 'jobs');
