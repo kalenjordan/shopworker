@@ -45,7 +45,7 @@ export async function process(order, shopify) {
     }
 
     // Load the order update mutation
-    const updateMutation = loadGraphQLQuery('orderUpdate');
+    const updateMutation = loadGraphQLQuery('OrderUpdate');
 
     const response = await shopify.graphql(updateMutation, {
       input: {

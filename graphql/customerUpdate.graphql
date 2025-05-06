@@ -1,4 +1,4 @@
-mutation customerUpdate($input: CustomerInput!) {
+mutation CustomerUpdate($input: CustomerInput!) {
   customerUpdate(input: $input) {
     customer {
       id
