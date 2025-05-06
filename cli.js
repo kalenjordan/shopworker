@@ -346,29 +346,20 @@ program
       webhookUrl.searchParams.set('job', jobName);
       const webhookAddress = webhookUrl.toString();
 
-      console.log(`Finding and removing webhooks for job: ${jobName}`);
+      console.log(`Disabling webhook for job: ${jobName}`);
       console.log(`Topic: ${triggerConfig.webhook.topic}`);
+      console.log(`Worker URL: ${webhookAddress}`);
 
-      // Get all webhooks
-      const webhooks = await shopify.webhook.list();
+      // Get all webhooks for the specified topic
+      const webhooks = await shopify.webhook.list({ topic: triggerConfig.webhook.topic });
 
-      // Filter webhooks by topic and address
-      const matchingWebhooks = webhooks.filter(webhook =>
-        webhook.topic === triggerConfig.webhook.topic &&
-        webhook.address === webhookAddress
-      );
-
-      if (matchingWebhooks.length === 0) {
-        console.log(`No webhooks found for job: ${jobName}`);
-        return;
-      }
+      // Filter webhooks by address
+      const matchingWebhooks = webhooks.filter(webhook => webhook.address === webhookAddress);
 
       // Delete each matching webhook
-      console.log(`Found ${matchingWebhooks.length} webhook(s) to remove`);
-
       for (const webhook of matchingWebhooks) {
-        console.log(`Removing webhook with ID: ${webhook.id}`);
-        await shopify.webhook.delete(webhook.id);
+        const deleteResult = await shopify.webhook.delete(webhook.id);
+        console.log(`Successfully deleted webhook with ID: ${webhook.id}`);
       }
 
       console.log('Job disabled successfully!');

@@ -10,17 +10,13 @@ export const run = async (props) => {
   // Log the start of the job
   logger.info("Starting order creation job");
 
-  // Fetch recent customers
-  logger.info("Fetching recent customers");
   const customersResponse = await admin.graphql(GetRecentCustomers, {
-    variables: {
       first: 10,
       query: "status:active"
-    }
   });
 
   const customersData = await customersResponse.json();
-  const customers = customersData.data.customers.edges;
+  const customers = customersData.customers.edges;
 
   if (!customers || customers.length === 0) {
     throw new Error("No active customers found");
@@ -30,17 +26,13 @@ export const run = async (props) => {
   const customer = customers[0].node;
   logger.info(`Selected customer: ${customer.firstName} ${customer.lastName} (${customer.email})`);
 
-  // Fetch recent products
-  logger.info("Fetching recent products");
   const productsResponse = await admin.graphql(GetRecentProducts, {
-    variables: {
       first: 10,
       query: "status:active"
-    }
   });
 
   const productsData = await productsResponse.json();
-  const products = productsData.data.products.edges;
+  const products = productsData.products.edges;
 
   if (!products || products.length === 0 || !products[0].node.variants.edges.length) {
     throw new Error("No active products with variants found");

@@ -70,28 +70,64 @@ export function wrapShopifyClient(shopifyClient) {
 
   // Replace with wrapped version that uses console.log directly
   shopifyClient.graphql = async (query, options) => {
-    // Make the original GraphQL call
-    const result = await originalGraphql(query, options);
+    try {
+      // Make the original GraphQL call
+      const result = await originalGraphql(query, options);
 
-    // Check if response contains any userErrors field at any level
-    const userErrors = findUserErrors(result.data);
+      // Check if response contains any userErrors field at any level
+      const userErrors = findUserErrors(result.data);
 
-    if (userErrors && userErrors.length > 0) {
-      // Format error messages from userErrors
-      const errorMessages = userErrors
-        .map(error => `${error.field ? error.field + ': ' : ''}${error.message}`)
-        .join(", ");
+      if (userErrors && userErrors.length > 0) {
+        // Format error messages from userErrors
+        const errorMessages = userErrors
+          .map(error => `${error.field ? error.field + ': ' : ''}${error.message}`)
+          .join(", ");
 
-      // Log the error directly with console.error
-      console.error(`GraphQL Error: ${errorMessages}`);
+        // Print a simplified error message
+        console.error(`GraphQL Error: ${errorMessages}`);
 
-      // Throw error with formatted message
-      throw new Error(errorMessages);
+        // Exit the process with error code
+        console.error('Terminating process due to Shopify API error');
+        process.exit(1);
+      }
+
+      // Return the result data directly
+      return result;
+    } catch (error) {
+      // This catches both our custom errors and request-level errors
+
+      // Print helpful error details without the stack trace
+      console.error('Shopify API Error:', error.message);
+      console.error('Query:', truncateQuery(query));
+
+      if (options && Object.keys(options).length > 0) {
+        console.error('Variables:', JSON.stringify(options, null, 2));
+      }
+
+      // Exit the process with error code
+      console.error('Terminating process due to Shopify API error');
+      process.exit(1);
     }
-
-    // Return the result data directly
-    return result;
   };
 
   return shopifyClient;
+}
+
+/**
+ * Truncate a GraphQL query for logging purposes
+ * @param {string} query - The GraphQL query
+ * @returns {string} - Truncated query
+ */
+function truncateQuery(query) {
+  if (!query) return 'undefined';
+
+  // Remove whitespace and newlines for more compact logging
+  const compactQuery = query.replace(/\s+/g, ' ').trim();
+
+  // If query is too long, truncate it
+  if (compactQuery.length > 500) {
+    return compactQuery.substring(0, 500) + '...';
+  }
+
+  return compactQuery;
 }
