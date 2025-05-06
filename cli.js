@@ -86,68 +86,53 @@ function loadGraphqlQuery(queryFileName) {
 }
 
 /**
- * Detect if we're running from a job directory and return job name
- * @returns {string|null} The job name or null if not in a job directory
+ * Detect the job directory from various possible locations
+ * @param {string} [specifiedDir] - An explicitly specified directory
+ * @returns {string|null} The job name or null if not determined
  */
-function detectJobFromDirectory() {
-  const cwd = process.cwd();
+function detectJobDirectory(specifiedDir) {
+  // If a directory is explicitly specified, use it
+  if (specifiedDir) {
+    return specifiedDir;
+  }
 
-  // Check if we're in a job directory
-  const cwdParts = cwd.split(path.sep);
-  const currentDir = cwdParts[cwdParts.length - 1];
+  // Get the directory from which npm test was run (if applicable)
+  const initCwd = process.env.INIT_CWD || process.cwd();
+  const currentDir = process.cwd();
 
-  // Check explicitly if the current directory is a job directory
+  // List of possible directories to check
+  const dirsToCheck = [initCwd, currentDir];
+
+  // Get all valid job directories
   const jobsDir = path.join(__dirname, 'jobs');
-  const possibleJobDirs = fs.readdirSync(jobsDir)
+  const validJobDirs = fs.readdirSync(jobsDir)
     .filter(dir => fs.statSync(path.join(jobsDir, dir)).isDirectory());
 
-  if (possibleJobDirs.includes(currentDir)) {
-    return currentDir;
-  }
-
-  // Extract the last directory name from the path
-  const dirName = path.basename(cwd);
-
-  // Check if there's a config.json file in this directory
-  const configPath = path.join(cwd, 'config.json');
-  if (fs.existsSync(configPath)) {
-    // Verify this is indeed a job directory by checking if it exists in the jobs directory
-    const jobPath = path.join(__dirname, 'jobs', dirName);
-    if (fs.existsSync(jobPath)) {
+  // Try each directory
+  for (const dir of dirsToCheck) {
+    // Check 1: Is this a direct job directory? (jobs/job-name)
+    const dirName = path.basename(dir);
+    if (validJobDirs.includes(dirName)) {
       return dirName;
     }
-  }
 
-  // Check if we're in a job subdirectory within the jobs directory
-  const relPath = path.relative(jobsDir, cwd);
-  if (!relPath.startsWith('..') && relPath !== '') {
-    // We're somewhere in the jobs directory
-    const jobName = relPath.split(path.sep)[0];
-    return jobName;
-  }
-
-  return null;
-}
-
-/**
- * Get the job name from the process arguments
- */
-function getJobNameFromArgs() {
-  const args = process.argv.slice(2);
-  for (let i = 0; i < args.length - 1; i++) {
-    if (args[i] === '--dir' || args[i] === '-d') {
-      return args[i + 1];
+    // Check 2: Is this inside a job directory?
+    const relPath = path.relative(jobsDir, dir);
+    if (!relPath.startsWith('..') && relPath !== '') {
+      const jobName = relPath.split(path.sep)[0];
+      return jobName;
     }
   }
+
   return null;
 }
 
 /**
  * Run a test for a specific job
  */
-async function runJobTest(jobName, resourceId = '6690480947386') {
+async function runJobTest(jobName) {
   try {
-    console.log(`Testing job ${jobName} with resource ID ${resourceId}...`);
+    console.log(`Testing job ${jobName}...`);
 
     // Load job config
     const jobConfig = loadJobConfig(jobName);
@@ -166,31 +151,35 @@ async function runJobTest(jobName, resourceId = '6690480947386') {
     // Initialize Shopify API client
     const shopify = initShopify();
 
-    // Load GraphQL query
+    // Load the GraphQL query specified in the trigger
     const query = loadGraphqlQuery(triggerConfig.test.query);
 
-    // Add gid format if needed
-    let formattedId = resourceId;
-    if (!resourceId.startsWith('gid://')) {
-      formattedId = `gid://shopify/Order/${resourceId}`;
-    }
+    console.log("Fetching most recent data...");
 
-    // Execute GraphQL query
-    const response = await shopify.graphql(query, { id: formattedId });
+    // Execute GraphQL query to get the most recent data
+    const response = await shopify.graphql(query, { first: 1 });
 
-    if (!response.order) {
-      console.error(`Order ${resourceId} not found`);
+    // Find the first top-level field in the response that has edges
+    const topLevelKey = Object.keys(response).find(key =>
+      response[key] && typeof response[key] === 'object' && response[key].edges
+    );
+
+    if (!topLevelKey || !response[topLevelKey].edges || response[topLevelKey].edges.length === 0) {
+      console.error(`No ${topLevelKey || 'data'} found in response`);
       return;
     }
 
-    const order = response.order;
-    console.log(`Order ${order.name} found, processing...`);
+    // Extract the first node from the results
+    const item = response[topLevelKey].edges[0].node;
+    const itemName = item.name || item.title || item.id;
+
+    console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${itemName}...`);
 
     // Dynamically import the job module
     const jobModule = await import(`./jobs/${jobName}/job.js`);
 
-    // Pass order to job handler
-    await jobModule.process(order, shopify);
+    // Pass data to job handler
+    await jobModule.process(item, shopify);
 
     console.log('Processing complete!');
   } catch (error) {
@@ -204,89 +193,19 @@ program
   .version('1.0.0');
 
 program
-  .command('test [jobName] [resourceId]')
-  .description('Test a job with a specific resource ID')
-  .option('-r, --resource <resourceId>', 'Resource ID to use for testing')
+  .command('test [jobName]')
+  .description('Test a job with the most recent order')
   .option('-d, --dir <jobDirectory>', 'Job directory name (used when npm script is run from project root)')
-  .action(async (jobName, resourceId, options) => {
-    // If jobName is not provided, try to get it from options or detect from directory
+  .action(async (jobName, options) => {
+    // If jobName is not provided, try to detect from directory or options
     if (!jobName) {
-      // Check if a directory was specified in options
-      if (options.dir) {
-        jobName = options.dir;
-        console.log(`Using job from --dir option: ${jobName}`);
+      jobName = detectJobDirectory(options.dir);
+
+      if (jobName) {
+        console.log(`Detected job: ${jobName}`);
       } else {
-        // Try to detect from directory
-        jobName = detectJobFromDirectory();
-        if (!jobName) {
-          console.error('Job name not provided and not in a job directory');
-          console.log('Try running this command from within a job directory');
-          return;
-        }
-        console.log(`Detected job name from directory: ${jobName}`);
-      }
-    }
-
-    // If resourceId is not provided, check options or use a default
-    if (!resourceId) {
-      resourceId = options.resource || '6690480947386';
-      console.log(`Using resource ID: ${resourceId}`);
-    }
-
-    await runJobTest(jobName, resourceId);
-  });
-
-// Add a test command that can be run from within a job directory
-program
-  .command('runtest [resourceId]')
-  .description('Run test for the current job directory')
-  .option('-d, --dir <jobDirectory>', 'Job directory name (used when npm script is run from project root)')
-  .option('--source-dir <sourceDirectory>', 'Source directory from where the command was run (used by npm test)')
-  .action(async (resourceId, options) => {
-    let jobName;
-
-    // Check if a directory was specified directly
-    if (options.dir) {
-      jobName = options.dir;
-      console.log(`Using job from --dir option: ${jobName}`);
-    }
-    // Check if source directory was provided and use it to determine the job
-    else if (options.sourceDir) {
-      const sourceDir = options.sourceDir;
-      console.log(`Using source directory: ${sourceDir}`);
-
-      // Extract the last part of the path
-      const sourceDirName = path.basename(sourceDir);
-      console.log(`Source directory name: ${sourceDirName}`);
-
-      // Check if this is a job directory by checking if it exists in jobs/
-      const jobsDir = path.join(__dirname, 'jobs');
-      const possibleJobDirs = fs.readdirSync(jobsDir)
-        .filter(dir => fs.statSync(path.join(jobsDir, dir)).isDirectory());
-
-      if (possibleJobDirs.includes(sourceDirName)) {
-        jobName = sourceDirName;
-        console.log(`Found job from source directory: ${jobName}`);
-      } else {
-        // Check if we're in a job's subdirectory by comparing paths
-        const relPath = path.relative(jobsDir, sourceDir);
-        if (!relPath.startsWith('..') && relPath !== '') {
-          jobName = relPath.split(path.sep)[0];
-          console.log(`Found job from relative path: ${jobName}`);
-        }
-      }
-    }
-    // Fall back to detecting from the current directory
-    else {
-      jobName = detectJobFromDirectory();
-    }
-
-    // If we still don't have a job name, show available options
-    if (!jobName) {
-      const jobsDir = path.join(__dirname, 'jobs');
-
-      // Check if we can see the jobs directory
-      if (fs.existsSync(jobsDir)) {
+        // Show available jobs
+        const jobsDir = path.join(__dirname, 'jobs');
         const jobDirs = fs.readdirSync(jobsDir)
           .filter(dir => fs.statSync(path.join(jobsDir, dir)).isDirectory());
 
@@ -296,25 +215,26 @@ program
           console.log(`Only one job available, using: ${jobName}`);
         } else {
           // Otherwise, show the available jobs
-          console.error('Not in a job directory. Please specify a job with --dir option:');
-          console.error('Available jobs:');
+          console.error('Could not detect job directory. Available jobs:');
           jobDirs.forEach(dir => console.error(`  ${dir}`));
-          console.error('Usage: npm test -- --dir=job-name');
-
-          // Or run from within the job directory:
-          console.error('');
-          console.error('Or run from within the job directory:');
-          console.error(`  cd jobs/JOBNAME && npm test`);
+          console.error('Run with: npm test -- --dir=JOB_NAME');
+          console.error('Or run from within the job directory');
           return;
         }
-      } else {
-        console.error('Not in a job directory and jobs directory not found.');
-        return;
       }
     }
 
-    // Call the runJobTest function with the detected job name
-    await runJobTest(jobName, resourceId);
+    await runJobTest(jobName);
+  });
+
+program
+  .command('runtest')
+  .description('Run test for the current job directory')
+  .option('-d, --dir <jobDirectory>', 'Job directory name (used when npm script is run from project root)')
+  .option('--source-dir <sourceDirectory>', 'Source directory from where the command was run')
+  .action(async (options) => {
+    // Delegate to the test command
+    await program.parseAsync(['test', options.dir], { from: 'user' });
   });
 
 program.parse(process.argv);
