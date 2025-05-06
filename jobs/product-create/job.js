@@ -43,8 +43,8 @@ function generateRandomProductType() {
 }
 
 /**
- * Process function called by the worker
- * @param {Object} data - Not used for manual jobs
+ * Process function called by both the CLI and worker
+ * @param {Object} data - Trigger data (not used for manual jobs)
  * @param {Object} shopify - Shopify client
  */
 export async function process(data, shopify) {
@@ -92,60 +92,5 @@ export async function process(data, shopify) {
 
   } catch (error) {
     console.error('Error creating product:', error.message);
-  }
-}
-
-/**
- * Run function called by the CLI
- * @param {Object} props - Properties passed from CLI
- */
-export async function run(props) {
-  const { admin, logger } = props;
-
-  // Generate a random product name
-  const productName = generateRandomProductName();
-  const productType = generateRandomProductType();
-
-  logger.info(`Creating new product: "${productName}" (Type: ${productType})`);
-
-  // Create product variables
-  const variables = {
-    input: {
-      title: productName,
-      productType: productType,
-      descriptionHtml: `<p>This is a randomly generated ${productType.toLowerCase()} product created by the Shopify Worker job.</p>`,
-      status: "ACTIVE",
-      vendor: "Shopify Worker"
-    }
-  };
-
-  try {
-    // Execute the product creation mutation
-    const response = await admin.graphql(productCreateMutation, variables);
-    const json = await response.json();
-
-    // Check for user errors
-    if (json?.productCreate?.userErrors &&
-        json.productCreate.userErrors.length > 0) {
-      const errors = json.productCreate.userErrors
-        .map(err => `${err.field}: ${err.message}`)
-        .join(', ');
-
-      logger.error(`Failed to create product: ${errors}`);
-      return;
-    }
-
-    // Get the created product
-    const product = json.productCreate.product;
-
-    logger.info(`Successfully created product!`);
-    logger.info(`ID: ${product.id}`);
-    logger.info(`Title: ${product.title}`);
-    logger.info(`Handle: ${product.handle}`);
-    logger.info(`Status: ${product.status}`);
-    logger.info(`Created at: ${product.createdAt}`);
-
-  } catch (error) {
-    logger.error(`Error creating product: ${error.message}`);
   }
 }

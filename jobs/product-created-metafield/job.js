@@ -20,7 +20,7 @@ export async function process(product, shopify) {
 
   // Prepare the input for the mutation
   const input = {
-    id: "gid://shopify/Product/" + product.id,
+    id: shopify.toGid(product.id, 'Product'),
     metafields: metafields,
   };
 

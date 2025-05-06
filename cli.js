@@ -119,31 +119,8 @@ async function runJobTest(jobName, queryParam) {
     // Initialize Shopify client
     const shopify = initShopify();
 
-    // Create logger
-    const logger = {
-      info: (message) => console.log(`[INFO] ${message}`),
-      warn: (message) => console.warn(`[WARN] ${message}`),
-      error: (message) => console.error(`[ERROR] ${message}`)
-    };
-
-    // Create admin object with the already wrapped graphql method
-    const admin = {
-      graphql: async (query, options) => {
-        return {
-          json: async () => {
-            const result = await shopify.graphql(query, options);
-            return result;
-          }
-        };
-      }
-    };
-
-    // Call the run function with props
-    await jobModule.run({
-      admin,
-      inputParams: {},
-      logger
-    });
+    // Call the process function directly
+    await jobModule.process({}, shopify);
 
     console.log('Processing complete!');
     return;

@@ -2,22 +2,21 @@ import GetRecentProducts from "../../graphql/GetRecentProducts.js";
 import GetRecentCustomers from "../../graphql/GetRecentCustomers.js";
 import OrderCreate from "../../graphql/OrderCreate.js";
 
-export const run = async (props) => {
-  const {
-    admin,
-    logger
-  } = props;
-
+/**
+ * Creates an order with a random customer and product
+ * @param {Object} trigger - The trigger data (not used in this job)
+ * @param {Object} shopify - Shopify API client
+ */
+export async function process(trigger, shopify) {
   // Log the start of the job
-  logger.info("Starting order creation job");
+  console.log("Starting order creation job");
 
-  const customersResponse = await admin.graphql(GetRecentCustomers, {
+  const customersResponse = await shopify.graphql(GetRecentCustomers, {
       first: 10,
       query: "status:active"
   });
 
-  const customersData = await customersResponse.json();
-  const customers = customersData.customers.edges;
+  const customers = customersResponse.customers.edges;
 
   if (!customers || customers.length === 0) {
     throw new Error("No active customers found");
@@ -25,15 +24,14 @@ export const run = async (props) => {
 
   // Use the first customer
   const customer = customers[0].node;
-  logger.info(`Selected customer: ${customer.firstName} ${customer.lastName} (${customer.email})`);
+  console.log(`Selected customer: ${customer.firstName} ${customer.lastName} (${customer.email})`);
 
-  const productsResponse = await admin.graphql(GetRecentProducts, {
+  const productsResponse = await shopify.graphql(GetRecentProducts, {
       first: 10,
       query: "status:active"
   });
 
-  const productsData = await productsResponse.json();
-  const products = productsData.products.edges;
+  const products = productsResponse.products.edges;
 
   if (!products || products.length === 0 || !products[0].node.variants.edges.length) {
     throw new Error("No active products with variants found");
@@ -53,7 +51,7 @@ export const run = async (props) => {
   const product = productWithPrice.node;
   const variant = product.variants.edges[0].node;
 
-  logger.info(`Selected product: ${product.title}, variant: ${variant.id}, price: ${variant.price}`);
+  console.log(`Selected product: ${product.title}, variant: ${variant.id}, price: ${variant.price}`);
 
   // Default quantity
   const quantity = 1;
@@ -80,26 +78,25 @@ export const run = async (props) => {
   };
 
   // Create the order
-  logger.info("Creating order");
-  const orderResponse = await admin.graphql(OrderCreate, {
+  console.log("Creating order");
+  const orderResponse = await shopify.graphql(OrderCreate, {
     order: {
-      customerId: admin.toGid(customer.id, 'Customer'),
+      customerId: shopify.toGid(customer.id, 'Customer'),
       email: customer.email,
       shippingAddress: formattedAddress,
       billingAddress: formattedAddress,
       lineItems: [
         {
-          variantId: admin.toGid(variant.id, 'ProductVariant'),
+          variantId: shopify.toGid(variant.id, 'ProductVariant'),
           quantity: quantity
         }
       ]
     }
   });
 
-  const orderData = await orderResponse.json();
-  const order = orderData.orderCreate.order;
+  const order = orderResponse.orderCreate.order;
 
-  logger.info(`Order created successfully: ${order.name}`);
+  console.log(`Order created successfully: ${order.name}`);
 
   return {
     success: true,
@@ -107,15 +104,15 @@ export const run = async (props) => {
     orderId: order.id,
     orderName: order.name,
     customer: {
-      id: admin.toGid(customer.id, 'Customer'),
+      id: shopify.toGid(customer.id, 'Customer'),
       name: `${customer.firstName} ${customer.lastName}`,
       email: customer.email
     },
     product: {
-      id: admin.toGid(product.id, 'Product'),
+      id: shopify.toGid(product.id, 'Product'),
       title: product.title,
-      variant: admin.toGid(variant.id, 'ProductVariant'),
+      variant: shopify.toGid(variant.id, 'ProductVariant'),
       price: variant.price
     }
   };
-};
+}
