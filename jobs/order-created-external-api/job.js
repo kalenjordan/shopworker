@@ -33,12 +33,6 @@ export async function process(order, shopify) {
     customMessage: customMessage
   };
 
-  const result = await shopify.graphql(OrderInvoiceSend, variables);
-
-  if (result.orderInvoiceSend.userErrors && result.orderInvoiceSend.userErrors.length > 0) {
-    console.error("Error sending invoice:", result.orderInvoiceSend.userErrors);
-    return;
-  }
-
+  await shopify.graphql(OrderInvoiceSend, variables);
   console.log(`Successfully sent invoice for order ${orderId} with custom message`);
 }
