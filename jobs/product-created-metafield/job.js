@@ -5,8 +5,6 @@ import ProductMetafieldUpdate from "../../graphql/ProductMetafieldUpdate.js";
  * @param {Object} shopify - Shopify API client
  */
 export async function process(product, shopify) {
-  console.log("Payload: ", JSON.stringify(product, null, 2));
-
   // Format the current date in ISO format
   const currentDate = new Date().toISOString();
 
@@ -22,7 +20,7 @@ export async function process(product, shopify) {
 
   // Prepare the input for the mutation
   const input = {
-    id: product.id,
+    id: "gid://shopify/Product/" + product.id,
     metafields: metafields,
   };
 

@@ -173,12 +173,8 @@ async function runJobTest(jobName, queryParam) {
     variables.query = queryParam;
   }
 
-  console.log("Executing GraphQL query...", query);
-  console.log("Variables:", JSON.stringify(variables, null, 2));
-
   // Execute GraphQL query with variables
   const response = await shopify.graphql(query, variables);
-  console.log("Response:", JSON.stringify(response, null, 2));
 
   // Find the first top-level field in the response that has edges
   const topLevelKey = Object.keys(response).find(key =>

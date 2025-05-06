@@ -3,7 +3,8 @@ query GetRecentProducts($first: Int!, $query: String) {
   products(first: $first, sortKey: UPDATED_AT, reverse: true, query: $query) {
     edges {
       node {
-        id
+        id: legacyResourceId
+        admin_graphql_api_id: id
         title
         handle
         createdAt
