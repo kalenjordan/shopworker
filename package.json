@@ -9,9 +9,11 @@
   },
   "scripts": {
     "test": "node cli.js test",
-    "deploy": "node cli.js deploy",
+    "enable": "node cli.js enable",
+    "disable": "node cli.js disable",
     "status": "node cli.js status",
-    "log-test": "node cli.js log-test"
+    "delete-webhook": "node cli.js delete-webhook",
+    "delete-all-webhooks": "node cli.js delete-all-topic-webhooks"
   },
   "dependencies": {
     "shopify-api-node": "^3.12.5",

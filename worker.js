@@ -20,23 +20,29 @@ async function initializeJobMapping() {
   for (const jobName in jobs) {
     const job = jobs[jobName];
     if (job.webhookTopic) {
-      console.log(`Registering handler for topic: ${job.webhookTopic}, job: ${jobName}`);
-
-      // In production, you would dynamically import these modules
-      // Here we're using a placeholder handler for demonstration
-      topicToJobMap[job.webhookTopic] = {
-        name: jobName,
-        handler: {
-          process: async (data) => {
-            console.log(`[${jobName}] Processing webhook data:`, JSON.stringify(data).substring(0, 200) + '...');
-            return `Processed ${jobName}`;
-          }
-        }
-      };
+      // Store job configs by topic for lookup
+      if (!topicToJobMap[job.webhookTopic]) {
+        topicToJobMap[job.webhookTopic] = [];
+      }
+      topicToJobMap[job.webhookTopic].push({
+        name: jobName
+      });
     }
   }
+}
 
-  console.log('Job mapping initialized:', Object.keys(topicToJobMap).join(', '));
+/**
+ * Dynamically load a job handler
+ */
+async function loadJobHandler(jobName) {
+  try {
+    // Use dynamic import with template path
+    // This pattern allows Webpack/bundlers to include all potential imports
+    return await import(`./jobs/${jobName}/job.js`);
+  } catch (error) {
+    console.error(`Failed to load job handler for ${jobName}:`, error.message);
+    return null;
+  }
 }
 
 /**
@@ -56,7 +62,6 @@ export default {
 async function handleRequest(request, env) {
   // Only accept POST requests
   if (request.method !== 'POST') {
-    console.log('Rejected non-POST method:', request.method);
     return new Response('Method not allowed', { status: 405 });
   }
 
@@ -70,39 +75,66 @@ async function handleRequest(request, env) {
     try {
       bodyData = await request.json();
     } catch (e) {
-      console.error('Failed to parse request body as JSON:', bodyText.substring(0, 200));
       return new Response('Invalid JSON body', { status: 400 });
     }
 
     // Verify webhook signature
     if (!verifyShopifyWebhook(request, bodyText)) {
-      console.error('Invalid webhook signature');
       return new Response('Invalid webhook signature', { status: 401 });
     }
 
     // Get the webhook topic from the headers
     const topic = request.headers.get('X-Shopify-Topic');
-    console.log(`Received webhook for topic: ${topic}`);
 
     if (!topic || !topicToJobMap[topic]) {
-      console.warn(`No handler registered for topic: ${topic}`);
       return new Response(`No handler registered for topic: ${topic}`, { status: 404 });
     }
 
-    // Get the job handler
-    const jobInfo = topicToJobMap[topic];
-    console.log(`Processing webhook with job: ${jobInfo.name}`);
+    // Get job name from URL parameter
+    const url = new URL(request.url);
+    const jobNameFromUrl = url.searchParams.get('job');
+
+    // If we have a job name from URL, use that specific job
+    let jobInfo = null;
+
+    if (jobNameFromUrl) {
+      // Find the job with the matching name
+      jobInfo = topicToJobMap[topic].find(job => job.name === jobNameFromUrl);
+
+      if (!jobInfo) {
+        return new Response(`Job '${jobNameFromUrl}' not found for topic: ${topic}`, { status: 404 });
+      }
+    } else if (topicToJobMap[topic].length === 1) {
+      // If no job name specified but only one job for this topic, use that
+      jobInfo = topicToJobMap[topic][0];
+    } else {
+      // Multiple jobs for this topic but no job name specified
+      return new Response(`Multiple handlers for topic '${topic}', job name required in URL`, { status: 400 });
+    }
+
+    // Dynamically load the job handler
+    const jobModule = await loadJobHandler(jobInfo.name);
+
+    if (!jobModule) {
+      return new Response(`Job handler not found for: ${jobInfo.name}`, { status: 500 });
+    }
+
+    // Create a mock Shopify client for the worker environment
+    const mockShopify = {
+      graphql: async (query, variables) => {
+        return { productUpdate: { userErrors: [], product: { title: bodyData.title || 'Test Product' } } };
+      }
+    };
 
     // Process the webhook data with the job handler
-    const result = await jobInfo.handler.process(bodyData);
-    console.log(`Successfully processed webhook: ${result}`);
+    await jobModule.process(bodyData, mockShopify);
 
     return new Response('Webhook processed successfully', { status: 200 });
   } catch (error) {
-    // Log the error (Cloudflare Workers use console.error for logging)
-    console.error('Error processing webhook:', error.message, error.stack);
+    // Log the error
+    console.error('Error processing webhook:', error.message);
 
     // Return a generic error response
-    return new Response('Error processing webhook: ' + error.message, { status: 500 });
+    return new Response('Error processing webhook', { status: 500 });
   }
 }
