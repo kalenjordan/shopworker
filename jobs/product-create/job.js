@@ -70,9 +70,9 @@ export async function process(data, shopify) {
     const response = await shopify.graphql(productCreateMutation, variables);
 
     // Check for user errors
-    if (response.data?.productCreate?.userErrors &&
-        response.data.productCreate.userErrors.length > 0) {
-      const errors = response.data.productCreate.userErrors
+    if (response?.productCreate?.userErrors &&
+        response.productCreate.userErrors.length > 0) {
+      const errors = response.productCreate.userErrors
         .map(err => `${err.field}: ${err.message}`)
         .join(', ');
 
@@ -81,7 +81,7 @@ export async function process(data, shopify) {
     }
 
     // Get the created product
-    const product = response.data.productCreate.product;
+    const product = response.productCreate.product;
 
     console.log(`Successfully created product!`);
     console.log(`ID: ${product.id}`);
@@ -125,9 +125,9 @@ export async function run(props) {
     const json = await response.json();
 
     // Check for user errors
-    if (json.data?.productCreate?.userErrors &&
-        json.data.productCreate.userErrors.length > 0) {
-      const errors = json.data.productCreate.userErrors
+    if (json?.productCreate?.userErrors &&
+        json.productCreate.userErrors.length > 0) {
+      const errors = json.productCreate.userErrors
         .map(err => `${err.field}: ${err.message}`)
         .join(', ');
 
@@ -136,7 +136,7 @@ export async function run(props) {
     }
 
     // Get the created product
-    const product = json.data.productCreate.product;
+    const product = json.productCreate.product;
 
     logger.info(`Successfully created product!`);
     logger.info(`ID: ${product.id}`);

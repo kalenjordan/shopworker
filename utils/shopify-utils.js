@@ -69,13 +69,14 @@ export function wrapShopifyClient(shopifyClient) {
   const originalGraphql = shopifyClient.graphql.bind(shopifyClient);
 
   // Replace with wrapped version that handles errors properly in a worker environment
-  shopifyClient.graphql = async (query, options) => {
+  shopifyClient.graphql = async (query, variables) => {
     try {
       // Make the original GraphQL call
-      const result = await originalGraphql(query, options);
+      const result = await originalGraphql(query, variables);
 
       // Check if response contains any userErrors field at any level
-      const userErrors = findUserErrors(result.data);
+      // The data is now unwrapped so we check directly in the result
+      const userErrors = findUserErrors(result);
 
       if (userErrors && userErrors.length > 0) {
         // Format error messages from userErrors
@@ -90,7 +91,7 @@ export function wrapShopifyClient(shopifyClient) {
         throw new Error(`GraphQL Error: ${errorMessages}`);
       }
 
-      // Return the result data directly
+      // Return the result data directly - it's already unwrapped
       return result;
     } catch (error) {
       // This catches both our custom errors and request-level errors
@@ -99,8 +100,8 @@ export function wrapShopifyClient(shopifyClient) {
       console.error('Shopify API Error:', error.message);
       console.error('Query:', truncateQuery(query));
 
-      if (options && Object.keys(options).length > 0) {
-        console.error('Variables:', JSON.stringify(options, null, 2));
+      if (variables && Object.keys(variables).length > 0) {
+        console.error('Variables:', JSON.stringify(variables, null, 2));
       }
 
       // Rethrow the error instead of exiting process

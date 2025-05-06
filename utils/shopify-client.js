@@ -43,7 +43,12 @@ export function createShopifyClient({ shopDomain, accessToken, apiVersion = '202
         throw new Error(`Shopify GraphQL request failed: ${response.status} ${response.statusText}`);
       }
 
-      return await response.json();
+      // Parse the response and unwrap the data property
+      const jsonResponse = await response.json();
+
+      // Return just the data property to simplify response handling
+      // If data is missing, return the whole response to help with debugging
+      return jsonResponse.data || jsonResponse;
     }
   };
 

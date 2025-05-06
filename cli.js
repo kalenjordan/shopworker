@@ -173,8 +173,12 @@ async function runJobTest(jobName, queryParam) {
     variables.query = queryParam;
   }
 
+  console.log("Executing GraphQL query...", query);
+  console.log("Variables:", JSON.stringify(variables, null, 2));
+
   // Execute GraphQL query with variables
   const response = await shopify.graphql(query, variables);
+  console.log("Response:", JSON.stringify(response, null, 2));
 
   // Find the first top-level field in the response that has edges
   const topLevelKey = Object.keys(response).find(key =>
@@ -306,18 +310,18 @@ program
 
       const response = await shopify.graphql(WEBHOOK_CREATE_MUTATION, variables);
 
-      if (!response.data || !response.data.webhookSubscriptionCreate) {
+      if (!response || !response.webhookSubscriptionCreate) {
         console.log('Response structure:', JSON.stringify(response, null, 2));
         throw new Error('Unexpected response format from Shopify GraphQL API');
       }
 
-      if (response.data.webhookSubscriptionCreate.userErrors &&
-          response.data.webhookSubscriptionCreate.userErrors.length > 0) {
-        const errors = response.data.webhookSubscriptionCreate.userErrors.map(err => err.message).join(", ");
+      if (response.webhookSubscriptionCreate.userErrors &&
+          response.webhookSubscriptionCreate.userErrors.length > 0) {
+        const errors = response.webhookSubscriptionCreate.userErrors.map(err => err.message).join(", ");
         throw new Error(`Failed to create webhook: ${errors}`);
       }
 
-      const webhook = response.data.webhookSubscriptionCreate.webhookSubscription;
+      const webhook = response.webhookSubscriptionCreate.webhookSubscription;
       console.log(`Successfully registered webhook with ID: ${webhook.id}`);
       console.log('Job enabled successfully!');
     } catch (error) {
@@ -380,12 +384,12 @@ program
       const getResponse = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
       // Check if response has the expected structure
-      if (!getResponse.data || !getResponse.data.webhookSubscriptions || !getResponse.data.webhookSubscriptions.nodes) {
+      if (!getResponse || !getResponse.webhookSubscriptions || !getResponse.webhookSubscriptions.nodes) {
         console.log('Response structure:', JSON.stringify(getResponse, null, 2));
         throw new Error('Unexpected response format from Shopify GraphQL API');
       }
 
-      const webhooks = getResponse.data.webhookSubscriptions.nodes;
+      const webhooks = getResponse.webhookSubscriptions.nodes;
 
       // Convert the trigger topic to match the GraphQL enum format (e.g., "products/update" to "PRODUCTS_UPDATE")
       const graphqlTopic = triggerConfig.webhook.topic.toUpperCase().replace('/', '_');
@@ -407,18 +411,16 @@ program
       for (const webhook of matchingWebhooks) {
         const deleteResponse = await shopify.graphql(WEBHOOK_DELETE_MUTATION, { id: webhook.id });
 
-        if (!deleteResponse.data ||
-            !deleteResponse.data.webhookSubscriptionDelete ||
-            (deleteResponse.data.webhookSubscriptionDelete.userErrors &&
-             deleteResponse.data.webhookSubscriptionDelete.userErrors.length > 0)) {
+        if (!deleteResponse || !deleteResponse.webhookSubscriptionDelete) {
+          console.error(`Error deleting webhook ${webhook.id}: Unexpected response format`);
+          console.log(JSON.stringify(deleteResponse, null, 2));
+          continue;
+        }
 
-          if (deleteResponse.data?.webhookSubscriptionDelete?.userErrors) {
-            const errors = deleteResponse.data.webhookSubscriptionDelete.userErrors.map(err => err.message).join(", ");
-            console.error(`Error deleting webhook ${webhook.id}: ${errors}`);
-          } else {
-            console.error(`Error deleting webhook ${webhook.id}: Unexpected response format`);
-            console.log(JSON.stringify(deleteResponse, null, 2));
-          }
+        if (deleteResponse.webhookSubscriptionDelete.userErrors &&
+            deleteResponse.webhookSubscriptionDelete.userErrors.length > 0) {
+          const errors = deleteResponse.webhookSubscriptionDelete.userErrors.map(err => err.message).join(", ");
+          console.error(`Error deleting webhook ${webhook.id}: ${errors}`);
           continue;
         }
 
@@ -461,12 +463,12 @@ program
         const response = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
         // Check if response has the expected structure
-        if (!response.data || !response.data.webhookSubscriptions || !response.data.webhookSubscriptions.nodes) {
+        if (!response || !response.webhookSubscriptions || !response.webhookSubscriptions.nodes) {
           console.log('Response structure:', JSON.stringify(response, null, 2));
           throw new Error('Unexpected response format from Shopify GraphQL API');
         }
 
-        const allWebhooks = response.data.webhookSubscriptions.nodes;
+        const allWebhooks = response.webhookSubscriptions.nodes;
 
         // Track if we found any webhooks across all jobs
         let anyWebhooksFound = false;
@@ -568,12 +570,12 @@ program
       const response = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
       // Check if response has the expected structure
-      if (!response.data || !response.data.webhookSubscriptions || !response.data.webhookSubscriptions.nodes) {
+      if (!response || !response.webhookSubscriptions || !response.webhookSubscriptions.nodes) {
         console.log('Response structure:', JSON.stringify(response, null, 2));
         throw new Error('Unexpected response format from Shopify GraphQL API');
       }
 
-      const webhooks = response.data.webhookSubscriptions.nodes;
+      const webhooks = response.webhookSubscriptions.nodes;
 
       // Filter webhooks by topic
       // Convert the trigger topic to match the GraphQL enum format (e.g., "products/update" to "PRODUCTS_UPDATE")

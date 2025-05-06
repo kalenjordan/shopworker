@@ -14,7 +14,7 @@ export async function process(product, shopify) {
   const metafields = [
     {
       namespace: "custom",
-      key: "last_modified",
+      key: "created_at",
       value: currentDate,
       type: "date_time",
     },
