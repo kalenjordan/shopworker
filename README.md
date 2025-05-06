@@ -81,11 +81,24 @@ Triggers are defined in the `triggers/` directory as JSON files:
 
 ### GraphQL Queries
 
-GraphQL queries are stored in the `graphql/` directory. File names match the query/mutation names:
-- `GetRecentOrders.graphql`: Query to get recent orders
-- `GetOrderById.graphql`: Query to get a specific order by ID
-- `OrderUpdate.graphql`: Mutation to update an order
-- `CustomerUpdate.graphql`: Mutation to update a customer
+GraphQL queries are stored in the `graphql/` directory as JavaScript files that export the query string as a tagged template literal:
+- `GetRecentOrders.js`: Query to get recent orders
+- `GetOrderById.js`: Query to get a specific order by ID
+- `OrderUpdate.js`: Mutation to update an order
+- `CustomerUpdate.js`: Mutation to update a customer
+
+Example format:
+```javascript
+export default `#graphql
+query GetRecentOrders($first: Int!, $query: String) {
+  orders(first: $first, sortKey: CREATED_AT, reverse: true, query: $query) {
+    # Query fields...
+  }
+}
+`;
+```
+
+These files are imported directly in the code where needed.
 
 ### Utilities
 

@@ -2,6 +2,6 @@
   "name": "Product Updated",
   "topic": "products/update",
   "test": {
-    "query": "GetRecentProducts.graphql"
+    "query": "GetRecentProducts"
   }
 }
