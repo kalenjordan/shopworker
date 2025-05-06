@@ -443,8 +443,19 @@ program
 
         const allWebhooks = response.webhookSubscriptions.nodes;
 
-        // Track if we found any webhooks across all jobs
-        let anyWebhooksFound = false;
+        // Create a map of topics to webhooks for faster lookup
+        const webhooksByTopic = {};
+        allWebhooks.forEach(webhook => {
+          if (!webhooksByTopic[webhook.topic]) {
+            webhooksByTopic[webhook.topic] = [];
+          }
+          webhooksByTopic[webhook.topic].push(webhook);
+        });
+
+        // Print header
+        console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(80));
+        console.log(`${'JOB'.padEnd(30)} ${'TRIGGER'.padEnd(20)} ${'STATUS'.padEnd(15)} WEBHOOK ID`);
+        console.log('-'.repeat(80));
 
         // Check each job
         for (const dir of jobDirs) {
@@ -452,69 +463,59 @@ program
             // Load job config
             const jobConfig = loadJobConfig(dir);
             if (!jobConfig.trigger) {
-              console.log(`\n${dir}: No trigger defined`);
+              // Jobs without triggers are manual only
+              console.log(`${dir.padEnd(30)} ${'N/A'.padEnd(20)} ${'MANUAL'.padEnd(15)} N/A`);
               continue;
             }
 
             // Load trigger config
             const triggerConfig = loadTriggerConfig(jobConfig.trigger);
 
-            // Skip jobs without webhook triggers
+            // For jobs without webhook triggers
             if (!triggerConfig.webhook || !triggerConfig.webhook.topic) {
-              console.log(`\n${dir}: No webhook topic defined (manual trigger)`);
+              console.log(`${dir.padEnd(30)} ${jobConfig.trigger.padEnd(20)} ${'MANUAL'.padEnd(15)} N/A`);
               continue;
             }
 
-            console.log(`\n${dir} - Topic: ${triggerConfig.webhook.topic}`);
+            // For webhook jobs
+            const topicStr = triggerConfig.webhook.topic;
+            const graphqlTopic = topicStr.toUpperCase().replace('/', '_');
 
-            // Convert the trigger topic to match the GraphQL enum format
-            const graphqlTopic = triggerConfig.webhook.topic.toUpperCase().replace('/', '_');
+            // Find matching webhooks
+            const matchingWebhooks = webhooksByTopic[graphqlTopic] || [];
 
-            // Filter webhooks by topic
-            const matchingWebhooks = allWebhooks.filter(webhook =>
-              webhook.topic === graphqlTopic
-            );
-
-            if (matchingWebhooks.length === 0) {
-              console.log(`  No webhooks found for topic: ${triggerConfig.webhook.topic} (${graphqlTopic})`);
-            } else {
-              anyWebhooksFound = true;
-              console.log(`  Found ${matchingWebhooks.length} webhook(s) for topic: ${triggerConfig.webhook.topic} (${graphqlTopic})`);
-
-              matchingWebhooks.forEach(webhook => {
-                console.log(`\n  Webhook ID: ${webhook.id}`);
-                if (webhook.endpoint && webhook.endpoint.__typename === 'WebhookHttpEndpoint') {
-                  console.log(`  Address: ${webhook.endpoint.callbackUrl}`);
-                  // Check if this webhook is for this job
-                  try {
-                    const url = new URL(webhook.endpoint.callbackUrl);
-                    const jobParam = url.searchParams.get('job');
-                    if (jobParam === dir) {
-                      console.log(`  Status: Active (configured for this job)`);
-                    } else if (jobParam) {
-                      console.log(`  Status: Active (configured for job: ${jobParam})`);
-                    } else {
-                      console.log(`  Status: Active (no job specified in URL)`);
-                    }
-                  } catch (e) {
-                    console.log(`  Status: Active`);
-                  }
-                } else {
-                  console.log(`  Endpoint Type: ${webhook.endpoint ? webhook.endpoint.__typename : 'Unknown'}`);
-                  console.log(`  Status: Active`);
+            // Find a webhook configured specifically for this job
+            const jobWebhook = matchingWebhooks.find(webhook => {
+              if (webhook.endpoint && webhook.endpoint.__typename === 'WebhookHttpEndpoint') {
+                try {
+                  const url = new URL(webhook.endpoint.callbackUrl);
+                  return url.searchParams.get('job') === dir;
+                } catch (e) {
+                  return false;
                 }
-                console.log(`  Topic: ${webhook.topic}`);
-                console.log(`  Created at: ${webhook.createdAt}`);
-              });
+              }
+              return false;
+            });
+
+            if (jobWebhook) {
+              // This job has a dedicated webhook
+              console.log(`${dir.padEnd(30)} ${topicStr.padEnd(20)} ${'ENABLED'.padEnd(15)} ${jobWebhook.id.split('/').pop()}`);
+            } else if (matchingWebhooks.length > 0) {
+              // There are webhooks for this topic but none specifically for this job
+              console.log(`${dir.padEnd(30)} ${topicStr.padEnd(20)} ${'NOT CONFIGURED'.padEnd(15)} None for this job`);
+            } else {
+              // No webhooks found for this topic
+              console.log(`${dir.padEnd(30)} ${topicStr.padEnd(20)} ${'DISABLED'.padEnd(15)} None found`);
             }
+
           } catch (error) {
             console.error(`Error checking job ${dir}:`, error.message);
           }
         }
 
-        if (!anyWebhooksFound) {
-          console.log('\nNo webhooks found for any job. Use "npm run enable -- <jobName>" to enable a job.');
-        }
+        console.log('-'.repeat(80));
+        console.log('\nUse "npm run enable -- <jobName>" to enable a job with a webhook.');
+        console.log('Use "npm run status -- <jobName>" to see detailed webhook information for a specific job.');
 
         return;
       }
