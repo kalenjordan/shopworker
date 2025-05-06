@@ -1,6 +1,6 @@
 # Shopworker CLI
 
-A CLI tool for working with Shopify orders, using API version 2025-04.
+A CLI tool for creating and managing Shopify automation jobs using the Admin API.
 
 ## Installation
 
@@ -10,101 +10,113 @@ A CLI tool for working with Shopify orders, using API version 2025-04.
    ```
    npm install
    ```
-4. Make the CLI executable:
-   ```
-   chmod +x cli.js
-   ```
-5. Link the CLI for global use:
-   ```
-   npm link
-   ```
 
-## Usage
+## Quick Start
 
-### Test Command
+### Check Job Status
 
-The test command runs a job using the most recent data from Shopify:
+To see the status of all jobs in your project:
 
-```
-shopworker test <jobName> [options]
+```bash
+npm run status
 ```
 
-Options:
-- `-d, --dir <jobDirectory>`: Job directory name (used when running from project root)
-- `-q, --query <queryString>`: Filter for the GraphQL query (e.g. `status:any`)
-
-Example:
+Example output:
 ```
-shopworker test order-created-tag-skus --query "created_at:>2023-01-01"
+JOB STATUS SUMMARY
+--------------------------------------------------------------------------------
+JOB                            TRIGGER              STATUS          WEBHOOK ID
+--------------------------------------------------------------------------------
+order-create                   manual               MANUAL          N/A
+order-created-external-api     orders/create        ENABLED         1393197220026
+order-created-tag-skus         orders/create        NOT CONFIGURED  None for this job
+product-create                 manual-trigger       MANUAL          N/A
+product-created-metafield      products/create      ENABLED         1393191649466
+--------------------------------------------------------------------------------
 ```
 
-This command:
-1. Loads the job configuration from `jobs/<jobName>/config.json`
-2. Finds the trigger associated with the job
-3. Uses the test query specified in the trigger to fetch the most recent data from Shopify
-4. Passes the data to the job for processing
+Status types:
+- `MANUAL`: Job is triggered manually (no webhook needed)
+- `ENABLED`: Job has an active webhook configured
+- `NOT CONFIGURED`: Webhook exists for this topic but isn't linked to this job
+- `DISABLED`: No webhooks found for this job's trigger topic
 
-### Testing from Job Directories
+### Enable a Job
 
-You can run tests directly from inside a job directory:
+To enable a job by registering a webhook:
 
+```bash
+npm run enable -- order-created-tag-skus
 ```
+
+This will create a webhook in your Shopify store that triggers the job.
+
+### Disable a Job
+
+To disable a job by removing its webhook:
+
+```bash
+npm run disable -- order-created-tag-skus
+```
+
+### Test a Job
+
+To test a job with the most recent data:
+
+```bash
+npm run test -- order-created-tag-skus
+```
+
+You can filter the test data:
+
+```bash
+npm run test -- order-created-tag-skus --query "created_at:>2023-01-01"
+```
+
+To test a job when you're already in the job directory:
+
+```bash
 cd jobs/order-created-tag-skus
 npm test
 ```
 
-This will automatically detect the job from the directory name and run the test command.
+## Creating New Jobs
 
-You can also add a query parameter:
+Jobs are located in the `jobs/` directory. Each job has:
+- `config.json`: Specifies which trigger to use
+- `job.js`: The job implementation
 
-```
-cd jobs/order-created-tag-skus
-npm test -- --query "status:any"
-```
-
-## Project Structure
-
-### Jobs
-
-Jobs are located in the `jobs/` directory. Each job has its own directory containing:
-- `config.json`: Configuration including the trigger to use
-- `job.js`: The actual job implementation
-
-Example job: `order-created-tag-skus` - tags orders with the SKUs from their line items.
-
-### Triggers
-
-Triggers are defined in the `triggers/` directory as JSON files:
-- `name`: Display name of the trigger
-- `topic`: Shopify webhook topic
-- `test`: Test configuration with GraphQL query reference
-
-### GraphQL Queries
-
-GraphQL queries are stored in the `graphql/` directory as JavaScript files that export the query string as a tagged template literal:
-- `GetRecentOrders.js`: Query to get recent orders
-- `GetOrderById.js`: Query to get a specific order by ID
-- `OrderUpdate.js`: Mutation to update an order
-- `CustomerUpdate.js`: Mutation to update a customer
-
-Example format:
+Example job structure:
 ```javascript
-export default `#graphql
-query GetRecentOrders($first: Int!, $query: String) {
-  orders(first: $first, sortKey: CREATED_AT, reverse: true, query: $query) {
-    # Query fields...
-  }
+// jobs/example-job/job.js
+export async function process(data, shopify) {
+  console.log("Processing:", data);
+
+  // Your job logic here
+  const response = await shopify.graphql(YourGraphQLQuery, variables);
+
+  console.log("Job completed successfully!");
 }
-`;
 ```
 
-These files are imported directly in the code where needed.
+## Available Jobs
 
-### Utilities
-
-- `utils/graphql-utils.js`: Helper functions for loading GraphQL queries
+- **order-create**: Creates a new order manually
+- **order-created-external-api**: Adds data from an external API to order invoices
+- **order-created-tag-skus**: Tags orders with the SKUs of line items
+- **product-create**: Creates a new product with random details
+- **product-created-metafield**: Adds a metafield to newly created products
 
 ## Environment Variables
 
-- `SHOPIFY_ACCESS_TOKEN`: Your Shopify access token
-- `SHOP`: Your shop URL (e.g., your-shop.myshopify.com)
+Create a `.env` file with:
+
+```
+SHOPIFY_ACCESS_TOKEN=your_access_token
+SHOP=your-shop.myshopify.com
+CLOUDFLARE_WORKER_URL=https://your-worker-url.workers.dev
+```
+
+- `SHOPIFY_ACCESS_TOKEN`: Your Shopify admin API access token
+- `SHOP`: Your shop URL
+- `CLOUDFLARE_WORKER_URL`: URL for your Cloudflare worker (for webhook delivery)
