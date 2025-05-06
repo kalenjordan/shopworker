@@ -433,20 +433,120 @@ program
 
 program
   .command('status [jobName]')
-  .description('Check the status of webhooks for a job')
+  .description('Check the status of webhooks for a job or all jobs')
   .option('-d, --dir <jobDirectory>', 'Job directory name')
   .action(async (jobName, options) => {
-    // If jobName is not provided, try to detect from directory or options
+    // Initialize Shopify API client first (we'll need it in all cases)
+    const shopify = initShopify();
+
+    // If jobName is not provided and not in a job directory, check all jobs
     if (!jobName) {
       jobName = detectJobDirectory(options.dir);
 
+      // If still no job name determined, we're at the project root - check all jobs
       if (!jobName) {
-        console.error('Could not detect job directory');
+        console.log('Checking status for all jobs in the project...');
+
+        // Get all job directories
+        const jobsDir = path.join(__dirname, 'jobs');
+        const jobDirs = fs.readdirSync(jobsDir)
+          .filter(dir => fs.statSync(path.join(jobsDir, dir)).isDirectory());
+
+        if (jobDirs.length === 0) {
+          console.log('No jobs found in the jobs/ directory.');
+          return;
+        }
+
+        // Get all webhooks using GraphQL (we'll do this once for efficiency)
+        const response = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
+
+        // Check if response has the expected structure
+        if (!response.data || !response.data.webhookSubscriptions || !response.data.webhookSubscriptions.nodes) {
+          console.log('Response structure:', JSON.stringify(response, null, 2));
+          throw new Error('Unexpected response format from Shopify GraphQL API');
+        }
+
+        const allWebhooks = response.data.webhookSubscriptions.nodes;
+
+        // Track if we found any webhooks across all jobs
+        let anyWebhooksFound = false;
+
+        // Check each job
+        for (const dir of jobDirs) {
+          try {
+            // Load job config
+            const jobConfig = loadJobConfig(dir);
+            if (!jobConfig.trigger) {
+              console.log(`\n${dir}: No trigger defined`);
+              continue;
+            }
+
+            // Load trigger config
+            const triggerConfig = loadTriggerConfig(jobConfig.trigger);
+
+            // Skip jobs without webhook triggers
+            if (!triggerConfig.webhook || !triggerConfig.webhook.topic) {
+              console.log(`\n${dir}: No webhook topic defined (manual trigger)`);
+              continue;
+            }
+
+            console.log(`\n${dir} - Topic: ${triggerConfig.webhook.topic}`);
+
+            // Convert the trigger topic to match the GraphQL enum format
+            const graphqlTopic = triggerConfig.webhook.topic.toUpperCase().replace('/', '_');
+
+            // Filter webhooks by topic
+            const matchingWebhooks = allWebhooks.filter(webhook =>
+              webhook.topic === graphqlTopic
+            );
+
+            if (matchingWebhooks.length === 0) {
+              console.log(`  No webhooks found for topic: ${triggerConfig.webhook.topic} (${graphqlTopic})`);
+            } else {
+              anyWebhooksFound = true;
+              console.log(`  Found ${matchingWebhooks.length} webhook(s) for topic: ${triggerConfig.webhook.topic} (${graphqlTopic})`);
+
+              matchingWebhooks.forEach(webhook => {
+                console.log(`\n  Webhook ID: ${webhook.id}`);
+                if (webhook.endpoint && webhook.endpoint.__typename === 'WebhookHttpEndpoint') {
+                  console.log(`  Address: ${webhook.endpoint.callbackUrl}`);
+                  // Check if this webhook is for this job
+                  try {
+                    const url = new URL(webhook.endpoint.callbackUrl);
+                    const jobParam = url.searchParams.get('job');
+                    if (jobParam === dir) {
+                      console.log(`  Status: Active (configured for this job)`);
+                    } else if (jobParam) {
+                      console.log(`  Status: Active (configured for job: ${jobParam})`);
+                    } else {
+                      console.log(`  Status: Active (no job specified in URL)`);
+                    }
+                  } catch (e) {
+                    console.log(`  Status: Active`);
+                  }
+                } else {
+                  console.log(`  Endpoint Type: ${webhook.endpoint ? webhook.endpoint.__typename : 'Unknown'}`);
+                  console.log(`  Status: Active`);
+                }
+                console.log(`  Topic: ${webhook.topic}`);
+                console.log(`  Created at: ${webhook.createdAt}`);
+              });
+            }
+          } catch (error) {
+            console.error(`Error checking job ${dir}:`, error.message);
+          }
+        }
+
+        if (!anyWebhooksFound) {
+          console.log('\nNo webhooks found for any job. Use "npm run enable -- <jobName>" to enable a job.');
+        }
+
         return;
       }
     }
 
     try {
+      // For a single job, use the existing implementation
       // Load job config
       const jobConfig = loadJobConfig(jobName);
       if (!jobConfig.trigger) {
@@ -460,9 +560,6 @@ program
         console.error(`Trigger ${jobConfig.trigger} doesn't have a webhook topic defined`);
         return;
       }
-
-      // Initialize Shopify API client
-      const shopify = initShopify();
 
       console.log(`Checking webhooks for job: ${jobName}`);
       console.log(`Topic: ${triggerConfig.webhook.topic}`);
@@ -495,12 +592,27 @@ program
           console.log(`\nWebhook ID: ${webhook.id}`);
           if (webhook.endpoint && webhook.endpoint.__typename === 'WebhookHttpEndpoint') {
             console.log(`Address: ${webhook.endpoint.callbackUrl}`);
+
+            // Check if this webhook is for this job
+            try {
+              const url = new URL(webhook.endpoint.callbackUrl);
+              const jobParam = url.searchParams.get('job');
+              if (jobParam === jobName) {
+                console.log(`Status: Active (configured for this job)`);
+              } else if (jobParam) {
+                console.log(`Status: Active (configured for job: ${jobParam})`);
+              } else {
+                console.log(`Status: Active (no job specified in URL)`);
+              }
+            } catch (e) {
+              console.log(`Status: Active`);
+            }
           } else {
             console.log(`Endpoint Type: ${webhook.endpoint ? webhook.endpoint.__typename : 'Unknown'}`);
+            console.log(`Status: Active`);
           }
           console.log(`Topic: ${webhook.topic}`);
           console.log(`Created at: ${webhook.createdAt}`);
-          console.log(`Active: Yes`);
         });
       }
     } catch (error) {
