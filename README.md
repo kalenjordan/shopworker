@@ -2,6 +2,24 @@
 
 A CLI tool for creating and managing Shopify automation jobs using the Admin API.
 
+## Using with Cursor
+
+This tool is designed to be used with Cursor to one-shot or few-shot prompt most use cases. With Cursor's AI-powered coding assistant, you can quickly generate job implementations by describing what you want to accomplish.
+
+### Example: Order Created External API Job
+
+The [order-created-external-api](/jobs/order-created-external-api) job is an example of a job that was created with this prompt:
+
+> Create a job that triggers when an order is created and hits an external API at https://jsonplaceholder.typicode.com/posts/1 - gets the body from that json and sets it as the custom message on the orderInvoiceSend mutation
+
+The job that it generated:
+
+1. Triggers on order creation
+2. Pings an external API endpoint
+3. Uses a field from the response
+4. Passes the data into the invoice send mutation
+
+
 ## Installation
 
 1. Clone this repository
