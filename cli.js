@@ -6,6 +6,7 @@ import Shopify from 'shopify-api-node';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { loadGraphQLQuery } from './utils/graphql-utils.js';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -66,21 +67,6 @@ function loadTriggerConfig(triggerName) {
     return JSON.parse(triggerData);
   } catch (error) {
     console.error(`Error loading trigger config for ${triggerName}:`, error);
-    process.exit(1);
-  }
-}
-
-/**
- * Load a GraphQL query from a file
- * @param {string} queryFileName - The filename of the GraphQL query
- * @returns {string} The GraphQL query
- */
-function loadGraphqlQuery(queryFileName) {
-  const queryPath = path.join(__dirname, 'graphql', queryFileName);
-  try {
-    return fs.readFileSync(queryPath, 'utf8');
-  } catch (error) {
-    console.error(`Error loading GraphQL query from ${queryFileName}:`, error);
     process.exit(1);
   }
 }
@@ -152,7 +138,7 @@ async function runJobTest(jobName) {
     const shopify = initShopify();
 
     // Load the GraphQL query specified in the trigger
-    const query = loadGraphqlQuery(triggerConfig.test.query);
+    const query = loadGraphQLQuery(triggerConfig.test.query);
 
     console.log("Fetching most recent data...");
 

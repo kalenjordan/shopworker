@@ -1,3 +1,5 @@
+import { loadGraphQLQuery } from '../../utils/graphql-utils.js';
+
 /**
  * Process an order to tag the customer with the SKUs from their purchased items
  * @param {Object} order - The order object from Shopify GraphQL API
@@ -49,21 +51,8 @@ export async function process(order, shopify) {
       return;
     }
 
-    // Update customer with new tags
-    const updateMutation = `
-      mutation customerUpdate($input: CustomerInput!) {
-        customerUpdate(input: $input) {
-          customer {
-            id
-            tags
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `;
+    // Load the customer update mutation
+    const updateMutation = loadGraphQLQuery('customer-update');
 
     const response = await shopify.graphql(updateMutation, {
       input: {
