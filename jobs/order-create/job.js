@@ -107,14 +107,14 @@ export const run = async (props) => {
     orderId: order.id,
     orderName: order.name,
     customer: {
-      id: customer.id,
+      id: admin.toGid(customer.id, 'Customer'),
       name: `${customer.firstName} ${customer.lastName}`,
       email: customer.email
     },
     product: {
-      id: product.id,
+      id: admin.toGid(product.id, 'Product'),
       title: product.title,
-      variant: variant.id,
+      variant: admin.toGid(variant.id, 'ProductVariant'),
       price: variant.price
     }
   };
