@@ -1,6 +1,8 @@
 {
   "name": "Order Created",
-  "topic": "orders/create",
+  "webhook": {
+    "topic": "orders/create"
+  },
   "test": {
     "query": "GetRecentOrders"
   }
