@@ -21,7 +21,8 @@ const COLUMN_MAPPINGS = [
   { key: 'trackingNumber', label: 'Tracking number' },
   { key: 'row', label: 'Row' },
   { key: 'reminderEmail', label: 'reminder email' },
-  { key: 'id', label: 'ID' }
+  { key: 'id', label: 'ID' },
+  { key: 'note', label: 'Note' },
 ];
 
 /**
@@ -132,6 +133,40 @@ function createSheetRows(orderData, lineItems) {
 }
 
 /**
+ * Create rows for Google Sheet from order data and line items based on actual sheet headers
+ * @param {Object} orderData - Structured order data
+ * @param {Array} lineItems - Array of line items
+ * @param {Array} headers - Actual headers from the Google Sheet
+ * @returns {Array} Array of rows for the sheet (one per line item)
+ */
+function createDynamicSheetRows(orderData, lineItems, headers) {
+  // Create a mapping from header labels to data keys
+  const headerToKeyMap = {};
+  COLUMN_MAPPINGS.forEach(mapping => {
+    headerToKeyMap[mapping.label] = mapping.key;
+  });
+
+  return lineItems.map(item => {
+    // Create a merged data object with order data and line item data
+    const rowData = {
+      ...orderData,
+      sku: item.sku || '',
+      quantity: item.quantity || '',
+    };
+
+    // Map the data to columns based on the actual headers from the sheet
+    return headers.map(header => {
+      const dataKey = headerToKeyMap[header];
+      if (!dataKey) {
+        return ''; // Return empty string for unknown headers
+      }
+      const value = rowData[dataKey] || '';
+      return value;
+    });
+  });
+}
+
+/**
  * Log order data in a readable format
  * @param {Object} orderData - Structured order data
  * @param {Array} lineItems - Array of line items
@@ -173,13 +208,15 @@ async function verifySheetHeaders(sheetsClient, spreadsheetId, sheetName) {
 
   // Optionally validate that the headers match our expected column mappings
   const headers = headerData[0];
+  console.log("Headers: ", headers);
   const expectedHeaders = COLUMN_MAPPINGS.map(column => column.label);
 
   // Instead of requiring exact matches, we just log a warning if columns don't match
   if (headers.length !== expectedHeaders.length) {
-    console.log(`\nWarning: Sheet has ${headers.length} columns, but we expected ${expectedHeaders.length}.`);
-    console.log(`Sheet headers: ${headers.join(', ')}`);
-    console.log(`Expected headers: ${expectedHeaders.join(', ')}`);
+    console.error(`\nWarning: Sheet has ${headers.length} columns, but we expected ${expectedHeaders.length}.`);
+    console.error(`Sheet headers: ${headers.join(', ')}`);
+    console.error(`Expected headers: ${expectedHeaders.join(', ')}`);
+    throw new Error(`Sheet has ${headers.length} columns, but we expected ${expectedHeaders.length}.`);
   }
 
   return headers;
@@ -215,8 +252,8 @@ export async function process({ record: orderData, shopify, env }) {
   const orderId = shopify.toGid(orderData.id, 'Order');
   const { order } = await shopify.graphql(GetOrderById, { id: orderId });
 
-  // Verify the sheet has headers
-  await verifySheetHeaders(sheetsClient, spreadsheetId, sheetName);
+  // Verify the sheet has headers and get them
+  const headers = await verifySheetHeaders(sheetsClient, spreadsheetId, sheetName);
 
   // Extract data from the order
   const orderDetails = extractOrderData(order, shopify);
@@ -231,8 +268,16 @@ export async function process({ record: orderData, shopify, env }) {
   // logOrderDetails(orderDetails, lineItems);
   console.log("Order details: ", {order: JSON.stringify(orderDetails, null, 2), lineItems: JSON.stringify(lineItems, null, 2)});
 
-  // Format data for Google Sheets
-  const rows = createSheetRows(orderDetails, lineItems);
+  // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
+  const filteredLineItems = lineItems.filter(item => {
+    const sku = item.sku || '';
+    return sku.includes('CCS1') || sku.includes('CC0');
+  });
+
+  console.log(`Filtered from ${lineItems.length} to ${filteredLineItems.length} line items matching SKU criteria (CCS1 or CC0)`);
+
+  // Format data for Google Sheets using dynamic headers
+  const rows = createDynamicSheetRows(orderDetails, filteredLineItems, headers);
 
   // Log what we're doing
   console.log(`\nAdding ${rows.length} rows to sheet for order ${order.name || order.id}`);
