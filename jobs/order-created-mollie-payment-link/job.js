@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import OrderInvoiceSend from "../../graphql/OrderInvoiceSend.js";
 import GetOrderById from "../../graphql/GetOrderById.js";
 

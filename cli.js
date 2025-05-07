@@ -178,6 +178,72 @@ async function runJobTest(jobName, queryParam) {
   console.log('Processing complete!');
 }
 
+// --- Reusable Cloudflare Deployment Function ---
+async function handleCloudflareDeployment() {
+  // Check for uncommitted Git changes
+  try {
+    const { execSync } = await import('child_process');
+    const gitStatus = execSync('git status --porcelain', { encoding: 'utf8' });
+    if (gitStatus.trim() !== '') {
+      console.error('Error: There are uncommitted changes in your Git repository. Please commit or stash them before deploying.');
+      console.error('Uncommitted changes:\n' + gitStatus);
+      return false; // Indicate failure
+    }
+  } catch (error) {
+    console.error('Error checking Git status:', error.message);
+    console.warn('Warning: Could not verify Git status. Proceeding, but this might lead to deploying uncommitted code.');
+    // Depending on policy, you might want to return false here too.
+    // For now, allowing it to proceed with a warning.
+  }
+
+  const shopworkerFilePath = path.join(__dirname, '.shopworker');
+  let lastDeployedCommit = null;
+
+  if (fs.existsSync(shopworkerFilePath)) {
+    try {
+      const shopworkerFileContent = fs.readFileSync(shopworkerFilePath, 'utf8');
+      const shopworkerData = JSON.parse(shopworkerFileContent);
+      if (shopworkerData && shopworkerData.lastDeployedCommit) {
+        lastDeployedCommit = shopworkerData.lastDeployedCommit;
+      }
+    } catch (error) {
+      console.warn('Warning: Could not read or parse .shopworker file. Will proceed as if no previous deployment was made.', error.message);
+    }
+  }
+
+  let currentCommit = null;
+  try {
+    const { execSync } = await import('child_process');
+    currentCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+  } catch (error) {
+    console.error('Error getting current Git commit:', error.message);
+    console.error('Cannot proceed without knowing the current commit. Please ensure you are in a Git repository.');
+    return false; // Indicate failure
+  }
+
+  if (currentCommit !== lastDeployedCommit) {
+    console.log(`Current commit (${currentCommit}) differs from last deployed commit (${lastDeployedCommit || 'None'}).`);
+    console.log('Deploying to Cloudflare via Wrangler...');
+    try {
+      const { execSync } = await import('child_process');
+      execSync('npx wrangler deploy', { stdio: 'inherit', encoding: 'utf8' });
+      console.log('Successfully deployed to Cloudflare.');
+
+      const newShopworkerData = { lastDeployedCommit: currentCommit };
+      fs.writeFileSync(shopworkerFilePath, JSON.stringify(newShopworkerData, null, 2), 'utf8');
+      console.log(`Updated .shopworker with new deployed commit: ${currentCommit}`);
+    } catch (error) {
+      console.error('Error deploying to Cloudflare with Wrangler:', error.message);
+      console.error('Aborting deployment.');
+      return false; // Indicate failure
+    }
+  } else {
+    console.log(`Current commit (${currentCommit}) matches last deployed commit. No new deployment needed.`);
+  }
+  return true; // Indicate success
+}
+// --- End of Reusable Cloudflare Deployment Function ---
+
 program
   .name('shopworker')
   .description('Shopify worker CLI tool')
@@ -220,78 +286,15 @@ program
 
 program
   .command('enable [jobName]')
-  .description('Enable a job by registering webhooks with Shopify')
+  .description('Enable a job by registering webhooks with Shopify after ensuring the latest code is deployed')
   .option('-d, --dir <jobDirectory>', 'Job directory name')
   .option('-w, --worker <workerUrl>', 'Cloudflare worker URL', process.env.CLOUDFLARE_WORKER_URL)
   .action(async (jobName, options) => {
-    // Check for uncommitted Git changes
-    try {
-      const { execSync } = await import('child_process');
-      const gitStatus = execSync('git status --porcelain', { encoding: 'utf8' });
-      if (gitStatus.trim() !== '') {
-        console.error('Error: There are uncommitted changes in your Git repository. Please commit or stash them before enabling a job.');
-        console.error('Uncommitted changes:\\n' + gitStatus);
-        return;
-      }
-    } catch (error) {
-      console.error('Error checking Git status:', error.message);
-      // We might not be in a git repo, or git might not be installed.
-      // For now, let's allow proceeding but warn the user.
-      // In a CI/CD environment, this should probably be a hard error.
-      console.warn('Warning: Could not verify Git status. Proceeding, but this might lead to deploying uncommitted code.');
-    }
-
-    // --- Deployment checks and Cloudflare deployment ---
-    const shopworkerFilePath = path.join(__dirname, '.shopworker');
-    let lastDeployedCommit = null;
-
-    if (fs.existsSync(shopworkerFilePath)) {
-      try {
-        const shopworkerFileContent = fs.readFileSync(shopworkerFilePath, 'utf8');
-        const shopworkerData = JSON.parse(shopworkerFileContent);
-        if (shopworkerData && shopworkerData.lastDeployedCommit) {
-          lastDeployedCommit = shopworkerData.lastDeployedCommit;
-        }
-      } catch (error) {
-        console.warn('Warning: Could not read or parse .shopworker file. Will proceed as if no previous deployment was made.', error.message);
-      }
-    }
-
-    let currentCommit = null;
-    try {
-      const { execSync } = await import('child_process');
-      currentCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-    } catch (error) {
-      console.error('Error getting current Git commit:', error.message);
-      console.error('Cannot proceed without knowing the current commit. Please ensure you are in a Git repository.');
+    // --- Deployment and Git checks ---
+    const deploymentSuccessful = await handleCloudflareDeployment();
+    if (!deploymentSuccessful) {
+      console.error("Halting 'enable' command due to deployment issues.");
       return;
-    }
-
-    if (currentCommit !== lastDeployedCommit) {
-      console.log(`Current commit (${currentCommit}) differs from last deployed commit (${lastDeployedCommit || 'None'}).`);
-      console.log('Deploying to Cloudflare via Wrangler...');
-      try {
-        const { execSync } = await import('child_process');
-        // We should ensure wrangler is available and configured.
-        // For now, assuming it is and will run.
-        // Add any specific wrangler arguments if needed, e.g., environment.
-        execSync('npx wrangler deploy', { stdio: 'inherit', encoding: 'utf8' });
-        console.log('Successfully deployed to Cloudflare.');
-
-        // Update .shopworker with the new commit
-        const newShopworkerData = { lastDeployedCommit: currentCommit };
-        fs.writeFileSync(shopworkerFilePath, JSON.stringify(newShopworkerData, null, 2), 'utf8');
-        console.log(`Updated .shopworker with new deployed commit: ${currentCommit}`);
-      } catch (error) {
-        console.error('Error deploying to Cloudflare with Wrangler:', error.message);
-        // Depending on the desired behavior, we might want to stop here
-        // or allow webhook registration to proceed anyway.
-        // For now, let's stop if deployment fails.
-        console.error('Aborting job enabling due to deployment failure.');
-        return;
-      }
-    } else {
-      console.log(`Current commit (${currentCommit}) matches last deployed commit. No new deployment needed.`);
     }
     // --- End of Deployment checks ---
 
@@ -684,5 +687,20 @@ program
     // Run test directly with all options
     await runJobTest(jobName, options.query);
   });
+
+// --- New Deploy Command ---
+program
+  .command('deploy')
+  .description('Deploy the current state to Cloudflare and record the commit hash.')
+  .action(async () => {
+    console.log('Starting Cloudflare deployment process...');
+    const success = await handleCloudflareDeployment();
+    if (success) {
+      console.log('Deployment process completed successfully.');
+    } else {
+      console.error('Deployment process failed.');
+    }
+  });
+// --- End of New Deploy Command ---
 
 program.parse(process.argv);
