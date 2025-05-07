@@ -52,6 +52,7 @@ function generateRandomProductType() {
  */
 export async function process({ shopify }) {
   // Generate a random product name
+  // test
   const productName = generateRandomProductName();
   const productType = generateRandomProductType();
 
