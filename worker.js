@@ -129,6 +129,8 @@ async function handleRequest(request, env, ctx) {
       env: env
     });
 
+    console.log('Webhook processed successfully');
+
     return new Response(JSON.stringify({
       success: true,
       message: 'Webhook processed successfully'
