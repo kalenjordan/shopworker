@@ -12,24 +12,6 @@ function formatDate(isoDate) {
 }
 
 /**
- * Format order items into a readable string
- * @param {Array} lineItems - Order line items
- * @returns {string} Formatted item list
- */
-function formatLineItems(lineItems) {
-  if (!lineItems || lineItems.length === 0) {
-    return 'No items';
-  }
-
-  return lineItems.map(item => {
-    const title = item.title || 'Unknown Product';
-    const variantTitle = item.variantTitle ? ` - ${item.variantTitle}` : '';
-    const quantity = item.quantity || 0;
-    return `${quantity}x ${title}${variantTitle}`;
-  }).join(', ');
-}
-
-/**
  * Format order data for the Google Sheet
  * @param {Object} order - Shopify order data
  * @param {Object} shopify - Shopify client with utility methods
@@ -84,9 +66,9 @@ function formatOrderForSheet(order, shopify) {
   };
 
   // Log order data with headers
-  console.log("Order data:");
+  console.log("\nOrder data:");
   Object.entries(orderData).forEach(([key, value]) => {
-    console.log(`${key}: ${value}`);
+    console.log(`  ${key}: ${value}`);
   });
 
   // Extract line items from the GraphQL response
@@ -114,29 +96,9 @@ function formatOrderForSheet(order, shopify) {
     });
   });
 
-  // If no line items, create at least one row with the order data
+  // Throw error if no line items
   if (lineItems.length === 0) {
-    return [[
-      orderData.date,                // Date
-      orderData.orderNumber,         // Order Number
-      '',                            // SKU
-      '',                            // Quantity
-      orderData.tags,                // Tags
-      orderData.firstName,           // First Name
-      orderData.lastName,            // Last Name
-      orderData.company,             // Company
-      orderData.shippingAddress,     // Shipping Address
-      orderData.shippingZipCode,     // Shipping ZipCode
-      orderData.shippingCity,        // Shipping City
-      orderData.shippingCountry,     // Shipping Country
-      orderData.phone,               // Phone
-      orderData.totalPrice,          // Total Price
-      orderData.email,               // Email
-      orderData.trackingNumber,      // Tracking number
-      orderData.row,                 // Row
-      orderData.reminderEmail,       // reminder email
-      orderData.id                   // ID
-    ]];
+    throw new Error('No line items found in order');
   }
 
   // Create a row for each line item
@@ -185,6 +147,9 @@ export async function process({ record: orderData, shopify, env }) {
     throw new Error('Missing required env.google_sheets_credentials configuration');
   }
 
+  // Create Google Sheets client once
+  const sheetsClient = await GoogleSheets.createSheetsClient(env.google_sheets_credentials);
+
   // Make sure we have a valid order ID
   if (!orderData.id) {
     throw new Error('No order ID provided');
@@ -199,7 +164,7 @@ export async function process({ record: orderData, shopify, env }) {
 
   // Check if sheet is initialized with headers
   const headerData = await GoogleSheets.getSheetData(
-    env.google_sheets_credentials,
+    sheetsClient,
     spreadsheetId,
     `${sheetName}!A1:Z1`
   );
@@ -216,11 +181,11 @@ export async function process({ record: orderData, shopify, env }) {
     throw new Error('Failed to format order data');
   }
 
-  console.log(`Adding ${orderRows.length} rows to sheet for order ${order.name || order.id}`);
+  console.log(`\nAdding ${orderRows.length} rows to sheet for order ${order.name || order.id}`);
 
   // Append the order data to the sheet
   const appendResult = await GoogleSheets.appendSheetData(
-    env.google_sheets_credentials,
+    sheetsClient,
     spreadsheetId,
     `${sheetName}!A1`,
     orderRows,
@@ -228,5 +193,4 @@ export async function process({ record: orderData, shopify, env }) {
   );
 
   console.log(`Order data added to Google Sheet at range: ${appendResult.updates?.updatedRange || 'unknown'}`);
-  console.log('Process completed successfully');
 }
