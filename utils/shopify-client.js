@@ -144,6 +144,9 @@ export function createShopifyClient({ shopDomain, accessToken, apiVersion = '202
      */
     toGid: (id, type) => {
       if (!id) return null;
+      if (!type) {
+        throw new Error('Type is required for toGid');
+      }
 
       // If already a gid, return as is
       if (typeof id === 'string' && id.startsWith('gid://')) {

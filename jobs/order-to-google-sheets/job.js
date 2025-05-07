@@ -212,7 +212,7 @@ export async function process({ record: orderData, shopify, env }) {
   const sheetsClient = await GoogleSheets.createSheetsClient(env.google_sheets_credentials);
 
   // Convert ID to GID format and fetch full order
-  const orderId = shopify.toGid(orderData.id);
+  const orderId = shopify.toGid(orderData.id, 'Order');
   const { order } = await shopify.graphql(GetOrderById, { id: orderId });
 
   // Verify the sheet has headers
