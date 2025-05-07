@@ -1,18 +1,53 @@
-import { google } from "googleapis";
+import { SignJWT } from 'jose/jwt/sign';
+import { importPKCS8 } from 'jose/key/import';
+
+const GOOGLE_SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 /**
- * Create an authenticated Google Sheets API client
+ * Create an authenticated Google Sheets client credentials object
  * @param {Object} credentials - Google Sheets credentials JSON object
- * @returns {Object} Google Sheets API client
+ * @returns {Object} Object containing getAccessToken method
  */
 export async function createSheetsClient(credentials) {
-  const auth = new google.auth.GoogleAuth({
-    credentials: credentials,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
+  async function getAccessToken() {
+    const now = Math.floor(Date.now() / 1000);
+    const privateKey = await importPKCS8(credentials.private_key, 'RS256');
 
-  const client = await auth.getClient();
-  return google.sheets({ version: "v4", auth: client });
+    const jwt = await new SignJWT({ scope: GOOGLE_SHEETS_SCOPE })
+      .setProtectedHeader({ alg: 'RS256' })
+      .setIssuedAt(now)
+      .setIssuer(credentials.client_email)
+      .setSubject(credentials.client_email)
+      .setAudience(TOKEN_URL)
+      .setExpirationTime('1h')
+      .sign(privateKey);
+
+    const res = await fetch(TOKEN_URL, {
+      method: 'POST',
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: jwt,
+      }),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+
+    const json = await res.json();
+    return json.access_token;
+  }
+
+  // Return client with simplified interface
+  return {
+    _accessToken: null,
+    async getToken() {
+      if (!this._accessToken) {
+        this._accessToken = await getAccessToken();
+      }
+      return this._accessToken;
+    }
+  };
 }
 
 /**
@@ -23,12 +58,15 @@ export async function createSheetsClient(credentials) {
  * @returns {Promise<Array>} The sheet data
  */
 export async function getSheetData(sheetsClient, spreadsheetId, range) {
-  const response = await sheetsClient.spreadsheets.values.get({
-    spreadsheetId,
-    range,
+  const accessToken = await sheetsClient.getToken();
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
 
-  return response.data.values || [];
+  const data = await res.json();
+  return data.values || [];
 }
 
 /**
@@ -41,16 +79,19 @@ export async function getSheetData(sheetsClient, spreadsheetId, range) {
  * @returns {Promise<Object>} The update response
  */
 export async function writeSheetData(sheetsClient, spreadsheetId, range, values, valueInputOption = "RAW") {
-  const response = await sheetsClient.spreadsheets.values.update({
-    spreadsheetId,
-    range,
-    valueInputOption, // 'RAW' or 'USER_ENTERED'
-    resource: {
-      values,
+  const accessToken = await sheetsClient.getToken();
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueInputOption=${valueInputOption}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify({
+      values,
+    }),
   });
 
-  return response.data;
+  return res.json();
 }
 
 /**
@@ -63,17 +104,19 @@ export async function writeSheetData(sheetsClient, spreadsheetId, range, values,
  * @returns {Promise<Object>} The append response
  */
 export async function appendSheetData(sheetsClient, spreadsheetId, range, values, valueInputOption = "RAW") {
-  const response = await sheetsClient.spreadsheets.values.append({
-    spreadsheetId,
-    range,
-    valueInputOption, // 'RAW' or 'USER_ENTERED'
-    insertDataOption: "INSERT_ROWS",
-    resource: {
-      values,
+  const accessToken = await sheetsClient.getToken();
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=${valueInputOption}&insertDataOption=INSERT_ROWS`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify({
+      values,
+    }),
   });
 
-  return response.data;
+  return res.json();
 }
 
 /**
@@ -83,10 +126,13 @@ export async function appendSheetData(sheetsClient, spreadsheetId, range, values
  * @returns {Promise<Array>} List of sheet objects with properties: sheetId, title, index
  */
 export async function getSheets(sheetsClient, spreadsheetId) {
-  const response = await sheetsClient.spreadsheets.get({
-    spreadsheetId,
-    fields: "sheets.properties",
+  const accessToken = await sheetsClient.getToken();
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
 
-  return response.data.sheets.map((sheet) => sheet.properties);
+  const data = await res.json();
+  return data.sheets.map((sheet) => sheet.properties);
 }
