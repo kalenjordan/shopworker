@@ -165,7 +165,7 @@ export function createShopifyClient({ shopDomain, accessToken, apiVersion = '202
       }
 
       const parts = gid.split('/');
-      return parts.length >= 4 ? parts[3] : null;
+      return parts.length >= 4 ? parts[4] : null;
     },
 
     /**

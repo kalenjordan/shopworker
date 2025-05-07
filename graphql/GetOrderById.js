@@ -29,6 +29,18 @@ query GetOrderById($id: ID!) {
       firstName
       lastName
     }
+    shippingAddress {
+      firstName
+      lastName
+      company
+      address1
+      address2
+      city
+      zip
+      country
+      phone
+    }
+    tags
     lineItems(first: 10) {
       edges {
         node {
@@ -38,9 +50,16 @@ query GetOrderById($id: ID!) {
           variant {
             id
             title
+            sku
             price
           }
         }
+      }
+    }
+    fulfillments(first: 1) {
+      trackingInfo {
+        number
+        url
       }
     }
   }
