@@ -4,21 +4,29 @@ import OrderCreate from "../../graphql/OrderCreate.js";
 
 /**
  * Creates an order with a random customer and product
- * @param {Object} trigger - The trigger data (not used in this job)
- * @param {Object} shopify - Shopify API client
+ * @param {Object} params - Parameters for the job
+ * @param {Object} params.data - Trigger data (not used in this job)
+ * @param {Object} params.shopify - Shopify API client
+ * @param {Object} [params.env] - Environment variables (not used by this job)
  */
-export async function process(trigger, shopify) {
+export async function process({ data, shopify, env }) {
   // Log the start of the job
   console.log("Starting order creation job");
 
+  // Use destructured 'shopify' client
   const customersResponse = await shopify.graphql(GetRecentCustomers, {
       first: 10,
       query: "status:active"
   });
 
+  // Basic error/null check
+  if (!customersResponse?.customers?.edges) {
+    console.error("Unexpected response fetching customers:", customersResponse);
+    throw new Error("Could not fetch customers or response format is incorrect.");
+  }
   const customers = customersResponse.customers.edges;
 
-  if (!customers || customers.length === 0) {
+  if (customers.length === 0) {
     throw new Error("No active customers found");
   }
 
@@ -31,20 +39,25 @@ export async function process(trigger, shopify) {
       query: "status:active"
   });
 
+  // Basic error/null check
+  if (!productsResponse?.products?.edges) {
+    console.error("Unexpected response fetching products:", productsResponse);
+    throw new Error("Could not fetch products or response format is incorrect.");
+  }
   const products = productsResponse.products.edges;
 
-  if (!products || products.length === 0 || !products[0].node.variants.edges.length) {
-    throw new Error("No active products with variants found");
+  if (products.length === 0) {
+    throw new Error("No active products found");
   }
 
-  // Find a product with a price greater than zero
-  const productWithPrice = products.find(product => {
-    const variant = product.node.variants.edges[0].node;
-    return variant && parseFloat(variant.price) > 0;
-  });
+  // Find a product with a price greater than zero and available variant
+  const productWithPrice = products.find(edge =>
+    edge?.node?.variants?.edges?.[0]?.node?.price &&
+    parseFloat(edge.node.variants.edges[0].node.price) > 0
+  );
 
   if (!productWithPrice) {
-    throw new Error("No products found with price greater than zero");
+    throw new Error("No active products found with a valid variant price greater than zero");
   }
 
   // Use the first product and its first variant
@@ -60,7 +73,7 @@ export async function process(trigger, shopify) {
   const shippingAddress = customer.defaultAddress;
 
   if (!shippingAddress) {
-    throw new Error(`Customer ${customer.id} has no valid shipping address`);
+    throw new Error(`Customer ${customer.id} has no valid default shipping address`);
   }
 
   // Prepare address in the format expected by the API
@@ -93,6 +106,15 @@ export async function process(trigger, shopify) {
       ]
     }
   });
+
+  // Basic error/null check for order creation
+  if (!orderResponse?.orderCreate?.order) {
+    console.error("Unexpected response creating order:", orderResponse);
+    // Include user errors if available
+    const userErrors = orderResponse?.orderCreate?.userErrors;
+    const errorMsg = userErrors && userErrors.length > 0 ? userErrors.map(e => e.message).join(', ') : "Unknown error or unexpected response format.";
+    throw new Error(`Could not create order: ${errorMsg}`);
+  }
 
   const order = orderResponse.orderCreate.order;
 

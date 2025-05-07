@@ -2,28 +2,37 @@ import OrderInvoiceSend from "../../graphql/OrderInvoiceSend.js";
 
 /**
  * Process an order to fetch data from an external API and set it as the custom message on the order invoice
- * @param {Object} order - The order object from Shopify GraphQL API
- * @param {Object} shopify - Shopify API client
+ * @param {Object} params - Parameters for the job
+ * @param {Object} params.order - The order object from Shopify GraphQL API
+ * @param {Object} params.shopify - Shopify API client
+ * @param {Object} [params.env] - Environment variables (not used by this job)
  */
-export async function process(order, shopify) {
+export async function process({ order, shopify, env }) {
   // Fetch data from the external API
-  const response = await fetch("https://jsonplaceholder.typicode.com/posts/1");
+  console.log("Fetching data from external API...");
+  const externalApiResponse = await fetch("https://jsonplaceholder.typicode.com/posts/1");
 
-  if (!response.ok) {
-    throw new Error(`External API responded with status: ${response.status}`);
+  if (!externalApiResponse.ok) {
+    throw new Error(`External API responded with status: ${externalApiResponse.status}`);
   }
 
-  const data = await response.json();
+  const externalData = await externalApiResponse.json();
 
   // Use the body from the API response as the custom message
-  const customMessage = data.body;
+  const customMessage = externalData.body;
+
+  if (!customMessage) {
+    console.warn("External API did not return a 'body' field.", externalData);
+    throw new Error("Could not extract custom message from external API response.");
+  }
 
   console.log(`Custom message from API: ${customMessage}`);
 
   // Extract orderId and ensure it's in the correct GID format
+  // Use destructured 'order' and 'shopify'
   const orderId = shopify.toGid(order.id, 'Order');
 
-  console.log(`Using order ID: ${orderId}`);
+  console.log(`Using order ID: ${orderId} to send invoice`);
 
   // Use the imported GraphQL mutation with proper variables structure
   const variables = {

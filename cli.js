@@ -109,17 +109,21 @@ async function runJobTest(jobName, queryParam) {
   // Load trigger config
   const triggerConfig = loadTriggerConfig(jobConfig.trigger);
 
-  // Initialize Shopify client (needed in both manual and query-based tests)
+  // Initialize Shopify client
   const shopify = initShopify();
 
   // Dynamically import the job module
   const jobModule = await import(`./jobs/${jobName}/job.js`);
 
-  // Check if this is a manual trigger that should skip the query
+  // Check if this is a manual trigger
   if (triggerConfig.test && triggerConfig.test.skipQuery) {
     console.log(`Manual trigger detected for job: ${jobName}`);
-    // Pass an empty object as data and process.env as the environment for manual triggers
-    await jobModule.process({}, shopify, process.env);
+    // Pass arguments as an object for manual triggers
+    await jobModule.process({
+      order: {}, // Empty object for manual trigger data
+      shopify: shopify,
+      env: process.env
+    });
     console.log('Processing complete!');
     return;
   }
@@ -130,7 +134,7 @@ async function runJobTest(jobName, queryParam) {
     return;
   }
 
-  // Dynamically import the GraphQL query specified in the trigger
+  // Dynamically import the GraphQL query
   const queryModule = await import(`./graphql/${triggerConfig.test.query}.js`);
   const query = queryModule.default;
 
@@ -164,8 +168,12 @@ async function runJobTest(jobName, queryParam) {
 
   console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${itemName}...`);
 
-  // Pass data to job handler, and process.env as the environment
-  await jobModule.process(item, shopify, process.env);
+  // Pass arguments as an object to job handler
+  await jobModule.process({
+    order: item,
+    shopify: shopify,
+    env: process.env
+  });
 
   console.log('Processing complete!');
 }

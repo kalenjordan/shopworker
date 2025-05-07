@@ -35,3 +35,16 @@ When implementing jobs, follow these guidelines:
 - Do not use try/catch blocks in jobs - errors should bubble up to the main handler
 - The CLI framework will handle logging and reporting of errors
 - Only catch errors if you need to perform specific error handling or recovery
+
+# Job Structure and Best Practices
+
+This document outlines best practices for creating background jobs within this project.
+
+## Method Length
+
+When creating or refactoring jobs, aim to keep individual method lengths under approximately 30 lines. If a method grows significantly larger than this, it should be refactored into smaller, more focused helper functions.
+
+This practice improves:
+- **Readability:** Shorter methods are easier to understand at a glance.
+- **Maintainability:** Smaller, well-defined functions are simpler to modify and debug.
+- **Testability:** It is easier to write unit tests for smaller, more granular pieces of logic.

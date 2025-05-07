@@ -74,12 +74,8 @@ async function callMollieToCreatePaymentLink(payload, apiKey) {
   const mollieData = JSON.parse(responseText);
   console.log("Mollie API Response Body:", JSON.stringify(mollieData, null, 2));
 
-  // Use the user's specified path for the payment link
   const paymentLink = mollieData?._links?.paymentLink?.href;
   if (!paymentLink) {
-    // Fallback or more specific error if the user's path also fails.
-    // For now, let's assume the user's path is what they expect if primary fails.
-    // Could also check mollieData?._links?.checkout?.href here as an alternative.
     console.warn("Failed to find paymentLink at mollieData?._links?.paymentLink?.href. Full Mollie response:", mollieData);
     throw new Error(`Failed to get payment link URL from Mollie API response. Expected at '_links.paymentLink.href'.`);
   }
@@ -95,11 +91,12 @@ async function sendShopifyInvoiceWithLink(orderId, paymentLink, shopify) {
 
 /**
  * Process an order to create a Mollie payment link and set it as the custom message on the order invoice
- * @param {Object} order - The order object from Shopify GraphQL API (initial, might be minimal)
- * @param {Object} shopify - Shopify API client
- * @param {Object} env - Environment variables specific to the job's execution context
+ * @param {Object} params - Parameters for the job
+ * @param {Object} params.order - The order object from Shopify GraphQL API (initial, might be minimal)
+ * @param {Object} params.shopify - Shopify API client
+ * @param {Object} params.env - Environment variables specific to the job's execution context
  */
-export async function process(order, shopify, env) {
+export async function process({ order, shopify, env }) {
   validateEnvironment(env);
 
   const orderDetails = await getAugmentedOrderDetails(order, shopify);

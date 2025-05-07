@@ -44,10 +44,13 @@ function generateRandomProductType() {
 
 /**
  * Process function called by both the CLI and worker
- * @param {Object} data - Trigger data (not used for manual jobs)
- * @param {Object} shopify - Shopify client
+ * Creates a new product with random attributes.
+ * @param {Object} params - Parameters for the job
+ * @param {Object} params.data - Trigger data (not typically used for this manual job)
+ * @param {Object} params.shopify - Shopify API client
+ * @param {Object} [params.env] - Environment variables (not used by this job)
  */
-export async function process(data, shopify) {
+export async function process({ shopify }) {
   // Generate a random product name
   const productName = generateRandomProductName();
   const productType = generateRandomProductType();

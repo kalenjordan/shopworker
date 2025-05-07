@@ -98,8 +98,12 @@ async function handleRequest(request, env, ctx) {
       apiVersion: '2025-04'
     });
 
-    // Process the webhook data with the job handler, passing the Cloudflare env object
-    await jobModule.process(bodyData, shopify, env);
+    // Process the webhook data with the job handler, passing arguments as an object
+    await jobModule.process({
+      order: bodyData, // The webhook payload is passed as 'order'
+      shopify: shopify,
+      env: env
+    });
 
     return new Response('Webhook processed successfully', { status: 200 });
   } catch (error) {
