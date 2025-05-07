@@ -32,38 +32,34 @@ function getShopConfig(cliDirname, shopName) {
 }
 
 /**
- * Run a test for a specific job
+ * Find a sample record for testing a job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} jobName - The job name
  * @param {string} queryParam - Optional query parameter for filtering results
+ * @returns {Promise<{record: Object, recordName: string, shopify: Object, triggerConfig: Object, jobConfig: Object}>}
+ * The sample record and related configuration
  */
-export async function runJobTest(cliDirname, jobName, queryParam) {
+export async function findSampleRecordForJob(cliDirname, jobName, queryParam) {
   const jobConfig = loadJobConfig(jobName);
   if (!jobConfig.trigger) {
-    console.error(`Job ${jobName} doesn't have a trigger defined`);
-    return;
+    throw new Error(`Job ${jobName} doesn't have a trigger defined`);
   }
 
   const triggerConfig = loadTriggerConfig(jobConfig.trigger);
   const shopify = initShopify(cliDirname, jobName);
 
-  // Get shop configuration from .shopworker.json
-  const shopConfig = getShopConfig(cliDirname, jobConfig.shop);
-
-  // Use path.resolve with pathToFileURL to ensure proper module resolution
-  const jobModulePath = pathToFileURL(path.resolve(cliDirname, `jobs/${jobName}/job.js`)).href;
-  const jobModule = await import(jobModulePath);
-
   if (triggerConfig.test && triggerConfig.test.skipQuery) {
-    console.log(`Manual trigger detected for job: ${jobName}. Running without query.`);
-    await jobModule.process({ record: {}, shopify: shopify, env: shopConfig });
-    console.log('Processing complete!');
-    return;
+    return {
+      record: {},
+      recordName: 'manual-trigger',
+      shopify,
+      triggerConfig,
+      jobConfig
+    };
   }
 
   if (!triggerConfig.test || !triggerConfig.test.query) {
-    console.error(`Trigger ${jobConfig.trigger} doesn't have a test query defined`);
-    return;
+    throw new Error(`Trigger ${jobConfig.trigger} doesn't have a test query defined`);
   }
 
   const queryModulePath = pathToFileURL(path.resolve(cliDirname, `graphql/${triggerConfig.test.query}.js`)).href;
@@ -83,13 +79,48 @@ export async function runJobTest(cliDirname, jobName, queryParam) {
   );
 
   if (!topLevelKey || !response[topLevelKey].edges || response[topLevelKey].edges.length === 0) {
-    console.error(`No ${topLevelKey || 'data'} found in response for job ${jobName}. Query: ${triggerConfig.test.query}`);
-    return;
+    throw new Error(`No ${topLevelKey || 'data'} found in response for job ${jobName}. Query: ${triggerConfig.test.query}`);
   }
 
   const record = response[topLevelKey].edges[0].node;
   const recordName = record.name || record.title || record.id;
-  console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${recordName} for job ${jobName}...`);
-  await jobModule.process({ record, shopify: shopify, env: shopConfig });
-  console.log('Processing complete!');
+
+  return {
+    record,
+    recordName,
+    shopify,
+    topLevelKey,
+    triggerConfig,
+    jobConfig
+  };
+}
+
+/**
+ * Run a test for a specific job
+ * @param {string} cliDirname - The directory where cli.js is located (project root)
+ * @param {string} jobName - The job name
+ * @param {string} queryParam - Optional query parameter for filtering results
+ */
+export async function runJobTest(cliDirname, jobName, queryParam) {
+  try {
+    const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobName, queryParam);
+
+    // Get shop configuration from .shopworker.json
+    const shopConfig = getShopConfig(cliDirname, jobConfig.shop);
+
+    // Use path.resolve with pathToFileURL to ensure proper module resolution
+    const jobModulePath = pathToFileURL(path.resolve(cliDirname, `jobs/${jobName}/job.js`)).href;
+    const jobModule = await import(jobModulePath);
+
+    if (topLevelKey) {
+      console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${recordName} for job ${jobName}...`);
+    } else {
+      console.log(`Processing manual trigger for job ${jobName}...`);
+    }
+
+    await jobModule.process({ record, shopify: shopify, env: shopConfig });
+    console.log('Processing complete!');
+  } catch (error) {
+    console.error(`Error running job test: ${error.message}`);
+  }
 }
