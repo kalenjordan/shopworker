@@ -213,13 +213,29 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
       body: JSON.stringify(data)
     });
 
+    // First check the response status
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Error from worker: ${response.status} ${response.statusText}\n${errorText}`);
     }
 
-    const result = await response.json();
+    // Always try to parse as JSON
+    let result;
+    try {
+      const responseText = await response.text();
+      result = JSON.parse(responseText);
+    } catch (jsonError) {
+      throw new Error(`Worker returned invalid JSON. Response: ${await response.text()}`);
+    }
+
+    // Output the response
     console.log('Worker response:', JSON.stringify(result, null, 2));
+
+    // Highlight the message if available
+    if (result.message) {
+      console.log('\n✅ ' + result.message);
+    }
+
     console.log('Remote test completed successfully!');
   } catch (error) {
     console.error(`Error running remote test: ${error.message}`);

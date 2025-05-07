@@ -149,12 +149,28 @@ async function handleRequest(request, env, ctx) {
       env: env
     });
 
-    return new Response('Webhook processed successfully', { status: 200 });
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'Webhook processed successfully'
+    }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
   } catch (error) {
     // Log the error
     console.error('Error processing webhook:', error.message, error.stack);
 
-    // Return a generic error response
-    return new Response('Error processing webhook', { status: 500 });
+    // Return a JSON error response
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
   }
 }
