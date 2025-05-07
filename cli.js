@@ -176,20 +176,25 @@ program
   .option('-q, --query <queryString>', 'Query string to filter results when automatically finding a record')
   .option('-w, --worker <workerUrl>', 'Cloudflare worker URL (overrides .shopworker.json)')
   .action(async (jobNameArg, options) => {
-    const jobName = await ensureAndResolveJobName(__dirname, jobNameArg, options.dir, true);
-    if (!jobName) return;
+    try {
+      const jobName = await ensureAndResolveJobName(__dirname, jobNameArg, options.dir, true);
+      if (!jobName) return;
 
-    const workerUrl = getWorkerUrl(options, __dirname);
-    if (!workerUrl) {
-      console.error("Worker URL is required for remote testing. Please provide with -w or set cloudflare_worker_url in .shopworker.json.");
-      return;
+      const workerUrl = getWorkerUrl(options, __dirname);
+      if (!workerUrl) {
+        console.error("Worker URL is required for remote testing. Please provide with -w or set cloudflare_worker_url in .shopworker.json.");
+        return;
+      }
+
+      // Pass the workerUrl in the options
+      options.worker = workerUrl;
+
+      // Execute the remote test
+      await runJobRemoteTest(__dirname, jobName, options);
+    } catch (error) {
+      console.error(`Error running remote test: ${error.message}`);
+      process.exit(1);
     }
-
-    // Pass the workerUrl in the options
-    options.worker = workerUrl;
-
-    // Execute the remote test
-    await runJobRemoteTest(__dirname, jobName, options);
   });
 
 program.parse(process.argv);
