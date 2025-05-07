@@ -100,9 +100,11 @@ async function handleRequest(request, env, ctx) {
 
     // Process the webhook data with the job handler, passing arguments as an object
     await jobModule.process({
-      order: bodyData, // The webhook payload is passed as 'order'
+      record: bodyData, // The webhook payload is passed as 'record' (previously 'order')
       shopify: shopify,
       env: env
+      // TODO: Update to use shop configuration from .shopworker.json similar to job-executor.js
+      // This would require bundling shop configs during build or adding KV storage
     });
 
     return new Response('Webhook processed successfully', { status: 200 });

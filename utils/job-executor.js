@@ -1,7 +1,35 @@
 import path from 'path';
+import fs from 'fs';
 import { pathToFileURL } from 'url';
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { initShopify } from './shopify-api-helpers.js';
+
+/**
+ * Get shop configuration from .shopworker.json
+ * @param {string} cliDirname - The directory where cli.js is located
+ * @param {string} shopName - The shop name from job config
+ * @returns {Object} The shop configuration
+ */
+function getShopConfig(cliDirname, shopName) {
+  const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
+  if (!fs.existsSync(shopworkerFilePath)) {
+    throw new Error('.shopworker.json file not found. Please create one.');
+  }
+
+  const shopworkerFileContent = fs.readFileSync(shopworkerFilePath, 'utf8');
+  const shopworkerData = JSON.parse(shopworkerFileContent);
+
+  if (!shopworkerData.shops || !Array.isArray(shopworkerData.shops)) {
+    throw new Error('Invalid .shopworker.json format: "shops" array is missing or not an array.');
+  }
+
+  const shopConfig = shopworkerData.shops.find(s => s.name === shopName);
+  if (!shopConfig) {
+    throw new Error(`Shop configuration for '${shopName}' not found in .shopworker.json.`);
+  }
+
+  return shopConfig;
+}
 
 /**
  * Run a test for a specific job
@@ -15,8 +43,12 @@ export async function runJobTest(cliDirname, jobName, queryParam) {
     console.error(`Job ${jobName} doesn't have a trigger defined`);
     return;
   }
+
   const triggerConfig = loadTriggerConfig(jobConfig.trigger);
   const shopify = initShopify(cliDirname, jobName);
+
+  // Get shop configuration from .shopworker.json
+  const shopConfig = getShopConfig(cliDirname, jobConfig.shop);
 
   // Use path.resolve with pathToFileURL to ensure proper module resolution
   const jobModulePath = pathToFileURL(path.resolve(cliDirname, `jobs/${jobName}/job.js`)).href;
@@ -24,7 +56,7 @@ export async function runJobTest(cliDirname, jobName, queryParam) {
 
   if (triggerConfig.test && triggerConfig.test.skipQuery) {
     console.log(`Manual trigger detected for job: ${jobName}. Running without query.`);
-    await jobModule.process({ order: {}, shopify: shopify, env: process.env });
+    await jobModule.process({ record: {}, shopify: shopify, env: shopConfig });
     console.log('Processing complete!');
     return;
   }
@@ -58,6 +90,6 @@ export async function runJobTest(cliDirname, jobName, queryParam) {
   const record = response[topLevelKey].edges[0].node;
   const recordName = record.name || record.title || record.id;
   console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${recordName} for job ${jobName}...`);
-  await jobModule.process({ record, shopify: shopify, env: process.env });
+  await jobModule.process({ record, shopify: shopify, env: shopConfig });
   console.log('Processing complete!');
 }
