@@ -1,0 +1,7 @@
+{
+  "name": "order-to-google-sheets",
+  "shop": "city",
+  "description": "Pulls order data from Shopify and pushes it to a Google Sheet",
+  "version": "1.0.0",
+  "trigger": "order-created"
+}

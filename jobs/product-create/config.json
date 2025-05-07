@@ -1,5 +1,6 @@
 {
   "name": "product-create",
+  "shop": "kalen-test-store",
   "description": "Creates a new product with a random name",
   "version": "1.0.0",
   "trigger": "manual-trigger",

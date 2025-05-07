@@ -1,0 +1,11 @@
+{
+  "last_deployed_commit": "f089461dad4ba5c052d5ea9ecfc65c744ecb2387",
+  "cloudflare_worker_url": "https://shopworker-kalen-test-store.kalenjordan.workers.dev",
+  "shops": [
+    {
+      "name": "kalen-test-store",
+      "shopify_domain": "kalen-test-store.myshopify.com",
+      "shopify_token": "shpat_abc123xxxxxxxxxxxxxxxxxxx"
+    }
+  ]
+}
