@@ -15,8 +15,6 @@ export async function createSheetsClient(credentials) {
     throw new Error('Google Sheets credentials must be an object, not a string');
   }
 
-  console.log('Debug: Credentials object keys:', Object.keys(credentials));
-
   async function getAccessToken() {
     try {
       const now = Math.floor(Date.now() / 1000);
