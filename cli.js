@@ -196,7 +196,7 @@ async function handleCloudflareDeployment() {
     // For now, allowing it to proceed with a warning.
   }
 
-  const shopworkerFilePath = path.join(__dirname, '.shopworker');
+  const shopworkerFilePath = path.join(__dirname, '.shopworker.json');
   let lastDeployedCommit = null;
 
   if (fs.existsSync(shopworkerFilePath)) {
