@@ -1,0 +1,7 @@
+{
+  "name": "product-to-google-sheets",
+  "shop": "kalen-test-store",
+  "description": "Sends product data to Google Sheets when a product is updated",
+  "version": "1.0.0",
+  "trigger": "product-updated"
+}
