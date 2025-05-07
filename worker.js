@@ -87,15 +87,10 @@ async function handleRequest(request, env, ctx) {
 
     // Parse the configuration from secrets
     let shopworkerConfig = {};
-    try {
-      if (env.SHOPWORKER_CONFIG) {
-        shopworkerConfig = JSON.parse(env.SHOPWORKER_CONFIG);
-      } else {
-        console.warn('SHOPWORKER_CONFIG secret not found. Falling back to legacy configuration.');
-      }
-    } catch (error) {
-      console.error('Error parsing SHOPWORKER_CONFIG:', error.message);
+    if (!env.SHOPWORKER_CONFIG) {
+      throw new Error('SHOPWORKER_CONFIG secret not found. Please run `shopworker put-secrets` to configure the worker.');
     }
+    shopworkerConfig = JSON.parse(env.SHOPWORKER_CONFIG);
 
     // Find the shop configuration for this domain
     let shopConfig = null;
