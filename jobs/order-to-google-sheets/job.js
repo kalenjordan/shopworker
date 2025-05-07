@@ -193,6 +193,8 @@ async function verifySheetHeaders(sheetsClient, spreadsheetId, sheetName) {
  * @param {Object} options.env - Environment variables
  */
 export async function process({ record: orderData, shopify, env }) {
+  console.log("Webhook payload: ", orderData);
+
   // Validate required environment variables
   if (!env.google_sheet_id) {
     throw new Error('Missing required env.google_sheet_id configuration');

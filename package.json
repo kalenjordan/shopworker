@@ -19,6 +19,7 @@
     "put-secrets": "node cli.js put-secrets"
   },
   "dependencies": {
+    "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "googleapis": "^131.0.0",
     "jose": "^5.10.0"
