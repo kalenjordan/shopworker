@@ -3,24 +3,42 @@ query GetOrderById($id: ID!) {
   order(id: $id) {
     id
     name
-    tags
+    email
+    phone
+    createdAt
+    displayFinancialStatus
+    displayFulfillmentStatus
+    totalPrice # This is a Money scalar, representing the original total
+    subtotalPrice
+    totalTax
+    totalDiscounts
+    currencyCode # The currency code for scalar money fields like totalPrice
+    currentTotalPriceSet {
+      presentmentMoney {
+        amount
+        currencyCode
+      }
+      shopMoney {
+        amount
+        currencyCode
+      }
+    }
     customer {
       id
       email
-      tags
+      firstName
+      lastName
     }
-    lineItems(first: 50) {
+    lineItems(first: 10) {
       edges {
         node {
           id
-          sku
-          name
+          title
+          quantity
           variant {
             id
-            sku
-            product {
-              id
-            }
+            title
+            price
           }
         }
       }

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import OrderInvoiceSend from "../../graphql/OrderInvoiceSend.js";
-import GetOrderWithPrice from "../../graphql/GetOrderWithPrice.js";
+import GetOrderById from "../../graphql/GetOrderById.js";
 
 function validateEnvironment(env) {
   if (!env.MOLLIE_API_KEY) {
@@ -14,7 +14,7 @@ function validateEnvironment(env) {
 async function getAugmentedOrderDetails(originalOrder, shopify) {
   const orderId = shopify.toGid(originalOrder.id, 'Order');
   console.log(`Fetching detailed order information for ID: ${orderId}`);
-  const orderData = await shopify.graphql(GetOrderWithPrice, { id: orderId });
+  const orderData = await shopify.graphql(GetOrderById, { id: orderId });
   const orderDetails = orderData.order;
   if (!orderDetails) {
     throw new Error(`Could not fetch order details for ID: ${orderId}`);

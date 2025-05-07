@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: false
 ---
 # GraphQL Structure
@@ -35,6 +35,11 @@ import GetRecentOrders from '../../graphql/GetRecentOrders.js';
 const response = await shopify.graphql(GetRecentOrders, variables);
 ```
 
-## Trigger Integration
+### Note on Return Value
+The `shopify.graphql()` client function is designed to return the `data` portion of the GraphQL response directly. The variable assigned its result (e.g., `response` in the example above) will hold the queried data (like `{ orders: { ... } }`).
 
-Queries for testing are specified in trigger configurations which reference the GraphQL file to use (without extension).
+**Incorrect usage to avoid:**
+```javascript
+// DO NOT do this, as 'shopify.graphql()' already returns the data object:
+// const { data: someVar } = await shopify.graphql(query, variables);
+```
