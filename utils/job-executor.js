@@ -55,9 +55,9 @@ export async function runJobTest(cliDirname, jobName, queryParam) {
     return;
   }
 
-  const item = response[topLevelKey].edges[0].node;
-  const itemName = item.name || item.title || item.id;
-  console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${itemName} for job ${jobName}...`);
-  await jobModule.process({ order: item, shopify: shopify, env: process.env });
+  const record = response[topLevelKey].edges[0].node;
+  const recordName = record.name || record.title || record.id;
+  console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${recordName} for job ${jobName}...`);
+  await jobModule.process({ record, shopify: shopify, env: process.env });
   console.log('Processing complete!');
 }

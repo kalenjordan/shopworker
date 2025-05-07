@@ -7,7 +7,7 @@ import OrderInvoiceSend from "../../graphql/OrderInvoiceSend.js";
  * @param {Object} params.shopify - Shopify API client
  * @param {Object} [params.env] - Environment variables (not used by this job)
  */
-export async function process({ order, shopify, env }) {
+export async function process({ record: order, shopify }) {
   // Fetch data from the external API
   console.log("Fetching data from external API...");
   const externalApiResponse = await fetch("https://jsonplaceholder.typicode.com/posts/1");

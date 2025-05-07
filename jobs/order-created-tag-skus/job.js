@@ -7,9 +7,10 @@ import OrderUpdate from "../../graphql/OrderUpdate.js";
  * @param {Object} params.shopify - Shopify API client
  * @param {Object} [params.env] - Environment variables (not used by this job)
  */
-export async function process({ order, shopify, env }) {
+export async function process({ record: order, shopify }) {
   // Extract SKUs from line items
   const skus = [];
+
   if (order.lineItems && order.lineItems.edges) {
     for (const edge of order.lineItems.edges) {
       const item = edge.node;
