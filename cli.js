@@ -11,7 +11,7 @@ import {
   ensureAndResolveJobName,
   getWorkerUrl
 } from './utils/common-helpers.js';
-import { runJobTest, findSampleRecordForJob } from './utils/job-executor.js';
+import { runJobTest, findSampleRecordForJob, runJobRemoteTest } from './utils/job-executor.js';
 import { handleCloudflareDeployment } from './utils/deployment-manager.js';
 import {
   handleAllJobsStatus,
@@ -19,7 +19,6 @@ import {
   enableJobWebhook,
   disableJobWebhook
 } from './utils/webhook-handlers.js';
-import { loadJobConfig, loadTriggerConfig } from './utils/job-loader.js';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -186,85 +185,11 @@ program
       return;
     }
 
-    // Load job and trigger configs to get webhook topic and shop domain
-    const jobConfig = loadJobConfig(jobName);
-    if (!jobConfig) {
-      console.error(`Could not load configuration for job: ${jobName}`);
-      return;
-    }
+    // Pass the workerUrl in the options
+    options.worker = workerUrl;
 
-    const triggerConfig = jobConfig.trigger ? loadTriggerConfig(jobConfig.trigger) : null;
-    const webhookTopic = triggerConfig?.webhook?.topic || 'products/create'; // Default if not found
-
-    // Get shop domain from job config
-    const shopConfigPath = path.join(__dirname, '.shopworker.json');
-    let shopDomain = 'unknown-shop.myshopify.com'; // Default fallback
-
-    try {
-      const shopworkerContent = fs.readFileSync(shopConfigPath, 'utf8');
-      const shopworkerData = JSON.parse(shopworkerContent);
-      const shopConfig = shopworkerData.shops.find(s => s.name === jobConfig.shop);
-      if (shopConfig && shopConfig.shopify_domain) {
-        shopDomain = shopConfig.shopify_domain;
-      }
-    } catch (error) {
-      console.warn(`Warning: Could not read shop domain from config: ${error.message}`);
-    }
-
-    let recordId = options.id;
-    if (!recordId) {
-      try {
-        console.log("No record ID provided. Finding a sample record...");
-        const { record } = await findSampleRecordForJob(__dirname, jobName, options.query);
-        recordId = record.id;
-        if (!recordId) {
-          console.error("Could not extract ID from the sample record.");
-          return;
-        }
-        console.log(`Found sample record with ID: ${recordId}`);
-      } catch (error) {
-        console.error(`Error finding sample record: ${error.message}`);
-        return;
-      }
-    }
-
-    // Format the URL with ?job parameter similar to webhook URL format
-    const webhookUrl = new URL(workerUrl);
-    webhookUrl.searchParams.set('job', jobName);
-    const webhookAddress = webhookUrl.toString();
-
-    console.log(`Sending test request to worker for job: ${jobName}: ${webhookAddress}`);
-    console.log(`Topic: ${webhookTopic}`);
-    console.log(`Shop: ${shopDomain}`);
-
-    try {
-      const response = await fetch(webhookAddress, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Hmac-Sha256': 'dummY',
-          'X-Shopify-Topic': webhookTopic,
-          'X-Shopify-Shop-Domain': shopDomain,
-          'X-Shopify-API-Version': '2024-07'
-        },
-        body: JSON.stringify({
-          id: recordId
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Error from worker: ${response.status} ${response.statusText}`);
-        console.error(errorText);
-        return;
-      }
-
-      const result = await response.json();
-      console.log('Worker response:', JSON.stringify(result, null, 2));
-      console.log('Remote test completed successfully!');
-    } catch (error) {
-      console.error(`Error connecting to worker: ${error.message}`);
-    }
+    // Execute the remote test
+    await runJobRemoteTest(__dirname, jobName, options);
   });
 
 program.parse(process.argv);

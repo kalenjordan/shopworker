@@ -124,3 +124,102 @@ export async function runJobTest(cliDirname, jobName, queryParam) {
     console.error(`Error running job test: ${error.message}`);
   }
 }
+
+/**
+ * Get shop domain from shopworker.json
+ * @param {string} cliDirname - The directory where cli.js is located
+ * @param {string} shopName - The shop name from job config
+ * @returns {string} The shop domain or a default value
+ */
+function getShopDomain(cliDirname, shopName) {
+  try {
+    const shopworkerPath = path.join(cliDirname, '.shopworker.json');
+    const shopworkerContent = fs.readFileSync(shopworkerPath, 'utf8');
+    const shopworkerData = JSON.parse(shopworkerContent);
+    const shopConfig = shopworkerData.shops.find(s => s.name === shopName);
+
+    if (shopConfig && shopConfig.shopify_domain) {
+      return shopConfig.shopify_domain;
+    }
+  } catch (error) {
+    console.warn(`Warning: Could not read shop domain from config: ${error.message}`);
+  }
+
+  return 'unknown-shop.myshopify.com'; // Default fallback
+}
+
+/**
+ * Run a remote test against the worker for a specific job
+ * @param {string} cliDirname - The directory where cli.js is located (project root)
+ * @param {string} jobName - The job name
+ * @param {Object} options - Command options including workerUrl, recordId, and queryParam
+ * @returns {Promise<void>}
+ */
+export async function runJobRemoteTest(cliDirname, jobName, options) {
+  try {
+    // Get worker URL
+    const workerUrl = options.worker;
+    if (!workerUrl) {
+      throw new Error("Worker URL is required for remote testing. Please provide with -w or set cloudflare_worker_url in .shopworker.json.");
+    }
+
+    // Load job and trigger configs
+    const jobConfig = loadJobConfig(jobName);
+    if (!jobConfig) {
+      throw new Error(`Could not load configuration for job: ${jobName}`);
+    }
+
+    const triggerConfig = jobConfig.trigger ? loadTriggerConfig(jobConfig.trigger) : null;
+    const webhookTopic = triggerConfig?.webhook?.topic || 'products/create'; // Default if not found
+
+    // Get shop domain
+    const shopDomain = getShopDomain(cliDirname, jobConfig.shop);
+
+    // Get record ID or find sample record
+    let recordId = options.id;
+    if (!recordId) {
+      console.log("No record ID provided. Finding a sample record...");
+      const { record } = await findSampleRecordForJob(cliDirname, jobName, options.query);
+      recordId = record.id;
+      if (!recordId) {
+        throw new Error("Could not extract ID from the sample record.");
+      }
+      console.log(`Found sample record with ID: ${recordId}`);
+    }
+
+    // Format webhook URL
+    const webhookUrl = new URL(workerUrl);
+    webhookUrl.searchParams.set('job', jobName);
+    const webhookAddress = webhookUrl.toString();
+
+    console.log(`Sending test request to worker for job: ${jobName}: ${webhookAddress}`);
+    console.log(`Topic: ${webhookTopic}`);
+    console.log(`Shop: ${shopDomain}`);
+
+    // Send the request
+    const response = await fetch(webhookAddress, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Hmac-Sha256': 'dummY',
+        'X-Shopify-Topic': webhookTopic,
+        'X-Shopify-Shop-Domain': shopDomain,
+        'X-Shopify-API-Version': '2024-07'
+      },
+      body: JSON.stringify({
+        id: recordId
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Error from worker: ${response.status} ${response.statusText}\n${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('Worker response:', JSON.stringify(result, null, 2));
+    console.log('Remote test completed successfully!');
+  } catch (error) {
+    console.error(`Error running remote test: ${error.message}`);
+  }
+}
