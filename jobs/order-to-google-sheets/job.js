@@ -1,18 +1,11 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { google } from 'googleapis';
-
-// Get the directory name in ESM (needed for proper path resolution)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const cliDirname = path.resolve(__dirname, '../..');
 
 // Config for the Google Sheet
 const SPREADSHEET_CONFIG = {
   // Will be set from env.google_sheet_id in process method
   spreadsheetId: '',
-  // The sheet and range where orders will be added
-  ordersRange: 'Blad1!A1:Z2',
+  // The sheet name where orders will be added
+  sheetName: 'Blad1',
   // Columns for the sheet
   columns: [
     'Date',
@@ -61,32 +54,10 @@ function formatLineItems(lineItems) {
 function formatOrderForSheet(order) {
   if (!order) return [];
 
-  // Extract customer name
-  const customerName = order.customer ?
-    `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim() :
-    'Guest';
-
-  // Extract customer email
-  const email = order.customer?.email || order.email || '';
-
-  // Extract customer phone
-  const phone = order.customer?.phone || order.phone || '';
-
-  // Format items
-  const items = formatLineItems(order.lineItems?.edges?.map(edge => edge.node) || []);
-
-  // Create the row
+  // Create the row with just Date and Order Number as per the updated columns
   return [
-    order.id || order.name || '',                 // Order ID
     formatDate(order.createdAt || new Date()),    // Date
-    customerName,                                 // Customer Name
-    email,                                        // Email
-    phone,                                        // Phone
-    order.totalPriceSet?.shopMoney?.amount || 0,  // Total
-    order.totalPriceSet?.shopMoney?.currencyCode || '', // Currency
-    order.financialStatus || '',                  // Payment Status
-    order.fulfillmentStatus || 'unfulfilled',     // Fulfillment Status
-    items                                         // Items
+    order.id || order.name || '',                 // Order Number
   ];
 }
 
@@ -95,10 +66,7 @@ function formatOrderForSheet(order) {
  * @returns {Promise<Object>} Google Sheets API client
  */
 async function initializeGoogleSheetsClient(env) {
-  const credentialsPath = path.join(cliDirname, 'google-sheets-credentials.json');
   const sheets = google.sheets('v4');
-
-  console.log("credentialsPath: ", credentialsPath);
 
   const auth = new google.auth.GoogleAuth({
     credentials: env.google_sheets_credentials,
@@ -123,7 +91,7 @@ async function initializeSheetIfNeeded(sheetsClient, spreadsheetId) {
     const response = await sheets.spreadsheets.values.get({
       auth: client,
       spreadsheetId,
-      range: SPREADSHEET_CONFIG.ordersRange,
+      range: `${SPREADSHEET_CONFIG.sheetName}!A1:Z1`,
     });
 
     // If no data or no headers, add headers
@@ -133,7 +101,7 @@ async function initializeSheetIfNeeded(sheetsClient, spreadsheetId) {
       await sheets.spreadsheets.values.append({
         auth: client,
         spreadsheetId,
-        range: SPREADSHEET_CONFIG.ordersRange,
+        range: `${SPREADSHEET_CONFIG.sheetName}!A1`,
         valueInputOption: 'USER_ENTERED',
         resource: {
           values: [SPREADSHEET_CONFIG.columns]
@@ -158,11 +126,13 @@ async function initializeSheetIfNeeded(sheetsClient, spreadsheetId) {
 async function appendDataToSheet(sheetsClient, spreadsheetId, values) {
   const { sheets, client } = sheetsClient;
 
+  // The append method automatically adds data to the next empty row
   const result = await sheets.spreadsheets.values.append({
     auth: client,
     spreadsheetId,
-    range: SPREADSHEET_CONFIG.ordersRange,
+    range: `${SPREADSHEET_CONFIG.sheetName}!A1`,
     valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS', // Ensures data is inserted at the bottom
     resource: {
       values: [values]
     }
@@ -180,7 +150,6 @@ async function appendDataToSheet(sheetsClient, spreadsheetId, values) {
  */
 export async function process({ record: order, shopify, env }) {
   console.log(`Processing order: ${order.name || order.id || 'New Order'}`);
-  console.log("env: ", env);
 
   try {
     // Set the spreadsheet ID from environment
@@ -193,6 +162,9 @@ export async function process({ record: order, shopify, env }) {
     // Initialize Google Sheets client
     const sheetsClient = await initializeGoogleSheetsClient(env);
 
+    // Initialize the sheet with headers if needed
+    await initializeSheetIfNeeded(sheetsClient, SPREADSHEET_CONFIG.spreadsheetId);
+
     // Read data from the sheet for testing
     console.log("Reading current data from Google Sheet...");
     const { sheets, client } = sheetsClient;
@@ -200,22 +172,20 @@ export async function process({ record: order, shopify, env }) {
     const response = await sheets.spreadsheets.values.get({
       auth: client,
       spreadsheetId: SPREADSHEET_CONFIG.spreadsheetId,
-      range: SPREADSHEET_CONFIG.ordersRange,
+      range: `${SPREADSHEET_CONFIG.sheetName}!A:Z`, // Read all data in the sheet
     });
 
     console.log("Existing sheet data:");
     console.log(JSON.stringify(response.data.values, null, 2));
 
-    console.log("Exiting without appending data");
-    return;
-
-    // The code below will not execute
     // Format the order data for the sheet
     const orderRow = formatOrderForSheet(order);
     if (!orderRow.length) {
       console.error('Failed to format order data');
       return;
     }
+
+    console.log("Adding order data to sheet:", JSON.stringify(orderRow, null, 2));
 
     // Append the order data to the sheet
     const appendResult = await appendDataToSheet(
