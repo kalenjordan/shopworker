@@ -157,3 +157,21 @@ export async function getSheets(sheetsClient, spreadsheetId) {
   const data = await res.json();
   return data.sheets.map((sheet) => sheet.properties);
 }
+
+/**
+ * Get the title of a spreadsheet
+ * @param {Object} sheetsClient - The Google Sheets client
+ * @param {string} spreadsheetId - The ID of the spreadsheet
+ * @returns {Promise<string>} The title of the spreadsheet
+ */
+export async function getSpreadsheetTitle(sheetsClient, spreadsheetId) {
+  const accessToken = await sheetsClient.getToken();
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const data = await res.json();
+  return data.properties?.title || 'Unknown';
+}
