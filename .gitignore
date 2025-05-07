@@ -3,3 +3,4 @@ node_modules
 wrangler.toml
 .wrangler
 .shopworker.json
+google-sheets-credentials.json
