@@ -527,9 +527,9 @@ program
         });
 
         // Print header
-        console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(80));
-        console.log(`${'JOB'.padEnd(30)} ${'TRIGGER'.padEnd(20)} ${'STATUS'.padEnd(15)} WEBHOOK ID`);
-        console.log('-'.repeat(80));
+        console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(90));
+        console.log(`${ 'JOB'.padEnd(40)} ${ 'TRIGGER'.padEnd(20)} ${ 'STATUS'.padEnd(13)} WEBHOOK ID`);
+        console.log('-'.repeat(90));
 
         // Check each job
         for (const dir of jobDirs) {
@@ -538,7 +538,7 @@ program
             const jobConfig = loadJobConfig(dir);
             if (!jobConfig.trigger) {
               // Jobs without triggers are manual only
-              console.log(`${dir.padEnd(30)} ${'N/A'.padEnd(20)} ${'MANUAL'.padEnd(15)} N/A`);
+              console.log(`${dir.padEnd(40)} ${('N/A').padEnd(20)} ${('✅ MANUAL').padEnd(13)} -`);
               continue;
             }
 
@@ -547,7 +547,7 @@ program
 
             // For jobs without webhook triggers
             if (!triggerConfig.webhook || !triggerConfig.webhook.topic) {
-              console.log(`${dir.padEnd(30)} ${jobConfig.trigger.padEnd(20)} ${'MANUAL'.padEnd(15)} N/A`);
+              console.log(`${dir.padEnd(40)} ${jobConfig.trigger.padEnd(20)} ${('✅ MANUAL').padEnd(13)} -`);
               continue;
             }
 
@@ -573,13 +573,13 @@ program
 
             if (jobWebhook) {
               // This job has a dedicated webhook
-              console.log(`${dir.padEnd(30)} ${topicStr.padEnd(20)} ${'ENABLED'.padEnd(15)} ${jobWebhook.id.split('/').pop()}`);
+              console.log(`${dir.padEnd(40)} ${topicStr.padEnd(20)} ${('✅ ENABLED').padEnd(13)} ${jobWebhook.id.split('/').pop()}`);
             } else if (matchingWebhooks.length > 0) {
               // There are webhooks for this topic but none specifically for this job
-              console.log(`${dir.padEnd(30)} ${topicStr.padEnd(20)} ${'NOT CONFIGURED'.padEnd(15)} None for this job`);
+              console.log(`${dir.padEnd(40)} ${topicStr.padEnd(20)} ${('❌ DISABLED').padEnd(13)} -`);
             } else {
               // No webhooks found for this topic
-              console.log(`${dir.padEnd(30)} ${topicStr.padEnd(20)} ${'DISABLED'.padEnd(15)} None found`);
+              console.log(`${dir.padEnd(40)} ${topicStr.padEnd(20)} ${('❌ DISABLED').padEnd(13)} -`);
             }
 
           } catch (error) {
@@ -587,7 +587,7 @@ program
           }
         }
 
-        console.log('-'.repeat(80));
+        console.log('-'.repeat(90));
         console.log('\nUse "npm run enable -- <jobName>" to enable a job with a webhook.');
         console.log('Use "npm run status -- <jobName>" to see detailed webhook information for a specific job.');
 
