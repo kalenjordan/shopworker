@@ -2,7 +2,11 @@ import GetProductById from "../../graphql/GetProductById.js";
 import * as GoogleSheets from "../../connectors/google-sheets.js";
 import chalk from "chalk";
 
-// Define column mappings
+// -----------------------------------------------------------------------------
+// CONFIGURATION
+// -----------------------------------------------------------------------------
+
+// Define column mappings for the Google Sheet
 const COLUMN_MAPPINGS = [
   { key: "id", label: "ID" },
   { key: "title", label: "Title" },
@@ -19,6 +23,10 @@ const COLUMN_MAPPINGS = [
   { key: "variantTitle", label: "Variant Title" }
 ];
 
+// -----------------------------------------------------------------------------
+// UTILITY FUNCTIONS
+// -----------------------------------------------------------------------------
+
 /**
  * Format date as YYYY-MM-DD
  * @param {string} isoDate - ISO format date
@@ -28,6 +36,32 @@ function formatDate(isoDate) {
   const date = new Date(isoDate);
   return date.toISOString().split("T")[0]; // Returns YYYY-MM-DD
 }
+
+/**
+ * Convert a column index to letter (0 = A, 1 = B, etc.)
+ * @param {number} index - Zero-based column index
+ * @returns {string} Column letter
+ */
+function columnIndexToLetter(index) {
+  return String.fromCharCode(65 + index);
+}
+
+/**
+ * Create a range string for a sheet operation
+ * @param {string} sheetName - Name of the sheet
+ * @param {number} startRow - 1-indexed start row
+ * @param {number} endRow - 1-indexed end row
+ * @param {number} columnCount - Number of columns
+ * @returns {string} Range string (e.g., "Sheet1!A2:D5")
+ */
+function createRangeString(sheetName, startRow, endRow, columnCount) {
+  const endColumn = columnIndexToLetter(columnCount - 1);
+  return `${sheetName}!A${startRow}:${endColumn}${endRow}`;
+}
+
+// -----------------------------------------------------------------------------
+// PRODUCT DATA EXTRACTION
+// -----------------------------------------------------------------------------
 
 /**
  * Extract and prepare product data for the Google Sheet
@@ -82,6 +116,10 @@ function extractVariants(product) {
   return variants;
 }
 
+// -----------------------------------------------------------------------------
+// SHEET DATA FORMATTING
+// -----------------------------------------------------------------------------
+
 /**
  * Create rows for Google Sheet from product data and variants
  * @param {Object} productData - Structured product data
@@ -98,43 +136,45 @@ function createSheetRows(productData, variants, headers) {
 
   // If there are no variants, return a single row with the product data
   if (variants.length === 0) {
-    const row = headers.map((header) => {
-      const dataKey = headerToKeyMap[header];
-      if (!dataKey) {
-        return ""; // Return empty string for unknown headers
-      }
-      const value = productData[dataKey] || "";
-      return value;
-    });
+    const row = mapDataToHeaders(productData, headers, headerToKeyMap);
     return [row];
   }
 
   // Otherwise, create a row for each variant
   return variants.map((variant) => {
     // Create a merged data object with product data and variant data
-    const rowData = {
-      ...productData,
-      ...variant
-    };
-
-    // Map the data to columns based on the headers
-    return headers.map((header) => {
-      const dataKey = headerToKeyMap[header];
-      if (!dataKey) {
-        return ""; // Return empty string for unknown headers
-      }
-      const value = rowData[dataKey] || "";
-      return value;
-    });
+    const rowData = { ...productData, ...variant };
+    return mapDataToHeaders(rowData, headers, headerToKeyMap);
   });
 }
+
+/**
+ * Map a data object to sheet headers
+ * @param {Object} data - Data object
+ * @param {Array} headers - Sheet headers
+ * @param {Object} headerMap - Mapping from header labels to data keys
+ * @returns {Array} Row values aligned with headers
+ */
+function mapDataToHeaders(data, headers, headerMap) {
+  return headers.map((header) => {
+    const dataKey = headerMap[header];
+    if (!dataKey) {
+      return ""; // Return empty string for unknown headers
+    }
+    return data[dataKey] || "";
+  });
+}
+
+// -----------------------------------------------------------------------------
+// SHEET OPERATIONS
+// -----------------------------------------------------------------------------
 
 /**
  * Initialize sheet with headers if needed
  * @param {Object} sheetsClient - Google Sheets client
  * @param {string} spreadsheetId - Google Sheets spreadsheet ID
  * @param {string} sheetName - Google Sheets sheet name
- * @returns {Array} Array of headers
+ * @returns {Promise<Array>} Array of headers
  */
 async function initializeSheetHeaders(sheetsClient, spreadsheetId, sheetName) {
   try {
@@ -148,7 +188,15 @@ async function initializeSheetHeaders(sheetsClient, spreadsheetId, sheetName) {
 
     // Otherwise, initialize the sheet with our headers
     const headers = COLUMN_MAPPINGS.map(column => column.label);
-    await GoogleSheets.writeSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1:${String.fromCharCode(65 + headers.length - 1)}1`, [headers], "RAW");
+    const headerRange = createRangeString(sheetName, 1, 1, headers.length);
+
+    await GoogleSheets.writeSheetData(
+      sheetsClient,
+      spreadsheetId,
+      headerRange,
+      [headers],
+      "RAW"
+    );
 
     console.log("Initialized sheet with headers:", headers.join(", "));
     return headers;
@@ -189,20 +237,19 @@ function findProductRowsByID(sheetData, productId, idColumnIndex) {
  * @param {string} sheetName - Sheet name
  * @param {Array} newRows - New data rows
  * @param {Array} rowIndices - Indices of rows to update
- * @param {number} headerCount - Number of columns
- * @returns {Promise<Object>} Update result
+ * @param {number} columnCount - Number of columns
+ * @returns {Promise<Object>} Update result with rowsUpdated count
  */
-async function updateProductRows(sheetsClient, spreadsheetId, sheetName, newRows, rowIndices, headerCount) {
-  // Determine start and end rows
-  const startRow = rowIndices[0] + 1; // Add 1 because sheet is 1-indexed
-  const endRow = rowIndices[rowIndices.length - 1] + 1;
-
-  // If we have fewer new rows than existing rows, we'll update what we can
-  // and delete the rest later
+async function updateProductRows(sheetsClient, spreadsheetId, sheetName, newRows, rowIndices, columnCount) {
+  // If we have fewer new rows than existing rows, update what we can
   const rowsToUpdate = Math.min(newRows.length, rowIndices.length);
 
+  // Determine start row (adding 1 because sheets are 1-indexed)
+  const startRow = rowIndices[0] + 1;
+  const endRow = startRow + rowsToUpdate - 1;
+
   // Create range based on rows to update
-  const range = `${sheetName}!A${startRow}:${String.fromCharCode(65 + headerCount - 1)}${startRow + rowsToUpdate - 1}`;
+  const range = createRangeString(sheetName, startRow, endRow, columnCount);
 
   // Update the rows
   const updateResult = await GoogleSheets.writeSheetData(
@@ -217,45 +264,40 @@ async function updateProductRows(sheetsClient, spreadsheetId, sheetName, newRows
 }
 
 /**
- * Delete excess rows if needed
- * @param {Object} sheetsClient - Google Sheets client
- * @param {string} spreadsheetId - Spreadsheet ID
- * @param {string} sheetId - Sheet ID (numeric)
+ * Log information about excess rows that should be deleted
  * @param {Array} rowIndices - Indices of all product rows
  * @param {number} rowsUpdated - Number of rows that were updated
- * @returns {Promise<void>}
  */
-async function deleteExcessRows(sheetsClient, spreadsheetId, sheetId, rowIndices, rowsUpdated) {
-  // If all rows were updated, no need to delete anything
+function logExcessRows(rowIndices, rowsUpdated) {
+  // If all rows were updated, no excess rows to delete
   if (rowIndices.length <= rowsUpdated) {
     return;
   }
 
-  // Get the indices of rows to delete (those that weren't updated)
+  // Get the indices of rows that should be deleted (those that weren't updated)
   const rowsToDelete = rowIndices.slice(rowsUpdated);
 
-  // For now, we'll just log this - deleting rows requires Sheets API batch update
-  // which might not be implemented in the current connector
-  console.log(`Would delete ${rowsToDelete.length} excess rows at indices: ${rowsToDelete.join(', ')}`);
-
-  // NOTE: Deletion would require a Google Sheets batchUpdate API call with deleteRange request
-  // This is a more complex operation that might need to be added to the GoogleSheets connector
+  // For now, just log this - actual deletion requires batch update API
+  console.log(`Note: ${rowsToDelete.length} excess rows detected at indices: ${rowsToDelete.map(i => i + 1).join(', ')}`);
+  console.log("These would need to be deleted manually or through an extended API implementation");
 }
 
 /**
- * Append product rows if no existing ones found
+ * Append product rows to the sheet
  * @param {Object} sheetsClient - Google Sheets client
  * @param {string} spreadsheetId - Spreadsheet ID
  * @param {string} sheetName - Sheet name
  * @param {Array} rows - Data rows to append
- * @param {number} headerCount - Number of columns
+ * @param {number} columnCount - Number of columns
  * @returns {Promise<Object>} Append result
  */
-async function appendProductRows(sheetsClient, spreadsheetId, sheetName, rows, headerCount) {
+async function appendProductRows(sheetsClient, spreadsheetId, sheetName, rows, columnCount) {
+  const range = `${sheetName}!A:${columnIndexToLetter(columnCount - 1)}`;
+
   const result = await GoogleSheets.appendSheetData(
     sheetsClient,
     spreadsheetId,
-    `${sheetName}!A:${String.fromCharCode(65 + headerCount - 1)}`,
+    range,
     rows,
     "USER_ENTERED"
   );
@@ -263,74 +305,164 @@ async function appendProductRows(sheetsClient, spreadsheetId, sheetName, rows, h
   return result;
 }
 
+// -----------------------------------------------------------------------------
+// MAIN PROCESS FUNCTION
+// -----------------------------------------------------------------------------
+
 /**
- * Process a product update and add it to Google Sheets
+ * Process a product update and save/update it in Google Sheets
  * @param {Object} options - Options object
  * @param {Object} options.record - Shopify product data from webhook
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.env - Environment variables
  */
 export async function process({ record: productData, shopify, env }) {
-  console.log("Product webhook payload: ", productData);
+  console.log("Product webhook payload received");
 
-  // Validate required environment variables
+  try {
+    // Validate required data and environment
+    validateEnvironment(env);
+    validateProductData(productData);
+
+    // Use the provided Google Sheet ID
+    const spreadsheetId = "1VD-OtBr0l_V2Hoz7qSRsOqsbaC1Fima2Kn9q6gYvhY4";
+
+    // Create Google Sheets client
+    const sheetsClient = await GoogleSheets.createSheetsClient(env.google_sheets_credentials);
+
+    // Get spreadsheet and sheet information
+    const { sheetName, sheetId } = await getSheetInformation(sheetsClient, spreadsheetId);
+
+    // Fetch complete product data from Shopify
+    const product = await fetchProductData(shopify, productData.id);
+
+    // Initialize or get sheet headers
+    const headers = await initializeSheetHeaders(sheetsClient, spreadsheetId, sheetName);
+
+    // Extract and transform product data
+    const { productDetails, variants, newRows } = prepareProductData(product, headers);
+
+    // Find any existing rows for this product
+    const { existingRows, rowIndices, idColumnIndex } = await findExistingProductRows(
+      sheetsClient,
+      spreadsheetId,
+      sheetName,
+      productDetails.id,
+      headers
+    );
+
+    // Update or append product data as appropriate
+    await updateProductInSheet(
+      sheetsClient,
+      spreadsheetId,
+      sheetName,
+      sheetId,
+      newRows,
+      rowIndices,
+      existingRows,
+      headers.length,
+      productDetails.id
+    );
+
+    console.log("Product data successfully processed");
+  } catch (error) {
+    console.error(`Error processing product data: ${error.message}`);
+    throw error;
+  }
+}
+
+// -----------------------------------------------------------------------------
+// PROCESS HELPER FUNCTIONS
+// -----------------------------------------------------------------------------
+
+/**
+ * Validate required environment variables
+ * @param {Object} env - Environment variables
+ */
+function validateEnvironment(env) {
   if (!env.google_sheets_credentials) {
     throw new Error("Missing required env.google_sheets_credentials configuration");
   }
+}
+
+/**
+ * Validate product data
+ * @param {Object} productData - Product data from webhook
+ */
+function validateProductData(productData) {
   if (!productData.id) {
-    throw new Error("No product ID provided");
+    throw new Error("No product ID provided in webhook data");
   }
+}
 
-  // Use the provided Google Sheet ID
-  const spreadsheetId = "1VD-OtBr0l_V2Hoz7qSRsOqsbaC1Fima2Kn9q6gYvhY4";
-
-  // Create Google Sheets client
-  const sheetsClient = await GoogleSheets.createSheetsClient(env.google_sheets_credentials);
-
+/**
+ * Get sheet information
+ * @param {Object} sheetsClient - Google Sheets client
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @returns {Promise<Object>} Sheet information
+ */
+async function getSheetInformation(sheetsClient, spreadsheetId) {
   // Get spreadsheet title and available sheets
   const spreadsheetTitle = await GoogleSheets.getSpreadsheetTitle(sheetsClient, spreadsheetId);
-  console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
+  console.log(chalk.blue(`Accessing spreadsheet: "${spreadsheetTitle}"`));
 
   const sheets = await GoogleSheets.getSheets(sheetsClient, spreadsheetId);
-  console.log("Available sheets in spreadsheet:");
-  sheets.forEach((sheet) => {
-    console.log(`- ${sheet.title} (sheetId: ${sheet.sheetId}, index: ${sheet.index})`);
-  });
-
-  // Use the first sheet
   if (sheets.length === 0) {
     throw new Error(`No sheets found in spreadsheet "${spreadsheetTitle}"`);
   }
 
   const sheetName = sheets[0].title;
   const sheetId = sheets[0].sheetId;
-  console.log(`Using sheet: "${sheetName}" from spreadsheet "${spreadsheetTitle}"`);
+  console.log(`Using sheet: "${sheetName}"`);
 
+  return { sheetName, sheetId };
+}
+
+/**
+ * Fetch complete product data from Shopify
+ * @param {Object} shopify - Shopify API client
+ * @param {string} productId - Product ID
+ * @returns {Promise<Object>} Complete product data
+ */
+async function fetchProductData(shopify, productId) {
   // Convert ID to GID format and fetch full product
-  const productId = shopify.toGid(productData.id, "Product");
-  const { product } = await shopify.graphql(GetProductById, { id: productId });
+  const gid = shopify.toGid(productId, "Product");
+  const { product } = await shopify.graphql(GetProductById, { id: gid });
 
-  // Initialize or get sheet headers
-  const headers = await initializeSheetHeaders(sheetsClient, spreadsheetId, sheetName);
+  if (!product) {
+    throw new Error(`Product with ID ${productId} not found`);
+  }
 
-  // Extract data from the product
+  return product;
+}
+
+/**
+ * Prepare product data for the sheet
+ * @param {Object} product - Shopify product
+ * @param {Array} headers - Sheet headers
+ * @returns {Object} Prepared product data
+ */
+function prepareProductData(product, headers) {
+  // Extract core product data and variants
   const productDetails = extractProductData(product);
   const variants = extractVariants(product);
 
-  // Log the data
-  console.log("Product details: ", {
-    product: JSON.stringify(productDetails, null, 2),
-    variants: JSON.stringify(variants, null, 2)
-  });
-
-  // Validate we have product data
-  if (!productDetails.id) {
-    throw new Error("No product details found");
-  }
-
-  // Create rows for Google Sheets
+  // Create formatted rows for the sheet
   const newRows = createSheetRows(productDetails, variants, headers);
 
+  return { productDetails, variants, newRows };
+}
+
+/**
+ * Find existing rows for a product
+ * @param {Object} sheetsClient - Google Sheets client
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} sheetName - Sheet name
+ * @param {string} productId - Product ID to find
+ * @param {Array} headers - Sheet headers
+ * @returns {Promise<Object>} Existing rows information
+ */
+async function findExistingProductRows(sheetsClient, spreadsheetId, sheetName, productId, headers) {
   // Find ID column index
   const idColumnIndex = headers.findIndex(header => header === "ID");
   if (idColumnIndex === -1) {
@@ -338,64 +470,85 @@ export async function process({ record: productData, shopify, env }) {
   }
 
   // Get all existing data from the sheet
-  const sheetData = await GoogleSheets.getSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1:${String.fromCharCode(65 + headers.length - 1)}`);
+  const fullRange = createRangeString(sheetName, 1, 1000, headers.length); // Fetch up to 1000 rows
+  const sheetData = await GoogleSheets.getSheetData(sheetsClient, spreadsheetId, fullRange);
 
   // Find rows that match this product ID
-  const { rowIndices, rows: existingRows } = findProductRowsByID(sheetData, productDetails.id, idColumnIndex);
+  const { rowIndices, rows: existingRows } = findProductRowsByID(sheetData, productId, idColumnIndex);
 
-  let result;
+  return { existingRows, rowIndices, idColumnIndex };
+}
 
+/**
+ * Update or append product data in the sheet
+ * @param {Object} sheetsClient - Google Sheets client
+ * @param {string} spreadsheetId - Spreadsheet ID
+ * @param {string} sheetName - Sheet name
+ * @param {string} sheetId - Sheet ID
+ * @param {Array} newRows - New rows to write
+ * @param {Array} rowIndices - Indices of existing rows
+ * @param {Array} existingRows - Existing row data
+ * @param {number} columnCount - Number of columns
+ * @param {string} productId - Product ID
+ * @returns {Promise<void>}
+ */
+async function updateProductInSheet(
+  sheetsClient,
+  spreadsheetId,
+  sheetName,
+  sheetId,
+  newRows,
+  rowIndices,
+  existingRows,
+  columnCount,
+  productId
+) {
   if (rowIndices.length > 0) {
     // Product exists, update its rows
-    console.log(`Found existing product with ID ${productDetails.id} at rows: ${rowIndices.map(i => i + 1).join(', ')}`);
+    console.log(`Updating existing product with ID ${productId} at rows: ${rowIndices.map(i => i + 1).join(', ')}`);
 
+    // Update existing rows
     const { updateResult, rowsUpdated } = await updateProductRows(
       sheetsClient,
       spreadsheetId,
       sheetName,
       newRows,
       rowIndices,
-      headers.length
+      columnCount
     );
 
-    console.log(`Updated ${rowsUpdated} rows for product ${productDetails.id}`);
-    result = updateResult;
+    console.log(`Updated ${rowsUpdated} rows for product ${productId}`);
 
-    // Handle case where product now has fewer variants than before
+    // Log information about rows that should be deleted (if product now has fewer variants)
     if (existingRows.length > newRows.length) {
-      await deleteExcessRows(sheetsClient, spreadsheetId, sheetId, rowIndices, rowsUpdated);
+      logExcessRows(rowIndices, rowsUpdated);
     }
 
     // Handle case where product now has more variants than before
     if (newRows.length > existingRows.length) {
       const additionalRows = newRows.slice(existingRows.length);
-      const appendResult = await appendProductRows(
+      await appendProductRows(
         sheetsClient,
         spreadsheetId,
         sheetName,
         additionalRows,
-        headers.length
+        columnCount
       );
 
-      console.log(`Appended ${additionalRows.length} additional variant rows for product ${productDetails.id}`);
+      console.log(`Appended ${additionalRows.length} additional variant rows for product ${productId}`);
     }
   } else {
     // Product doesn't exist, append new rows
-    console.log(`No existing rows found for product ${productDetails.id}. Appending new rows.`);
+    console.log(`Creating new entries for product ${productId}`);
 
-    result = await appendProductRows(
+    await appendProductRows(
       sheetsClient,
       spreadsheetId,
       sheetName,
       newRows,
-      headers.length
+      columnCount
     );
 
-    console.log(`Appended ${newRows.length} new rows for product ${productDetails.id}`);
-  }
-
-  console.log("Operation completed successfully");
-  if (result?.updates) {
-    console.log(`Updated range: ${result.updates.updatedRange}`);
+    console.log(`Added ${newRows.length} new rows for product ${productId}`);
   }
 }
