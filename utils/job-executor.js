@@ -192,9 +192,13 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
     webhookUrl.searchParams.set('job', jobName);
     const webhookAddress = webhookUrl.toString();
 
+    let data = {
+      id: recordId
+    };
     console.log(`Sending test request to worker for job: ${jobName}: ${webhookAddress}`);
     console.log(`Topic: ${webhookTopic}`);
     console.log(`Shop: ${shopDomain}`);
+    console.log(`Data\n: ${JSON.stringify(data, null, 2)}\n`);
 
     // Send the request
     const response = await fetch(webhookAddress, {
@@ -206,9 +210,7 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
         'X-Shopify-Shop-Domain': shopDomain,
         'X-Shopify-API-Version': '2024-07'
       },
-      body: JSON.stringify({
-        id: recordId
-      })
+      body: JSON.stringify(data)
     });
 
     if (!response.ok) {

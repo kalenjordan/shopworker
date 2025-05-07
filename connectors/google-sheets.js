@@ -1,5 +1,5 @@
 import { SignJWT } from 'jose/jwt/sign';
-import { importPKCS8 } from 'jose/key/import';
+import { importJWK } from 'jose/key/import';
 
 const GOOGLE_SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -10,32 +10,55 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
  * @returns {Object} Object containing getAccessToken method
  */
 export async function createSheetsClient(credentials) {
+  if (typeof credentials === 'string') {
+    console.error('Error: Expected credentials object but received string');
+    throw new Error('Google Sheets credentials must be an object, not a string');
+  }
+
+  console.log('Debug: Credentials object keys:', Object.keys(credentials));
+
   async function getAccessToken() {
-    const now = Math.floor(Date.now() / 1000);
-    const privateKey = await importPKCS8(credentials.private_key, 'RS256');
+    try {
+      const now = Math.floor(Date.now() / 1000);
 
-    const jwt = await new SignJWT({ scope: GOOGLE_SHEETS_SCOPE })
-      .setProtectedHeader({ alg: 'RS256' })
-      .setIssuedAt(now)
-      .setIssuer(credentials.client_email)
-      .setSubject(credentials.client_email)
-      .setAudience(TOKEN_URL)
-      .setExpirationTime('1h')
-      .sign(privateKey);
+      // Check if we have a JWK in the credentials
+      if (!credentials.private_key_jwk) {
+        throw new Error('Missing private_key_jwk in credentials. Please convert your private_key to JWK format.');
+      }
 
-    const res = await fetch(TOKEN_URL, {
-      method: 'POST',
-      body: new URLSearchParams({
-        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-        assertion: jwt,
-      }),
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    });
+      // Import the JWK
+      const privateKey = await importJWK(credentials.private_key_jwk, 'RS256');
 
-    const json = await res.json();
-    return json.access_token;
+      const jwt = await new SignJWT({ scope: GOOGLE_SHEETS_SCOPE })
+        .setProtectedHeader({ alg: 'RS256' })
+        .setIssuedAt(now)
+        .setIssuer(credentials.client_email)
+        .setSubject(credentials.client_email)
+        .setAudience(TOKEN_URL)
+        .setExpirationTime('1h')
+        .sign(privateKey);
+
+      const res = await fetch(TOKEN_URL, {
+        method: 'POST',
+        body: new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+          assertion: jwt,
+        }),
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      const json = await res.json();
+      if (!json.access_token) {
+        console.error('Failed to get access token:', json);
+        throw new Error(`Failed to get access token: ${JSON.stringify(json)}`);
+      }
+      return json.access_token;
+    } catch (error) {
+      console.error('Error getting Google Sheets access token:', error);
+      throw error;
+    }
   }
 
   // Return client with simplified interface

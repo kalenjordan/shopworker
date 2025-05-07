@@ -21,6 +21,6 @@
   "dependencies": {
     "commander": "^13.1.0",
     "googleapis": "^131.0.0",
-    "jose": "^6.0.11"
+    "jose": "^5.10.0"
   }
 }

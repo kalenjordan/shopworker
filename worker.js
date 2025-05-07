@@ -101,6 +101,14 @@ async function handleRequest(request, env, ctx) {
     let shopConfig = null;
     if (shopworkerConfig.shops) {
       shopConfig = shopworkerConfig.shops.find(shop => shop.shopify_domain === shopDomain);
+
+      // Merge shop config into env for job to access
+      if (shopConfig) {
+        // Copy all shop configuration properties to env
+        Object.assign(env, shopConfig);
+
+        console.log('Worker Debug - env keys after merge:', Object.keys(env));
+      }
     }
 
     // Get API access token from shop config or environment
@@ -117,12 +125,28 @@ async function handleRequest(request, env, ctx) {
     });
 
     // Process the webhook data with the job handler, passing arguments as an object
+    console.log('Worker Debug - Config passed to job:', {
+      job: jobName,
+      shopDomain,
+      shopConfigFound: !!shopConfig,
+      envKeys: Object.keys(env)
+    });
+
+    // Add debug for credentials structure
+    if (shopConfig?.google_sheets_credentials) {
+      console.log('Worker Debug - Google Sheets Credentials:', {
+        hasCredentials: true,
+        credentialsType: typeof shopConfig.google_sheets_credentials,
+        hasPrivateKey: !!shopConfig.google_sheets_credentials.private_key,
+        hasPrivateKeyJwk: !!shopConfig.google_sheets_credentials.private_key_jwk,
+        credentialKeys: Object.keys(shopConfig.google_sheets_credentials)
+      });
+    }
+
     await jobModule.process({
       record: bodyData, // The webhook payload is passed as 'record' (previously 'order')
       shopify: shopify,
-      env: env,
-      config: shopworkerConfig, // Pass the entire configuration to the job
-      shopConfig: shopConfig // Pass the specific shop configuration to the job
+      env: env
     });
 
     return new Response('Webhook processed successfully', { status: 200 });
