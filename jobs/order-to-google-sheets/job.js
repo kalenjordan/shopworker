@@ -138,7 +138,7 @@ function createSheetRows(orderData, lineItems) {
  */
 function logOrderDetails(orderData, lineItems) {
   // Log order data
-  console.log("\nOrder data:");
+  console.log("Order data: ", );
   Object.entries(orderData).forEach(([key, value]) => {
     console.log(`  ${key}: ${value}`);
   });
@@ -228,7 +228,8 @@ export async function process({ record: orderData, shopify, env }) {
   }
 
   // Log the data
-  logOrderDetails(orderDetails, lineItems);
+  // logOrderDetails(orderDetails, lineItems);
+  console.log("Order details: ", {order: JSON.stringify(orderDetails, null, 2), lineItems: JSON.stringify(lineItems, null, 2)});
 
   // Format data for Google Sheets
   const rows = createSheetRows(orderDetails, lineItems);
