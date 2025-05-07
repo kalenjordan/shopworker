@@ -14,6 +14,7 @@
     "status": "node cli.js status",
     "deploy": "node cli.js deploy",
     "test-remote": "node cli.js test-remote",
+    "all-webhooks": "node cli.js all-webhooks",
     "delete-webhook": "node cli.js delete-webhook",
     "delete-all-webhooks": "node cli.js delete-all-topic-webhooks",
     "put-secrets": "node cli.js put-secrets"
