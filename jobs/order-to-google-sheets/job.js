@@ -1,6 +1,29 @@
 import GetOrderById from '../../graphql/GetOrderById.js';
 import * as GoogleSheets from '../../connectors/google-sheets.js';
 
+// Define column mappings in one place
+const COLUMN_MAPPINGS = [
+  { key: 'date', label: 'Date' },
+  { key: 'orderNumber', label: 'Order Number' },
+  { key: 'sku', label: 'SKU' },
+  { key: 'quantity', label: 'Quantity' },
+  { key: 'tags', label: 'Tags' },
+  { key: 'firstName', label: 'First Name' },
+  { key: 'lastName', label: 'Last Name' },
+  { key: 'company', label: 'Company' },
+  { key: 'shippingAddress', label: 'Shipping Address' },
+  { key: 'shippingZipCode', label: 'Shipping ZipCode' },
+  { key: 'shippingCity', label: 'Shipping City' },
+  { key: 'shippingCountry', label: 'Shipping Country' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'totalPrice', label: 'Total Price' },
+  { key: 'email', label: 'Email' },
+  { key: 'trackingNumber', label: 'Tracking number' },
+  { key: 'row', label: 'Row' },
+  { key: 'reminderEmail', label: 'reminder email' },
+  { key: 'id', label: 'ID' }
+];
+
 /**
  * Format date as YYYY-MM-DD
  * @param {string} isoDate - ISO format date
@@ -12,40 +35,36 @@ function formatDate(isoDate) {
 }
 
 /**
- * Format order data for the Google Sheet
+ * Extract and prepare order data for the Google Sheet
  * @param {Object} order - Shopify order data
  * @param {Object} shopify - Shopify client with utility methods
- * @returns {Array} Array of rows for the sheet (one per line item)
+ * @returns {Object} Structured order data
  */
-function formatOrderForSheet(order, shopify) {
-  if (!order) return [];
-
-  // Get shipping address information
+function extractOrderData(order, shopify) {
+  // Get essential data objects
   const shippingAddress = order.shippingAddress || {};
-
-  // Get customer information
   const customer = order.customer || {};
 
-  // Format tags properly - ensure it's a string
-  const tags = Array.isArray(order.tags) ? order.tags.join(', ') : (order.tags || '');
-
-  // Get tracking number if available
+  // Get tracking number
   let trackingNumber = '';
-  if (order.fulfillments && order.fulfillments.length > 0) {
-    const fulfillment = order.fulfillments[0];
-    if (fulfillment.trackingInfo && fulfillment.trackingInfo.length > 0) {
-      trackingNumber = fulfillment.trackingInfo[0].number || '';
+  if (order.fulfillments?.length > 0) {
+    const trackingInfo = order.fulfillments[0].trackingInfo?.[0];
+    if (trackingInfo) {
+      trackingNumber = trackingInfo.number || '';
     }
   }
 
-  // Format order number - remove '#' if present
-  const orderNumber = order.name ? order.name.replace('#', '') : (order.id || '');
+  // Format order number without '#' prefix
+  const orderNumber = order.name ? order.name.replace('#', '') : '';
 
   // Extract regular ID from GID
   const orderId = shopify.fromGid(order.id);
 
-  // Common order data
-  const orderData = {
+  // Format tags as comma-separated string
+  const tags = Array.isArray(order.tags) ? order.tags.join(', ') : (order.tags || '');
+
+  // Return structured order data
+  return {
     date: formatDate(order.createdAt || new Date()),
     orderNumber,
     tags,
@@ -64,65 +83,106 @@ function formatOrderForSheet(order, shopify) {
     reminderEmail: '',
     id: orderId || ''
   };
+}
 
-  // Log order data with headers
+/**
+ * Extract line items from order
+ * @param {Object} order - Shopify order data
+ * @returns {Array} Array of line items
+ */
+function extractLineItems(order) {
+  const lineItems = [];
+
+  if (order.lineItems?.edges) {
+    order.lineItems.edges.forEach(edge => {
+      if (edge.node) {
+        lineItems.push({
+          ...edge.node,
+          sku: edge.node.variant?.sku || '',
+          variantTitle: edge.node.variant?.title || ''
+        });
+      }
+    });
+  }
+
+  return lineItems;
+}
+
+/**
+ * Create rows for Google Sheet from order data and line items based on column mappings
+ * @param {Object} orderData - Structured order data
+ * @param {Array} lineItems - Array of line items
+ * @returns {Array} Array of rows for the sheet (one per line item)
+ */
+function createSheetRows(orderData, lineItems) {
+  return lineItems.map(item => {
+    // Create a merged data object with order data and line item data
+    const rowData = {
+      ...orderData,
+      sku: item.sku || '',
+      quantity: item.quantity || '',
+    };
+
+    // Map the data to columns in the correct order
+    return COLUMN_MAPPINGS.map(column => {
+      const value = rowData[column.key] || '';
+      return value;
+    });
+  });
+}
+
+/**
+ * Log order data in a readable format
+ * @param {Object} orderData - Structured order data
+ * @param {Array} lineItems - Array of line items
+ */
+function logOrderDetails(orderData, lineItems) {
+  // Log order data
   console.log("\nOrder data:");
   Object.entries(orderData).forEach(([key, value]) => {
     console.log(`  ${key}: ${value}`);
   });
 
-  // Extract line items from the GraphQL response
-  const lineItems = [];
-  if (order.lineItems && order.lineItems.edges) {
-    order.lineItems.edges.forEach(edge => {
-      if (edge.node) {
-        const item = {
-          ...edge.node,
-          sku: edge.node.variant?.sku || '',
-          variantTitle: edge.node.variant?.title || ''
-        };
-        lineItems.push(item);
-      }
-    });
-  }
-
   // Log line items
-  console.log(`Line Items (${lineItems.length}):`);
+  console.log(`\nLine Items (${lineItems.length}):`);
   lineItems.forEach((item, index) => {
     console.log(`  Item ${index + 1}:`);
-    // Log only key properties we care about
     ['sku', 'quantity', 'title', 'variantTitle'].forEach(prop => {
       console.log(`    ${prop}: ${item[prop] || ''}`);
     });
   });
+}
 
-  // Throw error if no line items
-  if (lineItems.length === 0) {
-    throw new Error('No line items found in order');
+/**
+ * Verify the sheet has headers
+ * @param {Object} sheetsClient - Google Sheets client
+ * @param {string} spreadsheetId - Google Sheets spreadsheet ID
+ * @param {string} sheetName - Google Sheets sheet name
+ * @returns {Array} Array of headers
+ */
+async function verifySheetHeaders(sheetsClient, spreadsheetId, sheetName) {
+  const headerData = await GoogleSheets.getSheetData(
+    sheetsClient,
+    spreadsheetId,
+    `${sheetName}!A1:Z1`
+  );
+
+  if (!headerData?.length || !headerData[0]?.length) {
+    throw new Error(`Sheet is not initialized with headers. Please create the sheet first.`);
   }
 
-  // Create a row for each line item
-  return lineItems.map(item => [
-    orderData.date,                // Date
-    orderData.orderNumber,         // Order Number
-    item.sku || '',                // SKU
-    item.quantity || '',           // Quantity
-    orderData.tags,                // Tags
-    orderData.firstName,           // First Name
-    orderData.lastName,            // Last Name
-    orderData.company,             // Company
-    orderData.shippingAddress,     // Shipping Address
-    orderData.shippingZipCode,     // Shipping ZipCode
-    orderData.shippingCity,        // Shipping City
-    orderData.shippingCountry,     // Shipping Country
-    orderData.phone,               // Phone
-    orderData.totalPrice,          // Total Price
-    orderData.email,               // Email
-    orderData.trackingNumber,      // Tracking number
-    orderData.row,                 // Row
-    orderData.reminderEmail,       // reminder email
-    orderData.id                   // ID
-  ]);
+  // Optionally validate that the headers match our expected column mappings
+  const headers = headerData[0];
+  const expectedHeaders = COLUMN_MAPPINGS.map(column => column.label);
+
+  // Instead of requiring exact matches, we just log a warning if columns don't match
+  if (headers.length !== expectedHeaders.length) {
+    console.log(`\nWarning: Sheet has ${headers.length} columns, but we expected ${expectedHeaders.length}.`);
+    console.log(`Sheet headers: ${headers.join(', ')}`);
+    console.log(`Expected headers: ${expectedHeaders.join(', ')}`);
+  }
+
+  return headers;
 }
 
 /**
@@ -133,62 +193,53 @@ function formatOrderForSheet(order, shopify) {
  * @param {Object} options.env - Environment variables
  */
 export async function process({ record: orderData, shopify, env }) {
-  // Set the spreadsheet ID from environment
+  // Validate required environment variables
   if (!env.google_sheet_id) {
     throw new Error('Missing required env.google_sheet_id configuration');
   }
-  const spreadsheetId = env.google_sheet_id;
-
-  // Default sheet name
-  const sheetName = 'Blad1';
-
-  // Make sure we have Google Sheets credentials
   if (!env.google_sheets_credentials) {
     throw new Error('Missing required env.google_sheets_credentials configuration');
   }
-
-  // Create Google Sheets client once
-  const sheetsClient = await GoogleSheets.createSheetsClient(env.google_sheets_credentials);
-
-  // Make sure we have a valid order ID
   if (!orderData.id) {
     throw new Error('No order ID provided');
   }
 
-  let orderId = shopify.toGid(orderData.id);
+  // Initialize variables
+  const spreadsheetId = env.google_sheet_id;
+  const sheetName = 'Blad1';
+  const sheetsClient = await GoogleSheets.createSheetsClient(env.google_sheets_credentials);
 
-  // Query the order details via GraphQL
-  const { order } = await shopify.graphql(GetOrderById, {
-    id: orderId
-  });
+  // Convert ID to GID format and fetch full order
+  const orderId = shopify.toGid(orderData.id);
+  const { order } = await shopify.graphql(GetOrderById, { id: orderId });
 
-  // Check if sheet is initialized with headers
-  const headerData = await GoogleSheets.getSheetData(
-    sheetsClient,
-    spreadsheetId,
-    `${sheetName}!A1:Z1`
-  );
+  // Verify the sheet has headers
+  await verifySheetHeaders(sheetsClient, spreadsheetId, sheetName);
 
-  // Throw error if sheet is not initialized
-  if (!headerData || headerData.length === 0 || !headerData[0] || headerData[0].length === 0) {
-    throw new Error(`Sheet is not initialized with headers. Please create the sheet first.`);
+  // Extract data from the order
+  const orderDetails = extractOrderData(order, shopify);
+  const lineItems = extractLineItems(order);
+
+  // Validate we have line items
+  if (lineItems.length === 0) {
+    throw new Error('No line items found in order');
   }
 
-  // Format the order data for the sheet - now returns array of rows
-  // Pass the shopify client to use its utility methods like fromGid
-  const orderRows = formatOrderForSheet(order, shopify);
-  if (!orderRows.length) {
-    throw new Error('Failed to format order data');
-  }
+  // Log the data
+  logOrderDetails(orderDetails, lineItems);
 
-  console.log(`\nAdding ${orderRows.length} rows to sheet for order ${order.name || order.id}`);
+  // Format data for Google Sheets
+  const rows = createSheetRows(orderDetails, lineItems);
 
-  // Append the order data to the sheet
+  // Log what we're doing
+  console.log(`\nAdding ${rows.length} rows to sheet for order ${order.name || order.id}`);
+
+  // Append to Google Sheet
   const appendResult = await GoogleSheets.appendSheetData(
     sheetsClient,
     spreadsheetId,
     `${sheetName}!A1`,
-    orderRows,
+    rows,
     'USER_ENTERED'
   );
 
