@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import dotenv from 'dotenv';
 import { Command } from 'commander';
 import path from 'path';
 import fs from 'fs';
@@ -24,15 +23,6 @@ import {
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Load environment variables
-const envPath = path.join(__dirname, '.env');
-if (fs.existsSync(envPath)) {
-  dotenv.config({ path: envPath });
-} else {
-  // .env is optional since we primarily use .shopworker.json for configuration
-  // However, .env might still be used for other things like CLOUDFLARE_WORKER_URL
-}
 
 // ================================================================= //
 //                        COMMANDER PROGRAM                          //
@@ -59,7 +49,7 @@ program
   .command('enable [jobNameArg]')
   .description('Enable a job by registering webhooks with Shopify after ensuring the latest code is deployed')
   .option('-d, --dir <jobDirectory>', 'Job directory name')
-  .option('-w, --worker <workerUrl>', 'Cloudflare worker URL (overrides .env or .shopworker.json)')
+  .option('-w, --worker <workerUrl>', 'Cloudflare worker URL (overrides .shopworker.json)')
   .action(async (jobNameArg, options) => {
     const deploymentSuccessful = await handleCloudflareDeployment(__dirname);
     if (!deploymentSuccessful) {
@@ -70,7 +60,7 @@ program
     const jobName = await ensureAndResolveJobName(__dirname, jobNameArg, options.dir, false);
     if (!jobName) return;
 
-    const workerUrl = getWorkerUrl(options);
+    const workerUrl = getWorkerUrl(options, __dirname);
     if (!workerUrl) return;
 
     await enableJobWebhook(__dirname, jobName, workerUrl);
@@ -80,14 +70,14 @@ program
   .command('disable [jobNameArg]')
   .description('Disable a job by removing webhooks from Shopify')
   .option('-d, --dir <jobDirectory>', 'Job directory name')
-  .option('-w, --worker <workerUrl>', 'Cloudflare worker URL (overrides .env or .shopworker.json)')
+  .option('-w, --worker <workerUrl>', 'Cloudflare worker URL (overrides .shopworker.json)')
   .action(async (jobNameArg, options) => {
     const jobName = await ensureAndResolveJobName(__dirname, jobNameArg, options.dir, false);
     if (!jobName) return;
 
-    const workerUrl = getWorkerUrl(options);
+    const workerUrl = getWorkerUrl(options, __dirname);
     if (!workerUrl) {
-      console.error("Worker URL is required to accurately identify and disable webhooks. Please provide with -w or set CLOUDFLARE_WORKER_URL.");
+      console.error("Worker URL is required to accurately identify and disable webhooks. Please provide with -w or set cloudflare_worker_url in .shopworker.json.");
       return;
     }
 
@@ -131,6 +121,50 @@ program
       console.log('Deployment process completed successfully.');
     } else {
       console.error('Deployment process failed.');
+    }
+  });
+
+program
+  .command('put-secrets')
+  .description('Save .shopworker.json contents as a Cloudflare secret')
+  .action(async () => {
+    console.log('Setting up Cloudflare secrets...');
+    const shopworkerPath = path.join(__dirname, '.shopworker.json');
+
+    if (!fs.existsSync(shopworkerPath)) {
+      console.error('Error: .shopworker.json file not found.');
+      return;
+    }
+
+    try {
+      // Read the file
+      const fileContent = fs.readFileSync(shopworkerPath, 'utf8');
+      const configData = JSON.parse(fileContent);
+
+      // Stringify the content for the secret
+      const stringifiedContent = JSON.stringify(configData);
+
+      // Save as Cloudflare secret using wrangler
+      const { execSync } = await import('child_process');
+
+      // Create a temporary file with the config
+      const tempFile = path.join(__dirname, '.temp_config.json');
+      fs.writeFileSync(tempFile, stringifiedContent, 'utf8');
+
+      try {
+        // Use the file content as input to wrangler
+        execSync(`cat ${tempFile} | npx wrangler secret put SHOPWORKER_CONFIG`,
+          { stdio: 'inherit', encoding: 'utf8' });
+
+        console.log('Successfully saved .shopworker.json as SHOPWORKER_CONFIG secret.');
+      } finally {
+        // Clean up temporary file
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+        }
+      }
+    } catch (error) {
+      console.error('Error setting up Cloudflare secret:', error.message);
     }
   });
 

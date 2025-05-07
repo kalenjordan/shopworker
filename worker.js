@@ -85,8 +85,26 @@ async function handleRequest(request, env, ctx) {
       return new Response('Missing X-Shopify-Shop-Domain header', { status: 400 });
     }
 
-    // Get API access token from environment
-    const accessToken = env.SHOPIFY_ACCESS_TOKEN;
+    // Parse the configuration from secrets
+    let shopworkerConfig = {};
+    try {
+      if (env.SHOPWORKER_CONFIG) {
+        shopworkerConfig = JSON.parse(env.SHOPWORKER_CONFIG);
+      } else {
+        console.warn('SHOPWORKER_CONFIG secret not found. Falling back to legacy configuration.');
+      }
+    } catch (error) {
+      console.error('Error parsing SHOPWORKER_CONFIG:', error.message);
+    }
+
+    // Find the shop configuration for this domain
+    let shopConfig = null;
+    if (shopworkerConfig.shops) {
+      shopConfig = shopworkerConfig.shops.find(shop => shop.shopify_domain === shopDomain);
+    }
+
+    // Get API access token from shop config or environment
+    const accessToken = shopConfig?.shopify_token || env.SHOPIFY_ACCESS_TOKEN;
     if (!accessToken) {
       return new Response('Shopify API access token not configured', { status: 500 });
     }
@@ -102,9 +120,9 @@ async function handleRequest(request, env, ctx) {
     await jobModule.process({
       record: bodyData, // The webhook payload is passed as 'record' (previously 'order')
       shopify: shopify,
-      env: env
-      // TODO: Update to use shop configuration from .shopworker.json similar to job-executor.js
-      // This would require bundling shop configs during build or adding KV storage
+      env: env,
+      config: shopworkerConfig, // Pass the entire configuration to the job
+      shopConfig: shopConfig // Pass the specific shop configuration to the job
     });
 
     return new Response('Webhook processed successfully', { status: 200 });

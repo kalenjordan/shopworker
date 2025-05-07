@@ -85,17 +85,32 @@ export async function ensureAndResolveJobName(cliDirname, jobNameArg, dirOption,
 }
 
 /**
- * Get the Cloudflare worker URL from options or environment variables
+ * Get the Cloudflare worker URL from options or .shopworker.json file
  * @param {Object} options - The command options
+ * @param {string} [cliDirname] - Optional directory where cli.js is located (project root)
  * @returns {string|null} The worker URL or null if not found
  */
-export function getWorkerUrl(options) {
-  const url = options.worker || process.env.CLOUDFLARE_WORKER_URL;
-  if (!url) {
-    console.error('Cloudflare worker URL is required. Please set CLOUDFLARE_WORKER_URL in your .env file or use the -w <workerUrl> option.');
-    return null;
+export function getWorkerUrl(options, cliDirname = process.cwd()) {
+  // First check if URL is provided in command options
+  if (options.worker) {
+    return options.worker;
   }
-  return url;
+
+  // Otherwise, try to load from .shopworker.json
+  const shopworkerPath = path.join(cliDirname, '.shopworker.json');
+  if (fs.existsSync(shopworkerPath)) {
+    try {
+      const shopworkerConfig = JSON.parse(fs.readFileSync(shopworkerPath, 'utf8'));
+      if (shopworkerConfig.cloudflare_worker_url) {
+        return shopworkerConfig.cloudflare_worker_url;
+      }
+    } catch (error) {
+      console.error(`Error reading .shopworker.json: ${error.message}`);
+    }
+  }
+
+  console.error('Cloudflare worker URL is required. Please set cloudflare_worker_url in your .shopworker.json file or use the -w <workerUrl> option.');
+  return null;
 }
 
 /**

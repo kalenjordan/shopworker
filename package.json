@@ -14,11 +14,11 @@
     "status": "node cli.js status",
     "deploy": "node cli.js deploy",
     "delete-webhook": "node cli.js delete-webhook",
-    "delete-all-webhooks": "node cli.js delete-all-topic-webhooks"
+    "delete-all-webhooks": "node cli.js delete-all-topic-webhooks",
+    "put-secrets": "node cli.js put-secrets"
   },
   "dependencies": {
     "commander": "^13.1.0",
-    "dotenv": "^16.0.3",
     "googleapis": "^131.0.0"
   }
 }
