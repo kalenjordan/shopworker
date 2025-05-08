@@ -1,4 +1,4 @@
-import OrderInvoiceSend from "../../graphql/OrderInvoiceSend.js";
+import OrderInvoiceSend from "../../../graphql/OrderInvoiceSend.js";
 
 /**
  * Process an order to fetch data from an external API and set it as the custom message on the order invoice

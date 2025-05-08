@@ -1,5 +1,5 @@
-import GetOrderById from "../../graphql/GetOrderById.js";
-import * as GoogleSheets from "../../connectors/google-sheets.js";
+import GetOrderById from "../../../graphql/GetOrderById.js";
+import * as GoogleSheets from "../../../connectors/google-sheets.js";
 import chalk from "chalk";
 
 // Define column mappings in one place

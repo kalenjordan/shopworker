@@ -1,5 +1,5 @@
-import GetProductById from "../../graphql/GetProductById.js";
-import * as GoogleSheets from "../../connectors/google-sheets.js";
+import GetProductById from "../../../graphql/GetProductById.js";
+import * as GoogleSheets from "../../../connectors/google-sheets.js";
 import chalk from "chalk";
 
 // -----------------------------------------------------------------------------
