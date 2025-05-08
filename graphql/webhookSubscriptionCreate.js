@@ -11,6 +11,7 @@ export default `
       webhookSubscription {
         id
         topic
+        includeFields
         endpoint {
           __typename
           ... on WebhookHttpEndpoint {

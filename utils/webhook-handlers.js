@@ -223,9 +223,20 @@ export async function enableJobWebhook(cliDirname, jobName, workerUrl) {
     console.log(`Worker URL: ${webhookAddress}`);
 
     const graphqlTopic = triggerConfig.webhook.topic.toUpperCase().replace('/', '_');
+    const webhookSubscription = {
+      callbackUrl: webhookAddress,
+      format: "JSON"
+    };
+
+    // Add includeFields if specified in the trigger config
+    if (triggerConfig.webhook.includeFields && Array.isArray(triggerConfig.webhook.includeFields)) {
+      webhookSubscription.includeFields = triggerConfig.webhook.includeFields;
+      console.log(`Including fields: ${triggerConfig.webhook.includeFields.join(', ')}`);
+    }
+
     const variables = {
       topic: graphqlTopic,
-      webhookSubscription: { callbackUrl: webhookAddress, format: "JSON" }
+      webhookSubscription: webhookSubscription
     };
 
     const response = await shopify.graphql(WEBHOOK_CREATE_MUTATION, variables);
