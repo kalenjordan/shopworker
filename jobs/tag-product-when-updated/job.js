@@ -56,11 +56,7 @@ export async function process({ record: productData, shopify, env }) {
   console.log("Payload: ", productData);
 
   try {
-    // Convert ID to GID format if needed
-    let productId = productData.id;
-    if (!productId.startsWith('gid://')) {
-      productId = shopify.toGid(productId, "Product");
-    }
+    const productId = shopify.toGid(productData.id, "Product");
 
     // Get current product data including existing tags
     const { product } = await shopify.graphql(GET_PRODUCT_BY_ID, { id: productId });
