@@ -98,6 +98,12 @@ export async function process({ record: order, shopify, env }) {
 
   const orderDetails = await getAugmentedOrderDetails(order, shopify);
 
+  // Early return if payment gateway is not Billie (Klarna B2B)
+  if (!orderDetails.paymentGatewayNames || !orderDetails.paymentGatewayNames.includes('Billie (Klarna B2B)')) {
+    console.log(`Skipping order ${orderDetails.name} as payment gateway is not Billie (Klarna B2B)`);
+    return;
+  }
+
   const { amount: formattedAmount, currencyCode } = extractPricing(orderDetails);
 
   console.log(`Preparing Mollie payment link for order ${orderDetails.name} with amount ${formattedAmount} ${currencyCode}`);

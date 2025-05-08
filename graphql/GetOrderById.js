@@ -12,6 +12,7 @@ query GetOrderById($id: ID!) {
     subtotalPrice
     totalTax
     totalDiscounts
+    paymentGatewayNames
     currencyCode # The currency code for scalar money fields like totalPrice
     currentTotalPriceSet {
       presentmentMoney {
