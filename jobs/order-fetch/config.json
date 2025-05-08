@@ -1,0 +1,7 @@
+{
+  "name": "order-created-tag-skus",
+  "shop": "cutting",
+  "description": "Tags customers with SKUs from their order",
+  "version": "1.0.0",
+  "trigger": "order-created"
+}
