@@ -66,7 +66,7 @@ export async function findSampleRecordForJob(cliDirname, jobName, queryParam) {
   const queryModule = await import(queryModulePath);
   const query = queryModule.default;
 
-  console.log("Fetching most recent data...");
+  console.log("Populating sample record into job from CLI...");
   const variables = { first: 1 };
   if (queryParam) {
     console.log(`Using query filter: ${queryParam}`);
@@ -111,11 +111,12 @@ export async function runJobTest(cliDirname, jobName, queryParam) {
   const jobModulePath = pathToFileURL(path.resolve(cliDirname, `jobs/${jobName}/job.js`)).href;
   const jobModule = await import(jobModulePath);
 
-  if (topLevelKey) {
-    console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${recordName} for job ${jobName}...`);
-  } else {
-    console.log(`Processing manual trigger for job ${jobName}...`);
-  }
+  // Disable for now so cli logs match the worker logs
+  // if (topLevelKey) {
+  //   console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${recordName} for job ${jobName}...`);
+  // } else {
+  //   console.log(`Processing manual trigger for job ${jobName}...`);
+  // }
 
   await jobModule.process({ record, shopify: shopify, env: shopConfig });
   console.log('Processing complete!');
