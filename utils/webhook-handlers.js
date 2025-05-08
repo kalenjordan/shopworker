@@ -24,6 +24,7 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
   let statusMsg = '✅ MANUAL'; // Default for jobs without trigger or non-webhook triggers
   let webhookIdSuffix = '-';
   const shop = jobConfig.shop || null;
+  let includeFields = null;
 
   if (jobConfig.trigger) {
     let triggerConfig;
@@ -57,10 +58,11 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
           });
 
           if (jobWebhook) {
-            statusMsg = '✅ ENABLED';
+            statusMsg = '🟢 ENABLED';
             webhookIdSuffix = jobWebhook.id.split('/').pop();
+            includeFields = jobWebhook.includeFields;
           } else {
-            statusMsg = '❌ DISABLED';
+            statusMsg = '🔴 DISABLED';
           }
         }
       } catch (initOrGraphQLError) {
@@ -70,7 +72,7 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
       }
     }
   }
-  return { jobName: currentJobName, displayTopic, statusMsg, webhookIdSuffix, shop };
+  return { jobName: currentJobName, displayTopic, statusMsg, webhookIdSuffix, shop, includeFields };
 }
 
 /**
@@ -87,17 +89,29 @@ export async function handleAllJobsStatus(cliDirname) {
   }
 
   console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(100));
-  console.log(`${'JOB'.padEnd(25)} ${'SHOP'.padEnd(20)} ${'TRIGGER/TOPIC'.padEnd(30)} ${'STATUS'.padEnd(15)} WEBHOOK ID`);
+  console.log(`${'JOB'.padEnd(25)} ${'SHOP'.padEnd(20)} ${'TRIGGER/TOPIC'.padEnd(30)} ${'STATUS'.padEnd(15)} ${'WEBHOOK ID'.padEnd(10)} FIELDS`);
   console.log('-'.repeat(100));
 
   for (const currentJobName of jobDirs) {
     try {
-      const { jobName, displayTopic, statusMsg, webhookIdSuffix, shop } = await getJobDisplayInfo(cliDirname, currentJobName);
+      const { jobName, displayTopic, statusMsg, webhookIdSuffix, shop, includeFields } = await getJobDisplayInfo(cliDirname, currentJobName);
       const shopDisplay = shop ? chalk.blue(shop).padEnd(20) : 'N/A'.padEnd(20);
-      console.log(`${jobName.padEnd(25)} ${shopDisplay} ${displayTopic.padEnd(30)} ${statusMsg.padEnd(15)} ${webhookIdSuffix}`);
+      let fieldsDisplay = '';
+
+      if (includeFields && includeFields.length > 0) {
+        // Show first 3 fields with ellipsis if more
+        const fieldCount = includeFields.length;
+        const fieldsToShow = includeFields.slice(0, 3);
+        fieldsDisplay = fieldsToShow.join(', ');
+        if (fieldCount > 3) {
+          fieldsDisplay += ` +${fieldCount - 3} more`;
+        }
+      }
+
+      console.log(`${jobName.padEnd(25)} ${shopDisplay} ${displayTopic.padEnd(30)} ${statusMsg.padEnd(15)} ${webhookIdSuffix.padEnd(10)} ${fieldsDisplay}`);
     } catch (error) { // Catch errors from getJobDisplayInfo if they are not handled internally
       console.error(`Error processing job ${currentJobName}: ${error.message}`);
-      console.log(`${currentJobName.padEnd(25)} ${'ERROR'.padEnd(20)} ${'ERROR'.padEnd(30)} ${'⚠️ UNKNOWN ERROR'.padEnd(15)} -`);
+      console.log(`${currentJobName.padEnd(25)} ${'ERROR'.padEnd(20)} ${'ERROR'.padEnd(30)} ${'⚠️ UNKNOWN ERROR'.padEnd(15)} ${'-'.padEnd(10)} -`);
     }
   }
 
@@ -178,19 +192,22 @@ export async function handleSingleJobStatus(cliDirname, jobName) {
     });
 
     if (matchingWebhooksForJobAndTopic.length > 0) {
-      console.log(`\n✅ Job '${jobName}' is ENABLED for topic '${triggerConfig.webhook.topic}'.`);
+      console.log(`\n🟢 Job '${jobName}' is ENABLED for topic '${triggerConfig.webhook.topic}'.`);
       matchingWebhooksForJobAndTopic.forEach(webhook => {
         console.log(`  Webhook ID: ${webhook.id}`);
         console.log(`  Callback URL: ${webhook.endpoint.callbackUrl}`);
         console.log(`  Created At: ${webhook.createdAt}`);
+        if (webhook.includeFields && webhook.includeFields.length > 0) {
+          console.log(`  Include Fields: ${webhook.includeFields.join(', ')}`);
+        }
       });
     } else {
-      console.log(`\n❌ Job '${jobName}' is DISABLED for topic '${triggerConfig.webhook.topic}'.`);
+      console.log(`\n🔴 Job '${jobName}' is DISABLED for topic '${triggerConfig.webhook.topic}'.`);
       console.log(`   No active webhook found specifically for this job and topic on its configured shop.`);
     }
 
     if (otherWebhooksForTopic.length > 0) {
-      console.log(`\nℹ️ Note: Found ${otherWebhooksForTopic.length} other webhook(s) for topic '${triggerConfig.webhook.topic}' on the same shop:`);
+      console.log(`\nℹ️  Note: Found ${otherWebhooksForTopic.length} other webhook(s) for topic '${triggerConfig.webhook.topic}' on the same shop:`);
       otherWebhooksForTopic.forEach(webhook => {
         console.log(`  - ID: ${webhook.id}, URL: ${webhook.endpoint?.callbackUrl || 'N/A'}`);
       });

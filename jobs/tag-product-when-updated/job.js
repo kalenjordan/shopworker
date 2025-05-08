@@ -55,44 +55,6 @@ function getFormattedTimestamp() {
  * @param {Object} options.env - Environment variables
  */
 export async function process({ record: productData, shopify, env }) {
+  console.log("Processing product update to add timestamp tag");
   console.log("Payload: ", productData);
-
-  // try {
-  //   // Convert ID to GID format if needed
-  //   let productId = productData.id;
-  //   if (!productId.startsWith('gid://')) {
-  //     productId = shopify.toGid(productId, "Product");
-  //   }
-
-  //   // Get current product data including existing tags
-  //   const { product } = await shopify.graphql(GET_PRODUCT_BY_ID, { id: productId });
-
-  //   // Create a timestamp tag
-  //   const timestampTag = getFormattedTimestamp();
-
-  //   // Combine existing tags with new timestamp tag
-  //   const existingTags = product.tags || [];
-  //   const updatedTags = [...existingTags, timestampTag];
-
-  //   // Update the product with the new tags
-  //   const updateResponse = await shopify.graphql(UPDATE_PRODUCT_TAGS, {
-  //     input: {
-  //       id: productId,
-  //       tags: updatedTags
-  //     }
-  //   });
-
-  //   // Check for errors
-  //   if (updateResponse.productUpdate.userErrors && updateResponse.productUpdate.userErrors.length > 0) {
-  //     const errors = updateResponse.productUpdate.userErrors.map(err => err.message).join(", ");
-  //     throw new Error(`Failed to update product tags: ${errors}`);
-  //   }
-
-  //   console.log(`Successfully added timestamp tag "${timestampTag}" to product ${product.title}`);
-  //   console.log(`Updated tags: ${updatedTags.join(', ')}`);
-
-    return {
-      success: true,
-      productId: productData.id,
-  };
 }

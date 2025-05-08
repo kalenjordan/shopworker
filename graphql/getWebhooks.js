@@ -7,6 +7,7 @@ export default `
       nodes {
         id
         topic
+        includeFields
         endpoint {
           __typename
           ... on WebhookHttpEndpoint {
