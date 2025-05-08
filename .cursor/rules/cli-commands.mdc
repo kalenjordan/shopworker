@@ -38,3 +38,7 @@ A convenience command that can be run from a job directory:
 - `loadTriggerConfig()` - Loads a trigger's configuration file
 - `runJobTest()` - Executes the test for a specific job
 - `initShopify()` - Initializes the Shopify API client
+
+## Log colors
+
+Use chalk for log coloring

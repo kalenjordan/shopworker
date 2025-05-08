@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { pathToFileURL } from 'url';
+import chalk from 'chalk';
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { initShopify } from './shopify-api-helpers.js';
 
@@ -107,6 +108,9 @@ export async function runJobTest(cliDirname, jobName, queryParam) {
   // Get shop configuration from .shopworker.json
   const shopConfig = getShopConfig(cliDirname, jobConfig.shop);
 
+  // Log shop domain in purple using chalk
+  console.log(chalk.magenta(`Processing for shop: ${shopConfig.shopify_domain}`));
+
   // Use path.resolve with pathToFileURL to ensure proper module resolution
   const jobModulePath = pathToFileURL(path.resolve(cliDirname, `jobs/${jobName}/job.js`)).href;
   const jobModule = await import(jobModulePath);
@@ -193,7 +197,7 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
   };
   console.log(`Sending test request to worker for job: ${jobName}: ${webhookAddress}`);
   console.log(`Topic: ${webhookTopic}`);
-  console.log(`Shop: ${shopDomain}`);
+  console.log(`Shop: ${chalk.magenta(shopDomain)}`);
   console.log(`Data\n: ${JSON.stringify(data, null, 2)}\n`);
 
   // Send the request
