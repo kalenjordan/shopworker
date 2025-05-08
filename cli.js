@@ -40,10 +40,11 @@ program
   .description('Test a job with the most recent order data or manual trigger')
   .option('-d, --dir <jobDirectory>', 'Job directory name (if not running from within job dir)')
   .option('-q, --query <queryString>', 'Query string to filter results (e.g. "status:any")')
+  .option('-s, --shop <shopDomain>', 'Override the shop domain in the job config')
   .action(async (jobNameArg, options) => {
     const jobName = await ensureAndResolveJobName(__dirname, jobNameArg, options.dir, true);
     if (!jobName) return;
-    await runJobTest(__dirname, jobName, options.query);
+    await runJobTest(__dirname, jobName, options.query, options.shop);
   });
 
 program
@@ -106,10 +107,11 @@ program
   .description('Run test for the current job directory (or specified with -d)')
   .option('-d, --dir <jobDirectory>', 'Job directory name (if not running from within job dir)')
   .option('-q, --query <queryString>', 'Query string to filter results (e.g. "status:any")')
+  .option('-j, --shop <shopDomain>', 'Override the shop domain in the job config')
   .action(async (options) => {
     const jobName = await ensureAndResolveJobName(__dirname, null, options.dir, true);
     if (!jobName) return;
-    await runJobTest(__dirname, jobName, options.query);
+    await runJobTest(__dirname, jobName, options.query, options.shop);
   });
 
 program
@@ -176,6 +178,7 @@ program
   .option('-i, --id <recordId>', 'ID of the record to process (optional, will find a sample record if not provided)')
   .option('-q, --query <queryString>', 'Query string to filter results when automatically finding a record')
   .option('-w, --worker <workerUrl>', 'Cloudflare worker URL (overrides .shopworker.json)')
+  .option('-j, --shop <shopDomain>', 'Override the shop domain in the job config')
   .action(async (jobNameArg, options) => {
     try {
       const jobName = await ensureAndResolveJobName(__dirname, jobNameArg, options.dir, true);

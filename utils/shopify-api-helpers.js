@@ -6,9 +6,10 @@ import { createShopifyClient } from './shopify-client.js';
  * Initialize Shopify API client for a specific job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} jobName - The job name
+ * @param {string} shopParam - Optional shop domain or name to override the one in job config
  * @returns {Object} The Shopify client
  */
-export function initShopify(cliDirname, jobName) {
+export function initShopify(cliDirname, jobName, shopParam) {
   try {
     if (!jobName) {
       throw new Error('jobName is required to initialize Shopify client.');
@@ -21,10 +22,8 @@ export function initShopify(cliDirname, jobName) {
     const jobConfigFile = fs.readFileSync(jobConfigPath, 'utf8');
     const jobConfig = JSON.parse(jobConfigFile);
 
-    const shopIdentifier = jobConfig.shop;
-    if (!shopIdentifier) {
-      throw new Error(`'shop' not defined in job configuration: ${jobConfigPath}`);
-    }
+    // Get shop identifier from job config or override with shopParam
+    let shopIdentifier = jobConfig.shop;
 
     const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
     if (!fs.existsSync(shopworkerFilePath)) {
@@ -37,19 +36,37 @@ export function initShopify(cliDirname, jobName) {
       throw new Error('Invalid .shopworker.json format: "shops" array is missing or not an array.');
     }
 
-    const shopDetails = shopworkerData.shops.find(s => s.name === shopIdentifier);
-    if (!shopDetails) {
-      throw new Error(`Shop configuration for '${shopIdentifier}' not found in .shopworker.json.`);
+    // If shopParam is provided, look it up in .shopworker.json
+    let shopDetails = null;
+    if (shopParam) {
+      // Try to find shop by domain or name
+      shopDetails = shopworkerData.shops.find(s =>
+        s.shopify_domain === shopParam || s.name === shopParam
+      );
+
+      if (!shopDetails) {
+        throw new Error(`Shop with domain or name '${shopParam}' not found in .shopworker.json.`);
+      }
+    } else {
+      // Use shop from job config
+      if (!shopIdentifier) {
+        throw new Error(`'shop' not defined in job configuration: ${jobConfigPath}`);
+      }
+
+      shopDetails = shopworkerData.shops.find(s => s.name === shopIdentifier);
+      if (!shopDetails) {
+        throw new Error(`Shop configuration for '${shopIdentifier}' not found in .shopworker.json.`);
+      }
     }
 
     const shopDomain = shopDetails.shopify_domain;
     const accessToken = shopDetails.shopify_token;
 
     if (!shopDomain) {
-      throw new Error(`'shopify_domain' not set for shop '${shopIdentifier}' in .shopworker.json`);
+      throw new Error(`'shopify_domain' not set for shop '${shopDetails.name}' in .shopworker.json`);
     }
     if (!accessToken) {
-      throw new Error(`'shopify_token' not set for shop '${shopIdentifier}' in .shopworker.json`);
+      throw new Error(`'shopify_token' not set for shop '${shopDetails.name}' in .shopworker.json`);
     }
 
     return createShopifyClient({

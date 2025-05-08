@@ -37,17 +37,36 @@ function getShopConfig(cliDirname, shopName) {
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} jobName - The job name
  * @param {string} queryParam - Optional query parameter for filtering results
+ * @param {string} shopParam - Optional shop domain to override the one in job config
  * @returns {Promise<{record: Object, recordName: string, shopify: Object, triggerConfig: Object, jobConfig: Object}>}
  * The sample record and related configuration
  */
-export async function findSampleRecordForJob(cliDirname, jobName, queryParam) {
+export async function findSampleRecordForJob(cliDirname, jobName, queryParam, shopParam) {
   const jobConfig = loadJobConfig(jobName);
   if (!jobConfig.trigger) {
     throw new Error(`Job ${jobName} doesn't have a trigger defined`);
   }
 
   const triggerConfig = loadTriggerConfig(jobConfig.trigger);
-  const shopify = initShopify(cliDirname, jobName);
+
+  // If shopParam is provided, create a copy of jobConfig with the shop override
+  let configToUse = jobConfig;
+  if (shopParam) {
+    // Find shop by domain in shopworker.json
+    const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
+    const shopworkerData = JSON.parse(fs.readFileSync(shopworkerFilePath, 'utf8'));
+    const shopConfig = shopworkerData.shops.find(s => s.shopify_domain === shopParam || s.name === shopParam);
+
+    if (!shopConfig) {
+      throw new Error(`Shop with domain or name '${shopParam}' not found in .shopworker.json.`);
+    }
+
+    // Create a copy of jobConfig with overridden shop
+    configToUse = { ...jobConfig, shop: shopConfig.name };
+    console.log(chalk.yellow(`Overriding shop with: ${shopConfig.name} (${shopConfig.shopify_domain})`));
+  }
+
+  const shopify = initShopify(cliDirname, jobName, shopParam);
 
   if (triggerConfig.test && triggerConfig.test.skipQuery) {
     return {
@@ -55,7 +74,7 @@ export async function findSampleRecordForJob(cliDirname, jobName, queryParam) {
       recordName: 'manual-trigger',
       shopify,
       triggerConfig,
-      jobConfig
+      jobConfig: configToUse
     };
   }
 
@@ -92,7 +111,7 @@ export async function findSampleRecordForJob(cliDirname, jobName, queryParam) {
     shopify,
     topLevelKey,
     triggerConfig,
-    jobConfig
+    jobConfig: configToUse
   };
 }
 
@@ -101,9 +120,10 @@ export async function findSampleRecordForJob(cliDirname, jobName, queryParam) {
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} jobName - The job name
  * @param {string} queryParam - Optional query parameter for filtering results
+ * @param {string} shopParam - Optional shop domain to override the one in job config
  */
-export async function runJobTest(cliDirname, jobName, queryParam) {
-  const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobName, queryParam);
+export async function runJobTest(cliDirname, jobName, queryParam, shopParam) {
+  const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobName, queryParam, shopParam);
 
   // Get shop configuration from .shopworker.json
   const shopConfig = getShopConfig(cliDirname, jobConfig.shop);
@@ -173,13 +193,13 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
   const webhookTopic = triggerConfig?.webhook?.topic || 'products/create'; // Default if not found
 
   // Get shop domain
-  const shopDomain = getShopDomain(cliDirname, jobConfig.shop);
+  const shopDomain = options.shop || getShopDomain(cliDirname, jobConfig.shop);
 
   // Get record ID or find sample record
   let recordId = options.id;
   if (!recordId) {
     console.log("No record ID provided. Finding a sample record...");
-    const { record } = await findSampleRecordForJob(cliDirname, jobName, options.query);
+    const { record } = await findSampleRecordForJob(cliDirname, jobName, options.query, options.shop);
     recordId = record.id;
     if (!recordId) {
       throw new Error("Could not extract ID from the sample record.");
