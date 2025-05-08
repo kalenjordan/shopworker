@@ -48,7 +48,6 @@ This pattern ensures that GraphQL operations can be reused across different jobs
 When implementing jobs, follow these guidelines:
 - Do not use try/catch blocks in jobs - errors should bubble up to the main handler
 - The CLI framework will handle logging and reporting of errors
-- Only catch errors if you need to perform specific error handling or recovery
 
 # Job Structure and Best Practices
 
