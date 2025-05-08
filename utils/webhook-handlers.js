@@ -417,3 +417,42 @@ export async function disableJobWebhook(cliDirname, jobName, workerUrl) {
     console.error(`Error disabling job '${jobName}': ${error.message}`);
   }
 }
+
+/**
+ * Delete a webhook by its ID
+ * @param {string} cliDirname - The directory where cli.js is located (project root)
+ * @param {string} jobName - The job name (for initializing the Shopify client)
+ * @param {string} webhookId - The ID of the webhook to delete
+ */
+export async function deleteWebhookById(cliDirname, jobName, webhookId) {
+  try {
+    const shopify = initShopify(cliDirname, jobName);
+
+    console.log(`Attempting to delete webhook with ID: ${webhookId}`);
+
+    // If the ID doesn't have the gid format, add it
+    let fullWebhookId = webhookId;
+    if (!webhookId.startsWith('gid://')) {
+      fullWebhookId = `gid://shopify/WebhookSubscription/${webhookId}`;
+      console.log(`Using full webhook ID: ${fullWebhookId}`);
+    }
+
+    const deleteResponse = await shopify.graphql(WEBHOOK_DELETE_MUTATION, { id: fullWebhookId });
+
+    if (deleteResponse?.webhookSubscriptionDelete?.userErrors?.length > 0) {
+      const errors = deleteResponse.webhookSubscriptionDelete.userErrors.map(err => err.message).join(", ");
+      console.error(`Error deleting webhook ${webhookId}: ${errors}`);
+      return false;
+    } else if (deleteResponse?.webhookSubscriptionDelete?.deletedWebhookSubscriptionId) {
+      console.log(`Successfully deleted webhook with ID: ${webhookId}`);
+      return true;
+    } else {
+      console.error(`Error deleting webhook ${webhookId}: Unexpected response format.`);
+      console.log(JSON.stringify(deleteResponse, null, 2));
+      return false;
+    }
+  } catch (error) {
+    console.error(`Error deleting webhook '${webhookId}': ${error.message}`);
+    return false;
+  }
+}

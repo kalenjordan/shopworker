@@ -64,7 +64,7 @@ export async function process({ record: productData, shopify, env }) {
 
     // Create a last-modified tag with today's date
     const formattedDate = getFormattedDate();
-    const newTag = `last-modified-${formattedDate}`;
+    const newTag = `title-last-modified-${formattedDate}`;
 
     // Filter out any existing last-modified tags
     let existingTags = product.tags || [];

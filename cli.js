@@ -17,7 +17,8 @@ import {
   handleAllJobsStatus,
   handleSingleJobStatus,
   enableJobWebhook,
-  disableJobWebhook
+  disableJobWebhook,
+  deleteWebhookById
 } from './utils/webhook-handlers.js';
 
 // Get directory name in ESM
@@ -193,6 +194,37 @@ program
       await runJobRemoteTest(__dirname, jobName, options);
     } catch (error) {
       console.error(`Error running remote test: ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('delete-webhook')
+  .description('Delete a webhook by its ID')
+  .argument('<webhookId>', 'ID of the webhook to delete')
+  .option('-j, --job <jobName>', 'Job name to use for API connection (will try to detect from current directory if not specified)')
+  .action(async (webhookId, options) => {
+    // Try to detect the job from the current directory if not provided
+    let jobNameArg = options.job;
+    if (!jobNameArg) {
+      jobNameArg = detectJobDirectory(__dirname, null);
+    }
+
+    // Resolve the job name
+    const resolvedJobName = await ensureAndResolveJobName(__dirname, jobNameArg, null, false);
+    if (!resolvedJobName) {
+      console.error('Error: Could not determine which job to use. Please specify with --job option or run from a job directory.');
+      console.error('Example: shopworker delete-webhook 123456789 --job product-create');
+      return;
+    }
+
+    console.log(`Using credentials from job '${resolvedJobName}' to delete webhook ID: ${webhookId}`);
+
+    const success = await deleteWebhookById(__dirname, resolvedJobName, webhookId);
+    if (success) {
+      console.log('Webhook deletion completed successfully.');
+    } else {
+      console.error('Webhook deletion failed.');
       process.exit(1);
     }
   });
