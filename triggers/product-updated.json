@@ -1,8 +1,7 @@
 {
   "name": "Product Updated",
   "webhook": {
-    "topic": "products/update",
-    "includeFields": ["id", "title", "descriptionHtml", "tags"]
+    "topic": "products/update"
   },
   "test": {
     "query": "GetRecentProducts"

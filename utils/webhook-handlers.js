@@ -248,7 +248,10 @@ export async function enableJobWebhook(cliDirname, jobName, workerUrl) {
     // Add includeFields if specified in the trigger config
     if (triggerConfig.webhook.includeFields && Array.isArray(triggerConfig.webhook.includeFields)) {
       webhookSubscription.includeFields = triggerConfig.webhook.includeFields;
-      console.log(`Including fields: ${triggerConfig.webhook.includeFields.join(', ')}`);
+      console.log(`Include Fields:`);
+      triggerConfig.webhook.includeFields.forEach(field => {
+        console.log(`  - ${field}`);
+      });
     }
 
     const variables = {
@@ -271,6 +274,12 @@ export async function enableJobWebhook(cliDirname, jobName, workerUrl) {
 
     const webhook = response.webhookSubscriptionCreate.webhookSubscription;
     console.log(`Successfully registered webhook with ID: ${webhook.id}`);
+
+    // Show the included fields in the success message if they exist
+    if (webhook.includeFields && webhook.includeFields.length > 0) {
+      console.log(`Webhook will only include these fields: ${webhook.includeFields.join(', ')}`);
+    }
+
     console.log('Job enabled successfully!');
   } catch (error) {
     console.error(`Error enabling job '${jobName}': ${error.message}`);
