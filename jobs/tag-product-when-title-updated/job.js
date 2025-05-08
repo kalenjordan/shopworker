@@ -4,31 +4,7 @@
  * This job adds a last-modified date tag to products when they are updated
  */
 
-const GET_PRODUCT_BY_ID = `
-  query getProductById($id: ID!) {
-    product(id: $id) {
-      id
-      title
-      tags
-    }
-  }
-`;
-
-const UPDATE_PRODUCT_TAGS = `
-  mutation productUpdate($input: ProductInput!) {
-    productUpdate(input: $input) {
-      product {
-        id
-        title
-        tags
-      }
-      userErrors {
-        field
-        message
-      }
-    }
-  }
-`;
+import ProductUpdate from '../../graphql/ProductUpdate.js';
 
 /**
  * Formats the current date as YYYY-MM-DD
@@ -57,24 +33,21 @@ export async function process({ record: productData, shopify, env }) {
 
   try {
     const productId = shopify.toGid(productData.id, "Product");
-
-    // Get current product data including existing tags
-    const { product } = await shopify.graphql(GET_PRODUCT_BY_ID, { id: productId });
-    console.log(`Processing product: ${product.title} (${productId})`);
+    console.log(`Processing product: ${productData.title} (${productId})`);
 
     // Create a last-modified tag with today's date
     const formattedDate = getFormattedDate();
     const newTag = `title-last-modified-${formattedDate}`;
 
     // Filter out any existing last-modified tags
-    let existingTags = product.tags || [];
+    let existingTags = productData.tags || [];
     const filteredTags = existingTags.filter(tag => !tag.startsWith('last-modified-'));
 
     // Add the new tag
     const updatedTags = [...filteredTags, newTag];
 
     // Update the product with the new tags
-    const updateResponse = await shopify.graphql(UPDATE_PRODUCT_TAGS, {
+    const updateResponse = await shopify.graphql(ProductUpdate, {
       input: {
         id: productId,
         tags: updatedTags
