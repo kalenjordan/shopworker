@@ -1,7 +1,7 @@
 ---
 description:
 globs:
-alwaysApply: false
+alwaysApply: true
 ---
 # Follow Existing Patterns
 
@@ -15,6 +15,8 @@ When implementing new features or modifying existing ones, always follow the pat
 
 3. **Function structure** - Follow the patterns used in similar functions within the project
 
+4. **GraphQL organization** - All GraphQL operations must be defined in separate files in the `graphql/` directory, never inline in job files or other components
+
 ## Examples of Pattern Matching
 
 When working with specific functionality, look at these example implementations:
@@ -22,5 +24,7 @@ When working with specific functionality, look at these example implementations:
 - For **Google Sheets integration**, refer to [jobs/order-to-google-sheets/job.js](mdc:jobs/order-to-google-sheets/job.js) for environment variable naming and API usage patterns
 
 - For **webhook handling**, follow patterns in [utils/webhook-handlers.js](mdc:utils/webhook-handlers.js)
+
+- For **GraphQL operations**, observe how queries and mutations are defined in separate files in the [graphql](mdc:graphql) directory and imported where needed
 
 Remember to preserve the existing style, casing, and structure when adding new code to maintain consistency throughout the codebase.

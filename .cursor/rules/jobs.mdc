@@ -1,7 +1,7 @@
 ---
 description:
 globs:
-alwaysApply: false
+alwaysApply: true
 ---
 # Jobs Structure
 
@@ -28,6 +28,20 @@ To create a new job:
 2. Add a `config.json` file to specify the trigger
 3. Implement the job's logic in `job.js` with an exported `process` function
 4. The `process` function will receive the Shopify data object and the Shopify API client
+
+## GraphQL Operations
+
+When a job needs to perform GraphQL operations:
+1. **ALWAYS** use dedicated GraphQL files from the `graphql/` directory
+2. **NEVER** define GraphQL queries or mutations inline in job.js files
+3. Import GraphQL operations like this:
+```javascript
+import GetProductById from '../../graphql/GetProductById.js';
+import ProductUpdate from '../../graphql/ProductUpdate.js';
+```
+4. If a query or mutation doesn't exist, create a new file in the `graphql/` directory first
+
+This pattern ensures that GraphQL operations can be reused across different jobs and improves maintainability.
 
 ## Error Handling
 

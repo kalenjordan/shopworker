@@ -1,7 +1,7 @@
 ---
 description:
 globs:
-alwaysApply: false
+alwaysApply: true
 ---
 # GraphQL Structure
 
@@ -33,6 +33,49 @@ import GetRecentOrders from '../../graphql/GetRecentOrders.js';
 
 // Use the query directly with the GraphQL client
 const response = await shopify.graphql(GetRecentOrders, variables);
+```
+
+## Anti-Patterns to Avoid
+
+### ⚠️ Inline GraphQL in Job Files
+
+**DO NOT define GraphQL operations directly in job files or other components.** This is an anti-pattern that makes queries harder to reuse and maintain.
+
+Example of what **NOT** to do:
+```javascript
+// INCORRECT - Do not define GraphQL operations inline in job files
+const GET_PRODUCT_BY_ID = `
+  query getProductById($id: ID!) {
+    product(id: $id) {
+      id
+      title
+      tags
+    }
+  }
+`;
+```
+
+### Correct Approach
+
+1. Create a file in the `graphql/` directory, e.g., `GetProductById.js`:
+```javascript
+export default `
+  query getProductById($id: ID!) {
+    product(id: $id) {
+      id
+      title
+      tags
+    }
+  }
+`;
+```
+
+2. Import and use it in your job file:
+```javascript
+import GetProductById from '../../graphql/GetProductById.js';
+
+// Later in your code:
+const { product } = await shopify.graphql(GetProductById, { id: productId });
 ```
 
 ### Note on Return Value
