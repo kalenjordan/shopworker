@@ -2,19 +2,20 @@ import OrderInvoiceSend from "../../graphql/OrderInvoiceSend.js";
 import GetOrderById from "../../graphql/GetOrderById.js";
 
 function validateEnvironment(env) {
-  if (!env.MOLLIE_API_KEY) {
+  if (!env.mollie_api_key) {
     throw new Error("MOLLIE_API_KEY is not configured in the environment.");
   }
-  if (!env.SHOP) {
+  if (!env.shopify_domain) {
     throw new Error("SHOP (Shopify domain) is not configured in the environment.");
   }
 }
 
 async function getAugmentedOrderDetails(originalOrder, shopify) {
   const orderId = shopify.toGid(originalOrder.id, 'Order');
-  console.log(`Fetching detailed order information for ID: ${orderId}`);
   const orderData = await shopify.graphql(GetOrderById, { id: orderId });
   const orderDetails = orderData.order;
+  console.log(`Fetched detailed order information for ID: ${orderId}`, orderDetails);
+
   if (!orderDetails) {
     throw new Error(`Could not fetch order details for ID: ${orderId}`);
   }
@@ -40,20 +41,17 @@ function extractPricing(orderDetails) {
 }
 
 function buildMolliePayload(orderDetails, env, formattedAmount, currencyCode) {
-  const SHOP_DOMAIN = env.SHOP;
-  const WEBHOOK_URL = env.MOLLIE_WEBHOOK_URL; // Optional
+  const shopDomain = env.shopify_domain;
 
   const orderNumber = orderDetails.name && orderDetails.name.startsWith('#') ? orderDetails.name.substring(1) : orderDetails.name;
-  const redirectUrl = `https://${SHOP_DOMAIN}/admin/orders/${orderNumber}`;
+  const redirectUrl = `https://${shopDomain}/admin/orders/${orderNumber}`;
 
   const payload = {
     amount: { currency: currencyCode, value: formattedAmount },
     description: `Payment for order ${orderDetails.name}`,
     redirectUrl: redirectUrl,
   };
-  if (WEBHOOK_URL) {
-    payload.webhookUrl = WEBHOOK_URL;
-  }
+
   return payload;
 }
 
@@ -90,7 +88,7 @@ async function sendShopifyInvoiceWithLink(orderId, paymentLink, shopify) {
 
 /**
  * Process an order to create a Mollie payment link and set it as the custom message on the order invoice
- * @param {Object} params - Parameters for the job
+ * @param {Object} params - Paramlive_bjhzRhNFSAAjUhaJ32jp397jDNdaJxeters for the job
  * @param {Object} params.order - The order object from Shopify GraphQL API (initial, might be minimal)
  * @param {Object} params.shopify - Shopify API client
  * @param {Object} params.env - Environment variables specific to the job's execution context
@@ -103,10 +101,9 @@ export async function process({ record: order, shopify, env }) {
   const { amount: formattedAmount, currencyCode } = extractPricing(orderDetails);
 
   console.log(`Preparing Mollie payment link for order ${orderDetails.name} with amount ${formattedAmount} ${currencyCode}`);
-
   const molliePayload = buildMolliePayload(orderDetails, env, formattedAmount, currencyCode);
 
-  const paymentLink = await callMollieToCreatePaymentLink(molliePayload, env.MOLLIE_API_KEY);
+  const paymentLink = await callMollieToCreatePaymentLink(molliePayload, env.mollie_api_key);
   console.log(`Created Mollie payment link: ${paymentLink}`);
 
   await sendShopifyInvoiceWithLink(orderDetails.GID, paymentLink, shopify);
