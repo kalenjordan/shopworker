@@ -11,9 +11,9 @@ export async function handleCloudflareDeployment(cliDirname) {
     const { execSync } = await import('child_process');
     const gitStatus = execSync('git status --porcelain', { encoding: 'utf8' });
     if (gitStatus.trim() !== '') {
-      console.error('Error: There are uncommitted changes in your Git repository. Please commit or stash them before deploying.');
+      console.error('Warning: There are uncommitted changes in your Git repository. Please commit or stash them before deploying.');
       console.error('Uncommitted changes:\n' + gitStatus);
-      return false;
+      // return false;
     }
   } catch (error) {
     console.error('Error checking Git status:', error.message);

@@ -52,7 +52,7 @@ function getFormattedDate() {
  * @param {Object} options.env - Environment variables
  */
 export async function process({ record: productData, shopify, env }) {
-  console.log("Processing product update to add last-modified tag");
+  console.log("====== Processing product update to add last-modified tag ======");
   console.log("Payload: ", productData);
 
   try {

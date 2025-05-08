@@ -1,6 +1,0 @@
-{
-  "name": "Tag Product When Updated",
-  "description": "Adds a tag with the current timestamp when a product is updated",
-  "trigger": "product-updated",
-  "shop": "kalen-test-store"
-}

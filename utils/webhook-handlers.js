@@ -25,6 +25,13 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
   let webhookIdSuffix = '-';
   const shop = jobConfig.shop || null;
   let includeFields = null;
+  let webhookConfigSource = null;
+
+  // Check for includeFields in job config
+  if (jobConfig.webhook && jobConfig.webhook.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
+    includeFields = jobConfig.webhook.includeFields;
+    webhookConfigSource = 'job';
+  }
 
   if (jobConfig.trigger) {
     let triggerConfig;
@@ -35,6 +42,12 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
     }
 
     displayTopic = triggerConfig.webhook?.topic || jobConfig.trigger;
+
+    // Use trigger config includeFields as fallback if job config doesn't have them
+    if (!includeFields && triggerConfig.webhook && triggerConfig.webhook.includeFields && Array.isArray(triggerConfig.webhook.includeFields)) {
+      includeFields = triggerConfig.webhook.includeFields;
+      webhookConfigSource = 'trigger';
+    }
 
     if (triggerConfig.webhook && triggerConfig.webhook.topic) {
       const graphqlTopic = triggerConfig.webhook.topic.toUpperCase().replace('/', '_');
@@ -60,7 +73,11 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
           if (jobWebhook) {
             statusMsg = '🟢 ENABLED';
             webhookIdSuffix = jobWebhook.id.split('/').pop();
-            includeFields = jobWebhook.includeFields;
+            // Actual includeFields from the active webhook supersede config values
+            if (jobWebhook.includeFields && jobWebhook.includeFields.length > 0) {
+              includeFields = jobWebhook.includeFields;
+              webhookConfigSource = 'active';
+            }
           } else {
             statusMsg = '🔴 DISABLED';
           }
@@ -72,7 +89,7 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
       }
     }
   }
-  return { jobName: currentJobName, displayTopic, statusMsg, webhookIdSuffix, shop, includeFields };
+  return { jobName: currentJobName, displayTopic, statusMsg, webhookIdSuffix, shop, includeFields, webhookConfigSource };
 }
 
 /**
@@ -88,15 +105,16 @@ export async function handleAllJobsStatus(cliDirname) {
     return;
   }
 
-  console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(100));
-  console.log(`${'JOB'.padEnd(25)} ${'SHOP'.padEnd(20)} ${'TRIGGER/TOPIC'.padEnd(30)} ${'STATUS'.padEnd(15)} ${'WEBHOOK ID'.padEnd(10)} FIELDS`);
-  console.log('-'.repeat(100));
+  console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(130));
+  console.log(`${'JOB'.padEnd(25)} ${'SHOP'.padEnd(20)} ${'TRIGGER/TOPIC'.padEnd(30)} ${'STATUS'.padEnd(15)} ${'WEBHOOK ID'.padEnd(10)} ${'SOURCE'.padEnd(10)} FIELDS`);
+  console.log('-'.repeat(130));
 
   for (const currentJobName of jobDirs) {
     try {
-      const { jobName, displayTopic, statusMsg, webhookIdSuffix, shop, includeFields } = await getJobDisplayInfo(cliDirname, currentJobName);
+      const { jobName, displayTopic, statusMsg, webhookIdSuffix, shop, includeFields, webhookConfigSource } = await getJobDisplayInfo(cliDirname, currentJobName);
       const shopDisplay = shop ? chalk.blue(shop).padEnd(20) : 'N/A'.padEnd(20);
       let fieldsDisplay = '';
+      let sourceDisplay = '';
 
       if (includeFields && includeFields.length > 0) {
         // Show first 3 fields with ellipsis if more
@@ -106,17 +124,27 @@ export async function handleAllJobsStatus(cliDirname) {
         if (fieldCount > 3) {
           fieldsDisplay += ` +${fieldCount - 3} more`;
         }
+
+        // Add source information
+        if (webhookConfigSource === 'job') {
+          sourceDisplay = 'job';
+        } else if (webhookConfigSource === 'trigger') {
+          sourceDisplay = 'trigger';
+        } else if (webhookConfigSource === 'active') {
+          sourceDisplay = 'active';
+        }
       }
 
-      console.log(`${jobName.padEnd(25)} ${shopDisplay} ${displayTopic.padEnd(30)} ${statusMsg.padEnd(15)} ${webhookIdSuffix.padEnd(10)} ${fieldsDisplay}`);
+      console.log(`${jobName.padEnd(25)} ${shopDisplay} ${displayTopic.padEnd(30)} ${statusMsg.padEnd(15)} ${webhookIdSuffix.padEnd(10)} ${sourceDisplay.padEnd(10)} ${fieldsDisplay}`);
     } catch (error) { // Catch errors from getJobDisplayInfo if they are not handled internally
       console.error(`Error processing job ${currentJobName}: ${error.message}`);
-      console.log(`${currentJobName.padEnd(25)} ${'ERROR'.padEnd(20)} ${'ERROR'.padEnd(30)} ${'⚠️ UNKNOWN ERROR'.padEnd(15)} ${'-'.padEnd(10)} -`);
+      console.log(`${currentJobName.padEnd(25)} ${'ERROR'.padEnd(20)} ${'ERROR'.padEnd(30)} ${'⚠️ UNKNOWN ERROR'.padEnd(15)} ${'-'.padEnd(10)} ${'-'.padEnd(10)} -`);
     }
   }
 
-  console.log('-'.repeat(100));
-  console.log('\nUse "shopworker enable <jobName>" to enable a job with a webhook.');
+  console.log('-'.repeat(130));
+  console.log('\nSources: job = job config, trigger = trigger config, active = from active webhook');
+  console.log('Use "shopworker enable <jobName>" to enable a job with a webhook.');
   console.log('Use "shopworker status <jobName>" to see detailed webhook information for a specific job.');
 }
 
@@ -155,6 +183,18 @@ export async function handleSingleJobStatus(cliDirname, jobName) {
 
   console.log(`Checking webhooks for job: ${jobName} (Shop: ${chalk.blue(jobConfig.shop)})`);
   console.log(`Shopify Topic: ${triggerConfig.webhook.topic}`);
+
+  // Show job-specific webhook configuration if it exists
+  if (jobConfig.webhook && jobConfig.webhook.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
+    console.log(`Job Config Include Fields: ${jobConfig.webhook.includeFields.join(', ')}`);
+  }
+
+  // Show trigger-specific webhook configuration if different from job config
+  if (triggerConfig.webhook.includeFields && Array.isArray(triggerConfig.webhook.includeFields)) {
+    if (!jobConfig.webhook || !jobConfig.webhook.includeFields) {
+      console.log(`Trigger Config Include Fields: ${triggerConfig.webhook.includeFields.join(', ')}`);
+    }
+  }
 
   try {
     const shopify = initShopify(cliDirname, jobName);
@@ -198,7 +238,23 @@ export async function handleSingleJobStatus(cliDirname, jobName) {
         console.log(`  Callback URL: ${webhook.endpoint.callbackUrl}`);
         console.log(`  Created At: ${webhook.createdAt}`);
         if (webhook.includeFields && webhook.includeFields.length > 0) {
-          console.log(`  Include Fields: ${webhook.includeFields.join(', ')}`);
+          console.log(`  Active Include Fields: ${webhook.includeFields.join(', ')}`);
+
+          // Check if active fields differ from configuration
+          let diffFromConfig = false;
+
+          if (jobConfig.webhook && jobConfig.webhook.includeFields) {
+            const jobFields = new Set(jobConfig.webhook.includeFields);
+            const activeFields = new Set(webhook.includeFields);
+
+            diffFromConfig =
+              jobFields.size !== activeFields.size ||
+              ![...jobFields].every(field => activeFields.has(field));
+
+            if (diffFromConfig) {
+              console.log(`  Note: Active fields differ from job configuration. Update webhook to apply current config.`);
+            }
+          }
         }
       });
     } else {
@@ -227,7 +283,7 @@ export async function handleSingleJobStatus(cliDirname, jobName) {
 export async function enableJobWebhook(cliDirname, jobName, workerUrl) {
   const configs = loadAndValidateWebhookConfigs(cliDirname, jobName);
   if (!configs) return;
-  const { triggerConfig } = configs;
+  const { jobConfig, triggerConfig } = configs;
 
   try {
     const shopify = initShopify(cliDirname, jobName);
@@ -245,10 +301,18 @@ export async function enableJobWebhook(cliDirname, jobName, workerUrl) {
       format: "JSON"
     };
 
-    // Add includeFields if specified in the trigger config
-    if (triggerConfig.webhook.includeFields && Array.isArray(triggerConfig.webhook.includeFields)) {
+    // Prioritize includeFields from job config over trigger config
+    if (jobConfig.webhook && jobConfig.webhook.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
+      webhookSubscription.includeFields = jobConfig.webhook.includeFields;
+      console.log(`Include Fields (from job config):`);
+      jobConfig.webhook.includeFields.forEach(field => {
+        console.log(`  - ${field}`);
+      });
+    }
+    // Fall back to trigger config if job config doesn't have includeFields
+    else if (triggerConfig.webhook.includeFields && Array.isArray(triggerConfig.webhook.includeFields)) {
       webhookSubscription.includeFields = triggerConfig.webhook.includeFields;
-      console.log(`Include Fields:`);
+      console.log(`Include Fields (from trigger config):`);
       triggerConfig.webhook.includeFields.forEach(field => {
         console.log(`  - ${field}`);
       });
