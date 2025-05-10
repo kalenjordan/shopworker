@@ -1,4 +1,4 @@
-import GetOrderById from "../../graphql/GetOrderById.js";
+import GetOrderById from "../../../graphql/GetOrderById.js";
 /**
  * Process an order to tag it with the SKUs from its line items
  * @param {Object} params - Parameters for the job

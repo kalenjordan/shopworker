@@ -1,5 +1,5 @@
 {
-  "name": "product-updated-metafield",
+  "name": "Set Product Metafield When Created",
   "shop": "kalen-test-store",
   "description": "Updates a product metafield with the last modified date",
   "version": "1.0.0",

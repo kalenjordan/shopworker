@@ -1,5 +1,5 @@
 {
-  "name": "order-to-google-sheets",
+  "name": "Send order to Google Sheets",
   "shop": "city",
   "description": "Pulls order data from Shopify and pushes it to a Google Sheet",
   "version": "1.0.0",

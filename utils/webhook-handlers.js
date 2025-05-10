@@ -14,10 +14,10 @@ import fs from 'fs';
 
 const COLUMN_WIDTHS = {
   status: 13,
+  path: 30,
   shop: 18,
   job: 35,
-  topic: 20,
-  webhookId: 15
+  topic: 20
 };
 
 function cropAndPad(str, width) {
@@ -42,7 +42,7 @@ function formatShopColumn(shop, isDisabled = false) {
   if (!shop) return cropAndPad('N/A', COLUMN_WIDTHS.shop);
 
   const paddedShop = cropAndPad(shop, COLUMN_WIDTHS.shop);
-  return isDisabled ? chalk.gray(paddedShop) : chalk.blue(paddedShop);
+  return isDisabled ? chalk.gray(paddedShop) : paddedShop;
 }
 
 function applyColorIfDisabled(text, isDisabled) {
@@ -307,17 +307,17 @@ export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false
   console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(totalWidth));
   console.log(
     cropAndPad('STATUS', COLUMN_WIDTHS.status),
+    cropAndPad('PATH', COLUMN_WIDTHS.path),
     cropAndPad('SHOP', COLUMN_WIDTHS.shop),
     cropAndPad('JOB', COLUMN_WIDTHS.job),
-    cropAndPad('TOPIC', COLUMN_WIDTHS.topic),
-    cropAndPad('WEBHOOK ID', COLUMN_WIDTHS.webhookId)
+    cropAndPad('TOPIC', COLUMN_WIDTHS.topic)
   );
   console.log(
     ''.padEnd(COLUMN_WIDTHS.status, '-'),
+    ''.padEnd(COLUMN_WIDTHS.path, '-'),
     ''.padEnd(COLUMN_WIDTHS.shop, '-'),
     ''.padEnd(COLUMN_WIDTHS.job, '-'),
-    ''.padEnd(COLUMN_WIDTHS.topic, '-'),
-    ''.padEnd(COLUMN_WIDTHS.webhookId, '-')
+    ''.padEnd(COLUMN_WIDTHS.topic, '-')
   );
 
   // Collect all job display info
@@ -374,7 +374,7 @@ function sortJobDisplayInfos(jobDisplayInfos) {
     if (aPriority !== bPriority) {
       return aPriority - bPriority;
     }
-    // Then sort alphabetically by job name
+    // Then sort alphabetically by path
     return a.jobPath.localeCompare(b.jobPath);
   });
 }
@@ -390,18 +390,18 @@ function displayJobsTable(jobDisplayInfos, printHeader = true) {
     console.log();
     console.log(
       cropAndPad('STATUS', COLUMN_WIDTHS.status),
+      cropAndPad('PATH', COLUMN_WIDTHS.path),
       cropAndPad('SHOP', COLUMN_WIDTHS.shop),
       cropAndPad('JOB', COLUMN_WIDTHS.job),
-      cropAndPad('TOPIC', COLUMN_WIDTHS.topic),
-      cropAndPad('WEBHOOK ID', COLUMN_WIDTHS.webhookId)
+      cropAndPad('TOPIC', COLUMN_WIDTHS.topic)
     );
 
     console.log(
       ''.padEnd(COLUMN_WIDTHS.status, '-'),
+      ''.padEnd(COLUMN_WIDTHS.path, '-'),
       ''.padEnd(COLUMN_WIDTHS.shop, '-'),
       ''.padEnd(COLUMN_WIDTHS.job, '-'),
-      ''.padEnd(COLUMN_WIDTHS.topic, '-'),
-      ''.padEnd(COLUMN_WIDTHS.webhookId, '-')
+      ''.padEnd(COLUMN_WIDTHS.topic, '-')
     );
   }
 
@@ -411,10 +411,10 @@ function displayJobsTable(jobDisplayInfos, printHeader = true) {
 
     console.log(
       formatStatusColumn(info.statusMsg, disabled),
+      applyColorIfDisabled(cropAndPad(info.jobPath, COLUMN_WIDTHS.path), disabled),
       formatShopColumn(info.shop, disabled),
       applyColorIfDisabled(cropAndPad(info.displayName, COLUMN_WIDTHS.job), disabled),
-      applyColorIfDisabled(cropAndPad(info.displayTopic, COLUMN_WIDTHS.topic), disabled),
-      applyColorIfDisabled(cropAndPad(info.webhookIdSuffix, COLUMN_WIDTHS.webhookId), disabled)
+      applyColorIfDisabled(cropAndPad(info.displayTopic, COLUMN_WIDTHS.topic), disabled)
     );
   }
   console.log();

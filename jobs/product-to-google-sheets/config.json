@@ -1,5 +1,5 @@
 {
-  "name": "product-to-google-sheets",
+  "name": "Send product to Google Sheets",
   "shop": "kalen-test-store",
   "description": "Sends product data to Google Sheets when a product is updated",
   "version": "1.0.0",
