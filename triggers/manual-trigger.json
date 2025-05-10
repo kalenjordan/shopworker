@@ -1,8 +1,0 @@
-{
-  "name": "manual-trigger",
-  "description": "Manually triggered job that doesn't require a webhook",
-  "version": "1.0.0",
-  "test": {
-    "skipQuery": true
-  }
-}

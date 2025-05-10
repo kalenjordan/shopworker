@@ -12,7 +12,7 @@ const COLUMN_WIDTHS = {
   job: 35, // Job name
   topic: 20, // Trigger/Topic
   status: 13, // Status
-  webhookId: 12 // Webhook ID
+  webhookId: 15 // Webhook ID
 };
 
 // Helper to crop and pad a string
@@ -41,6 +41,7 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
   let statusMsg = 'Manual'; // Default for jobs without trigger or non-webhook triggers
   let webhookIdSuffix = '-';
   const shop = jobConfig.shop || null;
+  let includeFields = null;
 
   // Only use includeFields from job config
   if (jobConfig.webhook && jobConfig.webhook.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
@@ -92,7 +93,7 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
       }
     }
   }
-  return { jobName: currentJobName, displayTopic, statusMsg, webhookIdSuffix, shop };
+  return { jobName: currentJobName, displayTopic, statusMsg, webhookIdSuffix, shop, includeFields };
 }
 
 /**
