@@ -8,11 +8,11 @@ import chalk from 'chalk';
 
 // Column widths for job status summary table
 const COLUMN_WIDTHS = {
-  shop: 18, // Shop (now first)
-  job: 35, // Job name
-  topic: 20, // Trigger/Topic
-  status: 13, // Status
-  webhookId: 15 // Webhook ID
+  status: 13, // Status (now first)
+  shop: 18, // Shop (now second)
+  job: 35, // Job name (third)
+  topic: 20, // Trigger/Topic (fourth)
+  webhookId: 15 // Webhook ID (fifth)
 };
 
 // Helper to crop and pad a string
@@ -43,7 +43,7 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
   const shop = jobConfig.shop || null;
   let includeFields = null;
 
-  // Only use includeFields from job config
+  // Get includeFields from job config only
   if (jobConfig.webhook && jobConfig.webhook.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
     includeFields = jobConfig.webhook.includeFields;
   }
@@ -109,61 +109,101 @@ export async function handleAllJobsStatus(cliDirname) {
     return;
   }
 
-  const totalWidth = COLUMN_WIDTHS.shop + COLUMN_WIDTHS.job + COLUMN_WIDTHS.topic + COLUMN_WIDTHS.status + COLUMN_WIDTHS.webhookId + 5; // 5 spaces between columns
+  const totalWidth = COLUMN_WIDTHS.status + COLUMN_WIDTHS.shop + COLUMN_WIDTHS.job + COLUMN_WIDTHS.topic + COLUMN_WIDTHS.webhookId + 5; // 5 spaces between columns
   console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(totalWidth));
   console.log(
+    cropAndPad('STATUS', COLUMN_WIDTHS.status) + ' ' +
     cropAndPad('SHOP', COLUMN_WIDTHS.shop) + ' ' +
     cropAndPad('JOB', COLUMN_WIDTHS.job) + ' ' +
     cropAndPad('TRIGGER/TOPIC', COLUMN_WIDTHS.topic) + ' ' +
-    cropAndPad('STATUS', COLUMN_WIDTHS.status) + ' ' +
     cropAndPad('WEBHOOK ID', COLUMN_WIDTHS.webhookId)
   );
   console.log('-'.repeat(totalWidth));
 
+  // Collect all job display info and sort by status and name
+  const jobDisplayInfos = [];
   for (const currentJobName of jobDirs) {
     try {
-      const { jobName, displayTopic, statusMsg, webhookIdSuffix, shop } = await getJobDisplayInfo(cliDirname, currentJobName);
-      // Pad the shop name first, then color only the padded shop name
-      let shopDisplay = 'N/A';
-      if (shop) {
-        const paddedShop = cropAndPad(shop, COLUMN_WIDTHS.shop);
-        shopDisplay = chalk.blue(paddedShop);
-      } else {
-        shopDisplay = cropAndPad('N/A', COLUMN_WIDTHS.shop);
-      }
-      // Pad job name and topic as usual
-      const jobDisplay = cropAndPad(jobName, COLUMN_WIDTHS.job);
-      const topicDisplay = cropAndPad(displayTopic, COLUMN_WIDTHS.topic);
-      // Pad webhook ID as usual
-      const webhookIdDisplay = cropAndPad(webhookIdSuffix, COLUMN_WIDTHS.webhookId);
-      // Pad status *after* coloring, so color codes don't affect column width
-      let statusDisplay = statusMsg;
-      if (statusMsg === 'Enabled') {
-        statusDisplay = chalk.green(cropAndPad('✓ Enabled', COLUMN_WIDTHS.status));
-      } else if (statusMsg === 'Disabled') {
-        statusDisplay = chalk.red(cropAndPad('✗ Disabled', COLUMN_WIDTHS.status));
-      } else if (statusMsg === 'Manual') {
-        statusDisplay = chalk.green(cropAndPad('✓ Manual', COLUMN_WIDTHS.status));
-      } else {
-        statusDisplay = cropAndPad(statusMsg, COLUMN_WIDTHS.status);
-      }
-      console.log(
-        shopDisplay + ' ' +
-        jobDisplay + ' ' +
-        topicDisplay + ' ' +
-        statusDisplay + ' ' +
-        webhookIdDisplay
-      );
+      const jobInfo = await getJobDisplayInfo(cliDirname, currentJobName);
+      jobDisplayInfos.push(jobInfo);
     } catch (error) {
       console.error(`Error processing job ${currentJobName}: ${error.message}`);
-      console.log(
-        cropAndPad('N/A', COLUMN_WIDTHS.shop) + ' ' +
-        cropAndPad(currentJobName, COLUMN_WIDTHS.job) + ' ' +
-        cropAndPad('ERROR', COLUMN_WIDTHS.topic) + ' ' +
-        cropAndPad('⚠️ UNKNOWN ERROR', COLUMN_WIDTHS.status) + ' ' +
-        cropAndPad('-', COLUMN_WIDTHS.webhookId)
-      );
+      jobDisplayInfos.push({
+        jobName: currentJobName,
+        displayTopic: 'ERROR',
+        statusMsg: '⚠️ ERROR',
+        webhookIdSuffix: '-',
+        shop: null
+      });
     }
+  }
+
+  // Sort jobs: Enabled first, then Manual, then Disabled, then errors, and within each group alphabetically by name
+  jobDisplayInfos.sort((a, b) => {
+    // Define status priority (lower number = higher priority)
+    const getStatusPriority = (status) => {
+      if (status === 'Enabled') return 1;
+      if (status === 'Manual') return 2;
+      if (status === 'Disabled') return 3;
+      return 4; // Error or other statuses
+    };
+
+    const aPriority = getStatusPriority(a.statusMsg);
+    const bPriority = getStatusPriority(b.statusMsg);
+
+    // First sort by status priority
+    if (aPriority !== bPriority) {
+      return aPriority - bPriority;
+    }
+    // Then sort alphabetically by job name
+    return a.jobName.localeCompare(b.jobName);
+  });
+
+  // Display the sorted job information
+  for (const { jobName, displayTopic, statusMsg, webhookIdSuffix, shop } of jobDisplayInfos) {
+    // Check if the job is disabled
+    const isDisabled = statusMsg === 'Disabled';
+
+    // Pad status *after* coloring, so color codes don't affect column width
+    let statusDisplay = statusMsg;
+    if (statusMsg === 'Enabled') {
+      statusDisplay = chalk.green(cropAndPad('✓ Enabled', COLUMN_WIDTHS.status));
+    } else if (statusMsg === 'Disabled') {
+      statusDisplay = chalk.gray(cropAndPad('✗ Disabled', COLUMN_WIDTHS.status));
+    } else if (statusMsg === 'Manual') {
+      statusDisplay = chalk.green(cropAndPad('✓ Manual', COLUMN_WIDTHS.status));
+    } else {
+      statusDisplay = cropAndPad(statusMsg, COLUMN_WIDTHS.status);
+    }
+
+    // Pad the shop name first, then color only the padded shop name
+    let shopDisplay = 'N/A';
+    if (shop) {
+      const paddedShop = cropAndPad(shop, COLUMN_WIDTHS.shop);
+      shopDisplay = isDisabled ? chalk.gray(paddedShop) : chalk.blue(paddedShop);
+    } else {
+      shopDisplay = cropAndPad('N/A', COLUMN_WIDTHS.shop);
+    }
+
+    // Pad job name and topic as usual
+    const jobDisplay = cropAndPad(jobName, COLUMN_WIDTHS.job);
+    const topicDisplay = cropAndPad(displayTopic, COLUMN_WIDTHS.topic);
+
+    // Pad webhook ID as usual
+    const webhookIdDisplay = cropAndPad(webhookIdSuffix, COLUMN_WIDTHS.webhookId);
+
+    // Apply color to all columns if the job is disabled
+    const coloredJobDisplay = isDisabled ? chalk.gray(jobDisplay) : jobDisplay;
+    const coloredTopicDisplay = isDisabled ? chalk.gray(topicDisplay) : topicDisplay;
+    const coloredWebhookIdDisplay = isDisabled ? chalk.gray(webhookIdDisplay) : webhookIdDisplay;
+
+    console.log(
+      statusDisplay + ' ' +
+      shopDisplay + ' ' +
+      coloredJobDisplay + ' ' +
+      coloredTopicDisplay + ' ' +
+      coloredWebhookIdDisplay
+    );
   }
 
   console.log('-'.repeat(totalWidth));
