@@ -8,8 +8,8 @@ import chalk from 'chalk';
 
 // Column widths for job status summary table
 const COLUMN_WIDTHS = {
+  shop: 18, // Shop (now first)
   job: 35, // Job name
-  shop: 18, // Shop
   topic: 20, // Trigger/Topic
   status: 13, // Status
   webhookId: 12 // Webhook ID
@@ -38,10 +38,9 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
   }
 
   let displayTopic = jobConfig.trigger || 'N/A';
-  let statusMsg = '✅ MANUAL'; // Default for jobs without trigger or non-webhook triggers
+  let statusMsg = 'Manual'; // Default for jobs without trigger or non-webhook triggers
   let webhookIdSuffix = '-';
   const shop = jobConfig.shop || null;
-  let includeFields = null;
 
   // Only use includeFields from job config
   if (jobConfig.webhook && jobConfig.webhook.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
@@ -80,10 +79,10 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
           });
 
           if (jobWebhook) {
-            statusMsg = '🟢 ENABLED';
+            statusMsg = `Enabled`;
             webhookIdSuffix = jobWebhook.id.split('/').pop();
           } else {
-            statusMsg = '🔴 DISABLED';
+            statusMsg = `Disabled`;
           }
         }
       } catch (initOrGraphQLError) {
@@ -109,11 +108,11 @@ export async function handleAllJobsStatus(cliDirname) {
     return;
   }
 
-  const totalWidth = COLUMN_WIDTHS.job + COLUMN_WIDTHS.shop + COLUMN_WIDTHS.topic + COLUMN_WIDTHS.status + COLUMN_WIDTHS.webhookId + 5; // 5 spaces between columns
+  const totalWidth = COLUMN_WIDTHS.shop + COLUMN_WIDTHS.job + COLUMN_WIDTHS.topic + COLUMN_WIDTHS.status + COLUMN_WIDTHS.webhookId + 5; // 5 spaces between columns
   console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(totalWidth));
   console.log(
-    cropAndPad('JOB', COLUMN_WIDTHS.job) + ' ' +
     cropAndPad('SHOP', COLUMN_WIDTHS.shop) + ' ' +
+    cropAndPad('JOB', COLUMN_WIDTHS.job) + ' ' +
     cropAndPad('TRIGGER/TOPIC', COLUMN_WIDTHS.topic) + ' ' +
     cropAndPad('STATUS', COLUMN_WIDTHS.status) + ' ' +
     cropAndPad('WEBHOOK ID', COLUMN_WIDTHS.webhookId)
@@ -131,18 +130,34 @@ export async function handleAllJobsStatus(cliDirname) {
       } else {
         shopDisplay = cropAndPad('N/A', COLUMN_WIDTHS.shop);
       }
+      // Pad job name and topic as usual
+      const jobDisplay = cropAndPad(jobName, COLUMN_WIDTHS.job);
+      const topicDisplay = cropAndPad(displayTopic, COLUMN_WIDTHS.topic);
+      // Pad webhook ID as usual
+      const webhookIdDisplay = cropAndPad(webhookIdSuffix, COLUMN_WIDTHS.webhookId);
+      // Pad status *after* coloring, so color codes don't affect column width
+      let statusDisplay = statusMsg;
+      if (statusMsg === 'Enabled') {
+        statusDisplay = chalk.green(cropAndPad('✓ Enabled', COLUMN_WIDTHS.status));
+      } else if (statusMsg === 'Disabled') {
+        statusDisplay = chalk.red(cropAndPad('✗ Disabled', COLUMN_WIDTHS.status));
+      } else if (statusMsg === 'Manual') {
+        statusDisplay = chalk.green(cropAndPad('✓ Manual', COLUMN_WIDTHS.status));
+      } else {
+        statusDisplay = cropAndPad(statusMsg, COLUMN_WIDTHS.status);
+      }
       console.log(
-        cropAndPad(jobName, COLUMN_WIDTHS.job) + ' ' +
         shopDisplay + ' ' +
-        cropAndPad(displayTopic, COLUMN_WIDTHS.topic) + ' ' +
-        cropAndPad(statusMsg, COLUMN_WIDTHS.status) + ' ' +
-        cropAndPad(webhookIdSuffix, COLUMN_WIDTHS.webhookId)
+        jobDisplay + ' ' +
+        topicDisplay + ' ' +
+        statusDisplay + ' ' +
+        webhookIdDisplay
       );
     } catch (error) {
       console.error(`Error processing job ${currentJobName}: ${error.message}`);
       console.log(
+        cropAndPad('N/A', COLUMN_WIDTHS.shop) + ' ' +
         cropAndPad(currentJobName, COLUMN_WIDTHS.job) + ' ' +
-        cropAndPad('ERROR', COLUMN_WIDTHS.shop) + ' ' +
         cropAndPad('ERROR', COLUMN_WIDTHS.topic) + ' ' +
         cropAndPad('⚠️ UNKNOWN ERROR', COLUMN_WIDTHS.status) + ' ' +
         cropAndPad('-', COLUMN_WIDTHS.webhookId)
