@@ -68,6 +68,10 @@ export async function process({ record: orderData, shopify, env, shopConfig, job
 
   console.log(`Filtered from ${lineItems.length} to ${filteredLineItems.length} line items matching SKU criteria (CCS1 or CC0)`);
 
+  if (filteredLineItems.length <= 0) {
+    return;
+  }
+
   // Format data for Google Sheets using dynamic headers and header map for efficient lookups
   const rows = SheetsHelpers.createDynamicSheetRows(orderDetails, filteredLineItems, headers, headerMap);
   for (const row of rows) {
