@@ -264,15 +264,92 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
 }
 
 /**
+ * Check if a webhook URL contains a job parameter but points to a non-existent job
+ * @param {string} webhookUrl - The webhook URL to check
+ * @param {Array<string>} validJobPaths - List of valid job paths
+ * @returns {boolean} Whether the webhook is orphaned
+ */
+function isOrphanedWebhook(webhookUrl, validJobPaths) {
+  try {
+    const url = new URL(webhookUrl);
+    const jobPath = url.searchParams.get('job');
+
+    // If there's no job parameter, it's not an orphaned webhook
+    if (!jobPath) return false;
+
+    // If the job path exists in our valid job paths, it's not orphaned
+    return !validJobPaths.some(validPath =>
+      decodeURIComponent(validPath) === decodeURIComponent(jobPath)
+    );
+  } catch (e) {
+    // If we can't parse the URL, it's not considered orphaned
+    return false;
+  }
+}
+
+/**
+ * Find orphaned webhooks in a shop
+ * @param {Array<Object>} webhooks - List of webhooks from Shopify API
+ * @param {Array<string>} jobPaths - List of valid job paths
+ * @returns {Array<Object>} List of orphaned webhooks with their details
+ */
+function findOrphanedWebhooks(webhooks, jobPaths) {
+  return webhooks.filter(webhook => {
+    if (!webhook.endpoint || webhook.endpoint.__typename !== 'WebhookHttpEndpoint') {
+      return false;
+    }
+
+    return isOrphanedWebhook(webhook.endpoint.callbackUrl, jobPaths);
+  });
+}
+
+/**
+ * Display orphaned webhooks warning
+ * @param {Array<Object>} orphanedWebhooks - List of orphaned webhooks
+ */
+function displayOrphanedWebhooksWarning(orphanedWebhooks) {
+  if (orphanedWebhooks.length === 0) return;
+
+  console.log('\n' + chalk.yellow('⚠️  Warning: Found webhooks pointing to non-existent jobs:'));
+
+  for (const webhook of orphanedWebhooks) {
+    console.log('\n' + chalk.yellow(`Topic: ${webhook.topic.replace(/_/g, '/')}`));
+    console.log(chalk.yellow(`ID: ${getWebhookIdSuffix(webhook.id)}`));
+    console.log(chalk.yellow(`URL: ${webhook.endpoint.callbackUrl}`));
+
+    try {
+      const url = new URL(webhook.endpoint.callbackUrl);
+      const jobPath = url.searchParams.get('job');
+      if (jobPath) {
+        console.log(chalk.yellow(`Referenced job: ${jobPath} (not found)`));
+      }
+    } catch (e) {
+      // Ignore URL parsing errors
+    }
+
+    console.log(chalk.yellow(`Created: ${new Date(webhook.createdAt).toLocaleString()}`));
+  }
+
+  console.log('\n' + chalk.yellow('These webhooks may be left over from deleted jobs and should be cleaned up.'));
+  console.log(chalk.yellow('To delete a webhook, use:'));
+  console.log(chalk.cyan('shopworker delete-webhook <webhook-id> --job <any-active-job>'));
+}
+
+/**
  * Display status of all jobs' webhooks
  * @param {string} cliDirname - The directory where cli.js is located
- * @param {boolean} filterByCurrentDir - Whether to only show jobs in the current directory
+ * @param {boolean|string} filterByCurrentDir - Whether to only show jobs in the current directory (boolean)
+ *                                           or path to directory to filter by (string)
  */
 export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false) {
-  const jobDirs = getAvailableJobDirs(cliDirname, filterByCurrentDir ? process.cwd() : null);
+  // Convert boolean to directory path if needed
+  const currentDir = typeof filterByCurrentDir === 'string' ? filterByCurrentDir :
+                      filterByCurrentDir === true ? process.cwd() : null;
+
+  const jobDirs = getAvailableJobDirs(cliDirname, currentDir);
 
   if (jobDirs.length === 0) {
-    if (filterByCurrentDir) {
+    if (currentDir) {
       console.log('No jobs found in the current directory.');
     } else {
       console.log('No jobs found.');
@@ -286,8 +363,70 @@ export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false
     const jobInfos = await getAllJobDisplayInfo(cliDirname, jobDirs);
     const sortedJobInfos = sortJobDisplayInfos(jobInfos);
     displayJobsTable(sortedJobInfos);
+
+    // Get all webhooks for all shops to check for orphaned ones
+    await checkForOrphanedWebhooks(cliDirname, jobDirs);
   } catch (error) {
     console.error('Error retrieving webhook status:', error);
+  }
+}
+
+/**
+ * Check for orphaned webhooks across all shops
+ * @param {string} cliDirname - CLI directory
+ * @param {Array<string>} jobDirs - List of all valid job directories
+ */
+async function checkForOrphanedWebhooks(cliDirname, jobDirs) {
+  // Get a list of unique shop names from all jobs
+  const shopNames = new Set();
+
+  for (const jobPath of jobDirs) {
+    try {
+      const jobConfig = loadJobConfig(jobPath);
+      if (jobConfig && jobConfig.shop) {
+        shopNames.add(jobConfig.shop);
+      }
+    } catch (e) {
+      // Skip jobs with invalid configs
+    }
+  }
+
+  // For each shop, fetch all webhooks and check for orphaned ones
+  for (const shopName of shopNames) {
+    // Find any job for this shop to use for API access
+    let jobForShop = null;
+    for (const jobPath of jobDirs) {
+      try {
+        const jobConfig = loadJobConfig(jobPath);
+        if (jobConfig && jobConfig.shop === shopName) {
+          jobForShop = jobPath;
+          break;
+        }
+      } catch (e) {
+        // Skip jobs with invalid configs
+      }
+    }
+
+    if (!jobForShop) continue;
+
+    try {
+      const shopify = initShopify(cliDirname, jobForShop);
+      const response = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
+
+      if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
+        continue;
+      }
+
+      const webhooks = response.webhookSubscriptions.nodes;
+      const orphanedWebhooks = findOrphanedWebhooks(webhooks, jobDirs);
+
+      if (orphanedWebhooks.length > 0) {
+        console.log(chalk.magenta(`\nShop: ${shopName}`));
+        displayOrphanedWebhooksWarning(orphanedWebhooks);
+      }
+    } catch (error) {
+      console.warn(`Warning: Error checking orphaned webhooks for shop ${shopName}: ${error.message}`);
+    }
   }
 }
 

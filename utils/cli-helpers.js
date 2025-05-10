@@ -11,11 +11,12 @@ import { logToCli } from './log.js';
 export { logToCli };
 
 /**
- * Get all job directories in the jobs folder
+ * Get all available job directories
  * @param {string} cliDirname - The directory where cli.js is located (project root)
+ * @param {string} [currentDir] - If provided, only return jobs under this directory
  * @returns {Array<string>} List of job directory paths relative to jobs/
  */
-export const getAvailableJobDirs = (cliDirname) => {
+export const getAvailableJobDirs = (cliDirname, currentDir = null) => {
   const jobsDir = path.join(cliDirname, 'jobs');
   if (!fs.existsSync(jobsDir)) return [];
 
@@ -42,6 +43,21 @@ export const getAvailableJobDirs = (cliDirname) => {
   };
 
   findJobDirs(jobsDir);
+
+  // If currentDir is provided, filter the results to only include jobs under that directory
+  if (currentDir) {
+    const relativeCurrentDir = path.relative(jobsDir, currentDir);
+
+    // Only filter if the current directory is a subdirectory of jobsDir
+    if (!relativeCurrentDir.startsWith('..') && relativeCurrentDir !== '') {
+      return jobDirs.filter(jobDir =>
+        // Include the job if it's directly in the current directory or in a subdirectory
+        jobDir === relativeCurrentDir ||
+        jobDir.startsWith(relativeCurrentDir + path.sep)
+      );
+    }
+  }
+
   return jobDirs;
 };
 

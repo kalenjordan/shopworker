@@ -95,6 +95,9 @@ program
   .option('-d, --dir <jobDirectory>', 'Job directory name')
   .option('-a, --all', 'Show status of all jobs, ignoring current directory context')
   .action(async (jobNameArg, options) => {
+    // Determine the actual working directory - when run via npm, INIT_CWD contains the real directory
+    const actualWorkingDir = process.env.INIT_CWD || process.cwd();
+
     // If a specific job is specified, use that
     if (jobNameArg) {
       await handleSingleJobStatus(__dirname, jobNameArg);
@@ -118,7 +121,13 @@ program
     } else {
       // We're not in a specific job directory, show filtered or all jobs
       const filterByCurrentDir = !options.all;
-      await handleAllJobsStatus(__dirname, filterByCurrentDir);
+
+      // When filtering by current dir, explicitly pass the actual working directory
+      if (filterByCurrentDir) {
+        await handleAllJobsStatus(__dirname, actualWorkingDir);
+      } else {
+        await handleAllJobsStatus(__dirname, false);
+      }
     }
   });
 
