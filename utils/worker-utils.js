@@ -57,40 +57,18 @@ export async function verifyShopifyWebhook(request, body, env) {
   const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
 
   // If env is provided, try to get the secret from it
-  if (env) {
-    // The API secret can be accessed from env under different possible names
-    secret = env.shopify_api_secret_key || env.SHOPIFY_API_SECRET_KEY;
+  if (!env || !env.shopify_api_secret_key) {
+    throw new Error('Missing API secret key in environment variables');
   }
 
-  // If we don't have a secret yet, try to extract it from the request context
+  secret = env.shopify_api_secret_key;
   if (!secret) {
-    // In Cloudflare Workers, we can access env via request.env in newer versions
-    secret = request.env?.shopify_api_secret_key ||
-             request.env?.SHOPIFY_API_SECRET_KEY;
-  }
-
-  // For compatibility with different Worker environments
-  if (!secret && typeof SHOPIFY_API_SECRET_KEY !== 'undefined') {
-    // Global variable set in Worker environment
-    secret = SHOPIFY_API_SECRET_KEY;
-  }
-
-  if (!secret && shopDomain && request.cf) {
-    // If we're in a Cloudflare Worker and have the shop domain,
-    // we might be able to look up the secret from KV or other storage
-    // based on the shop domain - this would need to be implemented
-    console.log(`Need to look up secret for shop: ${shopDomain}`);
-  }
-
-  if (!secret) {
-    console.error('Missing API secret key in environment variables');
-    return false;
+    throw new Error('Missing API secret key in environment variables');
   }
 
   try {
     // Generate HMAC signature using our common function
     const generatedHash = await generateHmacSignature(secret, body);
-    console.log(`Generated HMAC signature: ${generatedHash}`, secret, body);
 
     // Compare the generated hash with the one from the request headers
     return hmac === generatedHash;
