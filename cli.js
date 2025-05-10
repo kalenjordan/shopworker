@@ -172,7 +172,7 @@ program
   });
 
 program
-  .command('test-remote [jobNameArg]')
+  .command('remote-test [jobNameArg]')
   .description('Test a job by sending a POST request to the worker URL with a record ID')
   .option('-d, --dir <jobDirectory>', 'Job directory name (if not running from within job dir)')
   .option('-i, --id <recordId>', 'ID of the record to process (optional, will find a sample record if not provided)')

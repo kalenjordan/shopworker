@@ -52,8 +52,33 @@ async function handleRequest(request, env, ctx) {
       return new Response('Invalid JSON body', { status: 400 });
     }
 
-    // Verify webhook signature (simple check for now)
-    if (!verifyShopifyWebhook(request, bodyText)) {
+    // Get shop domain from headers first - we need this to find the right config
+    const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
+    if (!shopDomain) {
+      return new Response('Missing X-Shopify-Shop-Domain header', { status: 400 });
+    }
+
+    // Parse the configuration from secrets
+    let shopworkerConfig = {};
+    if (!env.SHOPWORKER_CONFIG) {
+      throw new Error('SHOPWORKER_CONFIG secret not found. Please run `shopworker put-secrets` to configure the worker.');
+    }
+    shopworkerConfig = JSON.parse(env.SHOPWORKER_CONFIG);
+
+    // Find the shop configuration for this domain
+    let shopConfig = null;
+    if (shopworkerConfig.shops) {
+      shopConfig = shopworkerConfig.shops.find(shop => shop.shopify_domain === shopDomain);
+
+      // Merge shop config into env for job to access
+      if (shopConfig) {
+        // Copy all shop configuration properties to env
+        Object.assign(env, shopConfig);
+      }
+    }
+
+    // Now verify the webhook signature with the correct shop config
+    if (!await verifyShopifyWebhook(request, bodyText, env)) {
       return new Response('Invalid webhook signature', { status: 401 });
     }
 
@@ -77,31 +102,6 @@ async function handleRequest(request, env, ctx) {
 
     if (!jobModule) {
       return new Response(`Job handler not found for: ${jobName}`, { status: 404 });
-    }
-
-    // Get shop domain from headers
-    const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
-    if (!shopDomain) {
-      return new Response('Missing X-Shopify-Shop-Domain header', { status: 400 });
-    }
-
-    // Parse the configuration from secrets
-    let shopworkerConfig = {};
-    if (!env.SHOPWORKER_CONFIG) {
-      throw new Error('SHOPWORKER_CONFIG secret not found. Please run `shopworker put-secrets` to configure the worker.');
-    }
-    shopworkerConfig = JSON.parse(env.SHOPWORKER_CONFIG);
-
-    // Find the shop configuration for this domain
-    let shopConfig = null;
-    if (shopworkerConfig.shops) {
-      shopConfig = shopworkerConfig.shops.find(shop => shop.shopify_domain === shopDomain);
-
-      // Merge shop config into env for job to access
-      if (shopConfig) {
-        // Copy all shop configuration properties to env
-        Object.assign(env, shopConfig);
-      }
     }
 
     // Get API access token from shop config or environment

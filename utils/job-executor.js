@@ -5,6 +5,9 @@ import chalk from 'chalk';
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { initShopify } from './shopify-api-helpers.js';
 
+// Add crypto import for Node.js environment
+import crypto from 'crypto';
+
 /**
  * Get shop configuration from .shopworker.json
  * @param {string} cliDirname - The directory where cli.js is located
@@ -170,6 +173,21 @@ function getShopDomain(cliDirname, shopName) {
 }
 
 /**
+ * Node.js implementation of the same function in worker-utils.js
+ * Generate HMAC signature for webhook payload
+ * @param {string} secret - The webhook secret
+ * @param {string} body - The request body as string
+ * @returns {Promise<string>} The base64 encoded signature
+ */
+export async function generateHmacSignature(secret, body) {
+  // Use Node.js crypto module to generate the signature
+  return crypto
+    .createHmac('sha256', secret)
+    .update(body, 'utf8')
+    .digest('base64');
+}
+
+/**
  * Run a remote test against the worker for a specific job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} jobName - The job name
@@ -195,6 +213,18 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
   // Get shop domain
   const shopDomain = options.shop || getShopDomain(cliDirname, jobConfig.shop);
 
+  // Get shop configuration to retrieve API secret
+  const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
+  const shopworkerContent = fs.readFileSync(shopworkerFilePath, 'utf8');
+  const shopworkerData = JSON.parse(shopworkerContent);
+  const shopConfig = shopworkerData.shops.find(s => s.name === jobConfig.shop);
+
+  if (!shopConfig || !shopConfig.shopify_api_secret_key) {
+    throw new Error(`API secret not found for shop '${jobConfig.shop}'. Make sure shopify_api_secret_key is defined in .shopworker.json.`);
+  }
+
+  const apiSecret = shopConfig.shopify_api_secret_key;
+
   // Get record ID or find sample record
   let recordId = options.id;
   if (!recordId) {
@@ -215,22 +245,30 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
   let data = {
     id: recordId
   };
+
+  // Convert data to JSON string - we need this for signature generation
+  const jsonData = JSON.stringify(data);
+
+  // Generate HMAC signature using our shared function
+  const hmacSignature = await generateHmacSignature(apiSecret, jsonData);
+
   console.log(`Sending test request to worker for job: ${jobName}: ${webhookAddress}`);
   console.log(`Topic: ${webhookTopic}`);
   console.log(`Shop: ${chalk.magenta(shopDomain)}`);
-  console.log(`Data\n: ${JSON.stringify(data, null, 2)}\n`);
+  console.log(`Data: ${jsonData}`);
+  console.log(`HMAC Signature: ${hmacSignature}`);
 
   // Send the request
   const response = await fetch(webhookAddress, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Shopify-Hmac-Sha256': 'dummY',
+      'X-Shopify-Hmac-Sha256': hmacSignature,
       'X-Shopify-Topic': webhookTopic,
       'X-Shopify-Shop-Domain': shopDomain,
       'X-Shopify-API-Version': '2024-07'
     },
-    body: JSON.stringify(data)
+    body: jsonData
   });
 
   // Check the response status
