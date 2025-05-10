@@ -1,6 +1,7 @@
 import GetOrderById from "../../graphql/GetOrderById.js";
 import * as GoogleSheets from "../../connectors/google-sheets.js";
 import chalk from "chalk";
+import { getEnvironment, workerLog } from "../../utils/common-helpers.js";
 
 // Define column mappings in one place
 const COLUMN_MAPPINGS = [
@@ -181,7 +182,7 @@ async function verifySheetHeaders(sheetsClient, spreadsheetId, sheetName) {
  * @param {Object} options.env - Environment variables
  */
 export async function process({ record: orderData, shopify, env }) {
-  console.log("Webhook payload: ", orderData);
+  workerLog("Webhook payload: " + JSON.stringify(orderData));
 
   // Validate required environment variables
   if (!env.google_sheets_credentials) {
@@ -204,10 +205,6 @@ export async function process({ record: orderData, shopify, env }) {
   console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
 
   const sheets = await GoogleSheets.getSheets(sheetsClient, spreadsheetId);
-  console.log("Available sheets in spreadsheet:");
-  sheets.forEach((sheet) => {
-    console.log(`- ${sheet.title} (sheetId: ${sheet.sheetId}, index: ${sheet.index})`);
-  });
 
   // Use the first sheet
   if (sheets.length === 0) {
@@ -234,7 +231,7 @@ export async function process({ record: orderData, shopify, env }) {
   }
 
   // Log the data
-  console.log("Order details: ", {
+  workerLog("Order details: ", {
     order: JSON.stringify(orderDetails, null, 2),
     lineItems: JSON.stringify(lineItems, null, 2)
   });
