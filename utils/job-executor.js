@@ -150,7 +150,8 @@ export async function runJobTest(cliDirname, jobPath, queryParam, shopParam) {
     record,
     shopify: shopify,
     env: process.env,   // Pass Node.js process.env as env
-    shopConfig: shopConfig  // Pass shopConfig separately
+    shopConfig: shopConfig,  // Pass shopConfig separately
+    jobConfig: jobConfig  // Pass the job config to the process function
   });
   console.log('Processing complete!');
 }

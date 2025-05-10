@@ -72,12 +72,26 @@ function createAuthenticatedShopifyClient(shopDomain, shopConfig, env) {
 /**
  * Process webhook with the appropriate job handler
  */
-async function processWebhook(jobModule, bodyData, shopify, env, shopConfig) {
+async function processWebhook(jobModule, bodyData, shopify, env, shopConfig, jobPath) {
+  // Load job config from the jobPath
+  let jobConfig = {};
+  try {
+    // In the worker environment, we rely on the jobPath to create a simple jobConfig
+    // since we can't directly read files
+    jobConfig = {
+      jobPath: jobPath,
+      shop: shopConfig?.name || 'unknown'
+    };
+  } catch (error) {
+    console.error(`Failed to create jobConfig for ${jobPath}:`, error.message);
+  }
+
   await jobModule.process({
     record: bodyData,
     shopify,
     env,
-    shopConfig
+    shopConfig,
+    jobConfig
   });
 
   console.log('Webhook processed successfully');
@@ -167,7 +181,7 @@ async function handleRequest(request, env, ctx) {
     const shopify = createAuthenticatedShopifyClient(shopDomain, shopConfig, env);
 
     // Process the webhook data
-    await processWebhook(jobModule, bodyData, shopify, env, shopConfig);
+    await processWebhook(jobModule, bodyData, shopify, env, shopConfig, jobPath);
 
     return createSuccessResponse();
   } catch (error) {

@@ -11,8 +11,9 @@ import * as SheetsHelpers from "../sheets-helpers.js";
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.env - Environment variables
  * @param {Object} options.shopConfig - Shop-specific configuration
+ * @param {Object} options.jobConfig - Job-specific configuration from config.json
  */
-export async function process({ record: orderData, shopify, env, shopConfig }) {
+export async function process({ record: orderData, shopify, env, shopConfig, jobConfig }) {
   logToWorker(env, "Webhook payload: " + JSON.stringify(orderData));
 
   // Validate required configuration
@@ -22,16 +23,11 @@ export async function process({ record: orderData, shopify, env, shopConfig }) {
     throw new Error("No order ID provided");
   }
 
-  // Test sheet ID
-  const spreadsheetId = "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw";
-
-  // Live sheet ID
-  //const spreadsheetId ="1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY";
-
-  const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
-
   // Get spreadsheet information and first sheet - using our new universal function
+  let spreadsheetId = jobConfig.spreadsheetId;
+  const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
   const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
+
   console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
   console.log(`Using sheet: "${sheetName}" from spreadsheet "${spreadsheetTitle}"`);
 

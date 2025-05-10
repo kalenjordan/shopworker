@@ -3,5 +3,7 @@
   "shop": "city",
   "description": "Pulls order data from Shopify and pushes it to a Google Sheet",
   "version": "1.0.0",
-  "trigger": "order-created"
+  "trigger": "order-created",
+  "spreadsheetId": "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw",
+  "liveSpreadsheetId": "1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY"
 }
