@@ -16,41 +16,36 @@ export async function process({ record: orderData, shopify, env, shopConfig }) {
   logToWorker(env, "Webhook payload: " + JSON.stringify(orderData));
 
   // Validate required configuration
-  if (!shopConfig.google_sheets_credentials) {
-    throw new Error("Missing required google_sheets_credentials configuration in shopConfig");
-  }
+  GoogleSheets.validateSheetCredentials(shopConfig);
+
   if (!orderData.id) {
     throw new Error("No order ID provided");
   }
 
   // Test sheet ID
-  // const spreadsheetId = "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw";
+  const spreadsheetId = "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw";
 
   // Live sheet ID
-  const spreadsheetId ="1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY";
+  //const spreadsheetId ="1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY";
 
   const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
 
-  // Get spreadsheet title and available sheets
-  const spreadsheetTitle = await GoogleSheets.getSpreadsheetTitle(sheetsClient, spreadsheetId);
+  // Get spreadsheet information and first sheet - using our new universal function
+  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
   console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
-
-  const sheets = await GoogleSheets.getSheets(sheetsClient, spreadsheetId);
-
-  // Use the first sheet
-  if (sheets.length === 0) {
-    throw new Error(`No sheets found in spreadsheet "${spreadsheetTitle}"`);
-  }
-
-  const sheetName = sheets[0].title;
   console.log(`Using sheet: "${sheetName}" from spreadsheet "${spreadsheetTitle}"`);
 
   // Convert ID to GID format and fetch full order
   const orderId = shopify.toGid(orderData.id, "Order");
   const { order } = await shopify.graphql(GetOrderById, { id: orderId });
 
-  // Verify the sheet has headers and get them
-  const headers = await SheetsHelpers.verifySheetHeaders(sheetsClient, spreadsheetId, sheetName);
+  // Verify the sheet has headers and get them with positions map
+  const { headers, headerMap } = await GoogleSheets.validateSheetHeaders(
+    sheetsClient,
+    spreadsheetId,
+    sheetName,
+    SheetsHelpers.COLUMN_MAPPINGS
+  );
 
   // Extract data from the order
   const orderDetails = SheetsHelpers.extractOrderData(order, shopify);
@@ -73,8 +68,8 @@ export async function process({ record: orderData, shopify, env, shopConfig }) {
 
   console.log(`Filtered from ${lineItems.length} to ${filteredLineItems.length} line items matching SKU criteria (CCS1 or CC0)`);
 
-  // Format data for Google Sheets using dynamic headers
-  const rows = SheetsHelpers.createDynamicSheetRows(orderDetails, filteredLineItems, headers);
+  // Format data for Google Sheets using dynamic headers and header map for efficient lookups
+  const rows = SheetsHelpers.createDynamicSheetRows(orderDetails, filteredLineItems, headers, headerMap);
   for (const row of rows) {
     logToCli(env, `• ${row.join(' | ')}`);
   }

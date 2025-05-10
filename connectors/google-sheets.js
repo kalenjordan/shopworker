@@ -5,6 +5,17 @@ const GOOGLE_SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 /**
+ * Validate that Google Sheets credentials exist in the shop configuration
+ * @param {Object} shopConfig - Shop configuration object
+ * @throws {Error} If Google Sheets credentials are missing from shopConfig
+ */
+export function validateSheetCredentials(shopConfig) {
+  if (!shopConfig || !shopConfig.google_sheets_credentials) {
+    throw new Error("Missing required google_sheets_credentials configuration in shopConfig");
+  }
+}
+
+/**
  * Create an authenticated Google Sheets client credentials object
  * @param {Object} credentials - Google Sheets credentials JSON object
  * @returns {Object} Object containing getAccessToken method
@@ -108,6 +119,52 @@ export async function getSheetHeaders(sheetsClient, spreadsheetId, sheetName) {
 }
 
 /**
+ * Get and validate sheet headers against expected column mappings
+ * @param {Object} sheetsClient - The Google Sheets client
+ * @param {string} spreadsheetId - The ID of the spreadsheet
+ * @param {string} sheetName - The name of the sheet
+ * @param {Array} expectedMappings - Array of expected column mappings (objects with key and label properties)
+ * @returns {Promise<Object>} Object containing headers array and headerMap mapping keys to column indices
+ */
+export async function validateSheetHeaders(sheetsClient, spreadsheetId, sheetName, expectedMappings) {
+  const headers = await getSheetHeaders(sheetsClient, spreadsheetId, sheetName);
+
+  // Create a map of header keys to their positions in the sheet
+  const headerMap = {};
+
+  if (expectedMappings && expectedMappings.length > 0) {
+    // Create a map of label -> key for easier lookup
+    const labelToKeyMap = {};
+    expectedMappings.forEach(mapping => {
+      labelToKeyMap[mapping.label] = mapping.key;
+    });
+
+    // Map each header to its position
+    headers.forEach((header, index) => {
+      const key = labelToKeyMap[header];
+      if (key) {
+        headerMap[key] = index;
+      }
+    });
+
+    // Check if all expected headers are present in the sheet
+    const expectedLabels = expectedMappings.map(mapping => mapping.label);
+    const missingHeaders = expectedLabels.filter(expectedLabel =>
+      !headers.includes(expectedLabel)
+    );
+
+    if (missingHeaders.length > 0) {
+      const message = `Missing expected headers: ${missingHeaders.join(', ')}`;
+      console.error(`\nError: ${message}`);
+      console.error(`Available headers: ${headers.join(', ')}`);
+      throw new Error(message);
+    }
+  }
+
+  return { headers, headerMap };
+}
+
+/**
  * Write data to a Google Sheet
  * @param {Object} sheetsClient - The Google Sheets client
  * @param {string} spreadsheetId - The ID of the spreadsheet
@@ -191,4 +248,30 @@ export async function getSpreadsheetTitle(sheetsClient, spreadsheetId) {
 
   const data = await res.json();
   return data.properties?.title || 'Unknown';
+}
+
+/**
+ * Get the first sheet from a spreadsheet and validate it exists
+ * @param {Object} sheetsClient - The Google Sheets client
+ * @param {string} spreadsheetId - The ID of the spreadsheet
+ * @returns {Promise<Object>} Object containing sheetName and spreadsheetTitle
+ * @throws {Error} If no sheets are found in the spreadsheet
+ */
+export async function getFirstSheet(sheetsClient, spreadsheetId) {
+  // Get spreadsheet title
+  const spreadsheetTitle = await getSpreadsheetTitle(sheetsClient, spreadsheetId);
+
+  // Get all sheets
+  const sheets = await getSheets(sheetsClient, spreadsheetId);
+
+  // Validate we have at least one sheet
+  if (sheets.length === 0) {
+    throw new Error(`No sheets found in spreadsheet "${spreadsheetTitle}"`);
+  }
+
+  // Return the first sheet name and spreadsheet title
+  return {
+    sheetName: sheets[0].title,
+    spreadsheetTitle
+  };
 }

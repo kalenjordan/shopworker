@@ -117,9 +117,10 @@ export function extractLineItems(order) {
  * @param {Object} orderData - Structured order data
  * @param {Array} lineItems - Array of line items
  * @param {Array} headers - Actual headers from the Google Sheet
+ * @param {Object} headerMap - Optional map of keys to column indices
  * @returns {Array} Array of rows for the sheet (one per line item)
  */
-export function createDynamicSheetRows(orderData, lineItems, headers) {
+export function createDynamicSheetRows(orderData, lineItems, headers, headerMap = null) {
   // Create a mapping from header labels to data keys
   const headerToKeyMap = {};
   COLUMN_MAPPINGS.forEach((mapping) => {
@@ -134,15 +135,30 @@ export function createDynamicSheetRows(orderData, lineItems, headers) {
       quantity: item.quantity || "",
     };
 
-    // Map the data to columns based on the actual headers from the sheet
-    return headers.map((header) => {
-      const dataKey = headerToKeyMap[header];
-      if (!dataKey) {
-        return ""; // Return empty string for unknown headers
+    // If we have a headerMap, use it for more efficient lookups
+    if (headerMap) {
+      // Create a row with empty values for all columns
+      const row = new Array(headers.length).fill("");
+
+      // Fill in the values we have based on the headerMap
+      for (const key in headerMap) {
+        const columnIndex = headerMap[key];
+        const value = rowData[key] || "";
+        row[columnIndex] = value;
       }
-      const value = rowData[dataKey] || "";
-      return value;
-    });
+
+      return row;
+    } else {
+      // Legacy approach: map based on header labels
+      return headers.map((header) => {
+        const dataKey = headerToKeyMap[header];
+        if (!dataKey) {
+          return ""; // Return empty string for unknown headers
+        }
+        const value = rowData[dataKey] || "";
+        return value;
+      });
+    }
   });
 }
 
