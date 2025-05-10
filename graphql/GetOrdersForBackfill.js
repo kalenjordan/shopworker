@@ -1,6 +1,10 @@
 export default `#graphql
-query GetOrdersForBackfill($first: Int!, $query: String) {
-  orders(first: $first, sortKey: CREATED_AT, reverse: false, query: $query) {
+query GetOrdersForBackfill($first: Int!, $query: String, $after: String) {
+  orders(first: $first, sortKey: CREATED_AT, reverse: false, query: $query, after: $after) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
     edges {
       node {
         id

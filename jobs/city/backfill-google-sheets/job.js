@@ -210,8 +210,8 @@ export async function process({ shopify, env, shopConfig }) {
   // Test sheet ID
   const spreadsheetId = "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw";
 
-  // Number of orders to fetch
-  const ordersToFetch = 100;
+  // Number of orders to fetch per page
+  const ordersPerPage = 100;
 
   // Fetch all recent orders since we need to do partial SKU matching
   const orderQuery = "";
@@ -248,92 +248,122 @@ export async function process({ shopify, env, shopConfig }) {
   const existingData = await GoogleSheets.getSheetData(sheetsClient, spreadsheetId, `${sheetName}!A2:Z`);
   console.log(`Fetched ${existingData.length} existing rows from the sheet`);
 
-  // Fetch recent orders from Shopify with all the necessary data in a single query
-  console.log(`Fetching ${ordersToFetch} recent orders...`);
-  const { orders } = await shopify.graphql(GetOrdersForBackfill, {
-    first: ordersToFetch,
-    query: orderQuery
-  });
+  // Initialize tracking variables
+  let hasNextPage = true;
+  let cursor = null;
+  let totalProcessedOrders = 0;
+  let totalAddedRows = 0;
+  let pageNumber = 1;
 
-  if (!orders?.edges?.length) {
-    console.log("No orders found matching the query criteria");
-    return;
-  }
+  // Process orders with pagination
+  while (hasNextPage) {
+    console.log(chalk.blue(`\nFetching page ${pageNumber} of orders (${ordersPerPage} per page)...`));
 
-  console.log(`Found ${orders.edges.length} orders to process`);
+    // Fetch a page of orders
+    const response = await shopify.graphql(GetOrdersForBackfill, {
+      first: ordersPerPage,
+      query: orderQuery,
+      after: cursor
+    });
 
-  // Process each order
-  let addedCount = 0;
-  const newRows = [];
-  let processedCount = 0;
+    // Extract orders and pagination info
+    const { orders } = response;
 
-  // Process orders in batches to avoid memory issues
-  const orderBatchSize = 20;
-  const totalBatches = Math.ceil(orders.edges.length / orderBatchSize);
+    if (!orders?.edges?.length) {
+      console.log("No orders found in this page.");
+      break;
+    }
 
-  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-    const batchStart = batchIndex * orderBatchSize;
-    const batchEnd = Math.min(batchStart + orderBatchSize, orders.edges.length);
-    const currentBatch = orders.edges.slice(batchStart, batchEnd);
+    hasNextPage = orders.pageInfo.hasNextPage;
+    cursor = orders.pageInfo.endCursor;
 
-    console.log(`Processing batch ${batchIndex + 1}/${totalBatches} (orders ${batchStart + 1}-${batchEnd})`);
+    console.log(`Found ${orders.edges.length} orders on page ${pageNumber}`);
 
-    // Process each order in the current batch
-    for (const edge of currentBatch) {
-      const order = edge.node;
-      processedCount++;
+    // Process each order
+    let addedCount = 0;
+    const newRows = [];
+    let processedCount = 0;
 
-      // Extract order data
-      const orderData = extractOrderData(order, shopify);
-      const lineItems = extractLineItems(order);
+    // Process orders in batches to avoid memory issues
+    const orderBatchSize = 20;
+    const totalBatches = Math.ceil(orders.edges.length / orderBatchSize);
 
-      // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
-      const filteredLineItems = lineItems.filter(item => {
-        const sku = item.sku || "";
-        return sku.includes("CCS1") || sku.includes("CC0");
-      });
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const batchStart = batchIndex * orderBatchSize;
+      const batchEnd = Math.min(batchStart + orderBatchSize, orders.edges.length);
+      const currentBatch = orders.edges.slice(batchStart, batchEnd);
 
-      if (filteredLineItems.length === 0) {
-        console.log(`Order ${orderData.orderNumber} has no line items with matching SKUs, skipping`);
-        continue;
-      }
+      console.log(`Processing batch ${batchIndex + 1}/${totalBatches} of page ${pageNumber} (orders ${batchStart + 1}-${batchEnd})`);
 
-      console.log(`Processing order ${orderData.orderNumber} with ${filteredLineItems.length} matching line items`);
+      // Process each order in the current batch
+      for (const edge of currentBatch) {
+        const order = edge.node;
+        processedCount++;
 
-      // Create rows for each filtered line item
-      const rows = createDynamicSheetRows(orderData, filteredLineItems, headers);
+        // Extract order data
+        const orderData = extractOrderData(order, shopify);
+        const lineItems = extractLineItems(order);
 
-      // Check each row to see if it already exists in the sheet
-      for (const row of rows) {
-        const orderNumber = row[orderNumberIndex];
-        const sku = row[skuIndex];
+        // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
+        const filteredLineItems = lineItems.filter(item => {
+          const sku = item.sku || "";
+          return sku.includes("CCS1") || sku.includes("CC0");
+        });
 
-        if (!orderLineItemExists(existingData, orderNumber, sku, orderNumberIndex, skuIndex)) {
-          // This order line item doesn't exist in the sheet, add it
-          newRows.push(row);
-          addedCount++;
+        if (filteredLineItems.length === 0) {
+          console.log(`Order ${orderData.orderNumber} has no line items with matching SKUs, skipping`);
+          continue;
+        }
 
-          // Also add to existingData to prevent duplicates within the current run
-          existingData.push(row);
+        console.log(`Processing order ${orderData.orderNumber} with ${filteredLineItems.length} matching line items`);
+
+        // Create rows for each filtered line item
+        const rows = createDynamicSheetRows(orderData, filteredLineItems, headers);
+
+        // Check each row to see if it already exists in the sheet
+        for (const row of rows) {
+          const orderNumber = row[orderNumberIndex];
+          const sku = row[skuIndex];
+
+          if (!orderLineItemExists(existingData, orderNumber, sku, orderNumberIndex, skuIndex)) {
+            // This order line item doesn't exist in the sheet, add it
+            newRows.push(row);
+            addedCount++;
+
+            // Also add to existingData to prevent duplicates within the current run
+            existingData.push(row);
+          }
         }
       }
 
-      // Log progress
-      if (processedCount % 10 === 0 || processedCount === orders.edges.length) {
-        console.log(`Processed ${processedCount}/${orders.edges.length} orders (${Math.round(processedCount/orders.edges.length*100)}%)`);
+      // Add new rows to the sheet in batches if there are any
+      if (newRows.length > 0) {
+        console.log(`Adding ${newRows.length} new rows to the sheet for this batch`);
+        await GoogleSheets.appendSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1:Z1`, newRows);
+        console.log(chalk.green(`Successfully added ${newRows.length} new rows to the sheet`));
+
+        // Clear newRows array to free memory after adding the batch
+        newRows.length = 0;
       }
     }
 
-    // Add new rows to the sheet in batches if there are any
-    if (newRows.length > 0) {
-      console.log(`Adding ${newRows.length} new rows to the sheet for this batch`);
-      await GoogleSheets.appendSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1:Z1`, newRows);
-      console.log(chalk.green(`Successfully added ${newRows.length} new rows to the sheet`));
+    // Update counters and progress
+    totalProcessedOrders += processedCount;
+    totalAddedRows += addedCount;
 
-      // Clear newRows array to free memory after adding the batch
-      newRows.length = 0;
+    console.log(chalk.yellow(`\nPage ${pageNumber} complete: Processed ${processedCount} orders, added ${addedCount} rows`));
+    console.log(chalk.yellow(`Running total: Processed ${totalProcessedOrders} orders, added ${totalAddedRows} rows`));
+
+    // Move to next page
+    pageNumber++;
+
+    // Optionally add a small delay between pages to avoid rate limiting
+    if (hasNextPage) {
+      console.log("Waiting 1 second before fetching next page...");
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 
-  console.log(chalk.green(`Backfill complete: Processed ${processedCount} orders, added ${addedCount} new line items`));
+  console.log(chalk.green(`\nBackfill complete: Processed ${totalProcessedOrders} orders across ${pageNumber - 1} pages`));
+  console.log(chalk.green(`Added ${totalAddedRows} new line items to the sheet`));
 }
