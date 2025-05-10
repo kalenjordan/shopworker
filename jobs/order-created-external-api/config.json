@@ -1,7 +1,0 @@
-{
-  "name": "Ping External API When Order Created",
-  "shop": "kalen-test-store",
-  "description": "Fetches data from an external API and sets it as the custom message for the order invoice",
-  "version": "1.0.0",
-  "trigger": "order-created"
-}
