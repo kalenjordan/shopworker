@@ -23,8 +23,12 @@ export async function process({ record: orderData, shopify, env, shopConfig, job
     throw new Error("No order ID provided");
   }
 
-  // Get spreadsheet information and first sheet - using our new universal function
   let spreadsheetId = jobConfig.spreadsheetId;
+  if (!spreadsheetId) {
+    throw new Error("No spreadsheet ID provided in job config.json");
+  }
+
+  // Get spreadsheet information and first sheet - using our new universal function
   const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
   const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
 
