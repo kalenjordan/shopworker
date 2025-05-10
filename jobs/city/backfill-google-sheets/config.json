@@ -1,6 +1,6 @@
 {
   "name": "Backfill Orders To Google Sheets",
-  "shop": "kalen-test-store",
+  "shop": "city",
   "description": "Backfills orders to Google Sheets",
   "trigger": "manual",
   "test": {
