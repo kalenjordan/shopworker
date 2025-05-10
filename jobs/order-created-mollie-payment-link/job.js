@@ -50,6 +50,7 @@ function buildMolliePayload(orderDetails, env, formattedAmount, currencyCode) {
     amount: { currency: currencyCode, value: formattedAmount },
     description: `Payment for order ${orderDetails.name}`,
     redirectUrl: redirectUrl,
+    allowedMethods: ['billie']
   };
 
   return payload;

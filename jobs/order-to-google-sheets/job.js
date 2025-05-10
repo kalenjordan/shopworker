@@ -192,10 +192,10 @@ export async function process({ record: orderData, shopify, env }) {
   }
 
   // Test sheet ID
-  const spreadsheetId = "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw";
+  // const spreadsheetId = "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw";
 
   // Live sheet ID
-  // "google_sheet_id": "1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY",
+  const spreadsheetId ="1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY";
 
   const sheetsClient = await GoogleSheets.createSheetsClient(env.google_sheets_credentials);
 
