@@ -23,7 +23,7 @@ export async function process({ record: orderData, shopify, env, shopConfig, job
     throw new Error("No order ID provided");
   }
 
-  let spreadsheetId = jobConfig.spreadsheetId;
+  let spreadsheetId = jobConfig.spreadsheet_id;
   if (!spreadsheetId) {
     throw new Error("No spreadsheet ID provided in job config.json");
   }
@@ -53,7 +53,8 @@ export async function process({ record: orderData, shopify, env, shopConfig, job
 
   // Validate we have line items
   if (lineItems.length === 0) {
-    throw new Error("No line items found in order");
+    console.log(chalk.yellow(`Order ${orderDetails.orderNumber} has no line items, skipping`));
+    return;
   }
 
   // Log the data
@@ -68,21 +69,22 @@ export async function process({ record: orderData, shopify, env, shopConfig, job
 
   console.log(`Filtered from ${lineItems.length} to ${filteredLineItems.length} line items matching SKU criteria (CCS1 or CC0)`);
 
-  if (filteredLineItems.length <= 0) {
+  if (filteredLineItems.length === 0) {
+    console.log(chalk.yellow(`Order ${orderDetails.orderNumber} has no line items with matching SKUs, skipping`));
     return;
   }
 
   // Format data for Google Sheets using dynamic headers and header map for efficient lookups
   const rows = SheetsHelpers.createDynamicSheetRows(orderDetails, filteredLineItems, headers, headerMap);
+
+  // Log rows being added
+  console.log(`\nAdding ${rows.length} rows to sheet for order ${order.name || order.id}:`);
   for (const row of rows) {
     logToCli(env, `• ${row.join(' | ')}`);
   }
 
-  // Log what we're doing
-  console.log(`\nAdding ${rows.length} rows to sheet for order ${order.name || order.id}`);
-
   // Append to Google Sheet
   const appendResult = await GoogleSheets.appendSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1`, rows, "USER_ENTERED");
 
-  console.log(`Order data added to Google Sheet at range: ${appendResult.updates?.updatedRange || "unknown"}`);
+  console.log(chalk.green(`Order data added to Google Sheet at range: ${appendResult.updates?.updatedRange || "unknown"}`));
 }

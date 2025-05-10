@@ -14,15 +14,40 @@ import * as SheetsHelpers from "../sheets-helpers.js";
  */
 export async function process({ shopify, env, shopConfig, jobConfig }) {
   // Validate required configuration
-  validateConfig(shopConfig, jobConfig);
+  GoogleSheets.validateSheetCredentials(shopConfig);
 
   const spreadsheetId = jobConfig.spreadsheet_id;
+  if (!spreadsheetId) {
+    throw new Error("Missing required spreadsheet_id in job configuration");
+  }
+
   const ordersPerPage = 100;
   const orderQuery = ""; // Fetch all recent orders for SKU matching
 
   // Initialize Google Sheets setup
-  const { sheetsClient, sheetName, headers, orderNumberIndex, skuIndex } =
-    await setupGoogleSheets(shopConfig, spreadsheetId);
+  const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
+
+  // Get spreadsheet information and first sheet - using the universal function
+  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
+
+  console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
+  console.log(`Using sheet: "${sheetName}" from spreadsheet "${spreadsheetTitle}"`);
+
+  // Verify the sheet has headers and get them with positions map
+  const { headers, headerMap } = await GoogleSheets.validateSheetHeaders(
+    sheetsClient,
+    spreadsheetId,
+    sheetName,
+    SheetsHelpers.COLUMN_MAPPINGS
+  );
+
+  // Find the indices of order number and SKU columns for duplicate checking
+  const orderNumberIndex = headerMap.orderNumber;
+  const skuIndex = headerMap.sku;
+
+  if (orderNumberIndex === undefined || skuIndex === undefined) {
+    throw new Error("Sheet is missing required Order Number or SKU columns");
+  }
 
   // Fetch existing data to check for duplicates
   const existingData = await GoogleSheets.getSheetData(sheetsClient, spreadsheetId, `${sheetName}!A2:Z`);
@@ -35,69 +60,18 @@ export async function process({ shopify, env, shopConfig, jobConfig }) {
     spreadsheetId,
     sheetName,
     headers,
+    headerMap,
     orderNumberIndex,
     skuIndex,
     existingData,
     ordersPerPage,
-    orderQuery
+    orderQuery,
+    env
   });
 
   // Log final results
   console.log(chalk.green(`\nBackfill complete: Processed ${stats.totalProcessedOrders} orders across ${stats.pageCount} pages`));
   console.log(chalk.green(`Added ${stats.totalAddedRows} new line items to the sheet`));
-}
-
-/**
- * Validate required configuration
- * @param {Object} shopConfig - Shop configuration
- * @param {Object} jobConfig - Job configuration
- */
-function validateConfig(shopConfig, jobConfig) {
-  if (!shopConfig.google_sheets_credentials) {
-    throw new Error("Missing required google_sheets_credentials configuration in shopConfig");
-  }
-
-  if (!jobConfig.spreadsheet_id) {
-    throw new Error("Missing required spreadsheet_id in job configuration");
-  }
-}
-
-/**
- * Set up Google Sheets connection and verify sheet structure
- * @param {Object} shopConfig - Shop configuration
- * @param {string} spreadsheetId - Google Sheets spreadsheet ID
- * @returns {Promise<Object>} - Sheet configuration details
- */
-async function setupGoogleSheets(shopConfig, spreadsheetId) {
-  // Initialize Google Sheets client
-  const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
-
-  // Get spreadsheet title and available sheets
-  const spreadsheetTitle = await GoogleSheets.getSpreadsheetTitle(sheetsClient, spreadsheetId);
-  console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
-
-  const sheets = await GoogleSheets.getSheets(sheetsClient, spreadsheetId);
-
-  // Use the first sheet
-  if (sheets.length === 0) {
-    throw new Error(`No sheets found in spreadsheet "${spreadsheetTitle}"`);
-  }
-
-  const sheetName = sheets[0].title;
-  console.log(`Using sheet: "${sheetName}" from spreadsheet "${spreadsheetTitle}"`);
-
-  // Verify the sheet has headers and get them
-  const headers = await SheetsHelpers.verifySheetHeaders(sheetsClient, spreadsheetId, sheetName);
-
-  // Find the indices of order number and SKU columns
-  const orderNumberIndex = headers.findIndex(header => header === "Order Number");
-  const skuIndex = headers.findIndex(header => header === "SKU");
-
-  if (orderNumberIndex === -1 || skuIndex === -1) {
-    throw new Error("Sheet is missing required Order Number or SKU columns");
-  }
-
-  return { sheetsClient, sheetName, headers, orderNumberIndex, skuIndex };
 }
 
 /**
@@ -111,11 +85,13 @@ async function processOrderPages({
   spreadsheetId,
   sheetName,
   headers,
+  headerMap,
   orderNumberIndex,
   skuIndex,
   existingData,
   ordersPerPage,
-  orderQuery
+  orderQuery,
+  env
 }) {
   // Initialize tracking variables
   let hasNextPage = true;
@@ -156,10 +132,12 @@ async function processOrderPages({
       spreadsheetId,
       sheetName,
       headers,
+      headerMap,
       orderNumberIndex,
       skuIndex,
       existingData,
-      pageNumber
+      pageNumber,
+      env
     });
 
     // Update counters and progress
@@ -198,10 +176,12 @@ async function processOrderPage({
   spreadsheetId,
   sheetName,
   headers,
+  headerMap,
   orderNumberIndex,
   skuIndex,
   existingData,
-  pageNumber
+  pageNumber,
+  env
 }) {
   let addedCount = 0;
   let processedCount = 0;
@@ -216,9 +196,11 @@ async function processOrderPage({
       order,
       shopify,
       headers,
+      headerMap,
       orderNumberIndex,
       skuIndex,
-      existingData
+      existingData,
+      env
     });
 
     // Track new rows and count
@@ -229,7 +211,7 @@ async function processOrderPage({
   // Add new rows to the sheet if there are any
   if (newRows.length > 0) {
     console.log(`Adding ${newRows.length} new rows to the sheet for this page`);
-    await GoogleSheets.appendSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1:Z1`, newRows);
+    await GoogleSheets.appendSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1`, newRows, "USER_ENTERED");
     console.log(chalk.green(`Successfully added ${newRows.length} new rows to the sheet`));
   }
 
@@ -245,9 +227,11 @@ function processOrder({
   order,
   shopify,
   headers,
+  headerMap,
   orderNumberIndex,
   skuIndex,
-  existingData
+  existingData,
+  env
 }) {
   const newOrderRows = [];
 
@@ -263,10 +247,10 @@ function processOrder({
     return newOrderRows;
   }
 
-  console.log(`Processing order ${orderData.orderNumber} with ${filteredLineItems.length} matching line items`);
+  logToCli(env, `Processing order ${orderData.orderNumber} with ${filteredLineItems.length} matching line items`);
 
-  // Create rows for each filtered line item
-  const rows = SheetsHelpers.createDynamicSheetRows(orderData, filteredLineItems, headers);
+  // Create rows for each filtered line item using the more efficient headerMap
+  const rows = SheetsHelpers.createDynamicSheetRows(orderData, filteredLineItems, headers, headerMap);
 
   // Check each row to see if it already exists in the sheet
   for (const row of rows) {
