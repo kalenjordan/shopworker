@@ -10,22 +10,65 @@ import * as SheetsHelpers from "../sheets-helpers.js";
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.env - Environment variables
  * @param {Object} options.shopConfig - Shop-specific configuration
+ * @param {Object} options.jobConfig - Job-specific configuration
  */
-export async function process({ shopify, env, shopConfig }) {
+export async function process({ shopify, env, shopConfig, jobConfig }) {
   // Validate required configuration
+  validateConfig(shopConfig, jobConfig);
+
+  const spreadsheetId = jobConfig.spreadsheet_id;
+  const ordersPerPage = 100;
+  const orderQuery = ""; // Fetch all recent orders for SKU matching
+
+  // Initialize Google Sheets setup
+  const { sheetsClient, sheetName, headers, orderNumberIndex, skuIndex } =
+    await setupGoogleSheets(shopConfig, spreadsheetId);
+
+  // Fetch existing data to check for duplicates
+  const existingData = await GoogleSheets.getSheetData(sheetsClient, spreadsheetId, `${sheetName}!A2:Z`);
+  console.log(`Fetched ${existingData.length} existing rows from the sheet`);
+
+  // Process orders with pagination
+  const stats = await processOrderPages({
+    shopify,
+    sheetsClient,
+    spreadsheetId,
+    sheetName,
+    headers,
+    orderNumberIndex,
+    skuIndex,
+    existingData,
+    ordersPerPage,
+    orderQuery
+  });
+
+  // Log final results
+  console.log(chalk.green(`\nBackfill complete: Processed ${stats.totalProcessedOrders} orders across ${stats.pageCount} pages`));
+  console.log(chalk.green(`Added ${stats.totalAddedRows} new line items to the sheet`));
+}
+
+/**
+ * Validate required configuration
+ * @param {Object} shopConfig - Shop configuration
+ * @param {Object} jobConfig - Job configuration
+ */
+function validateConfig(shopConfig, jobConfig) {
   if (!shopConfig.google_sheets_credentials) {
     throw new Error("Missing required google_sheets_credentials configuration in shopConfig");
   }
 
-  // Test sheet ID
-  const spreadsheetId = "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw";
+  if (!jobConfig.spreadsheet_id) {
+    throw new Error("Missing required spreadsheet_id in job configuration");
+  }
+}
 
-  // Number of orders to fetch per page
-  const ordersPerPage = 100;
-
-  // Fetch all recent orders since we need to do partial SKU matching
-  const orderQuery = "";
-
+/**
+ * Set up Google Sheets connection and verify sheet structure
+ * @param {Object} shopConfig - Shop configuration
+ * @param {string} spreadsheetId - Google Sheets spreadsheet ID
+ * @returns {Promise<Object>} - Sheet configuration details
+ */
+async function setupGoogleSheets(shopConfig, spreadsheetId) {
   // Initialize Google Sheets client
   const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
 
@@ -54,10 +97,26 @@ export async function process({ shopify, env, shopConfig }) {
     throw new Error("Sheet is missing required Order Number or SKU columns");
   }
 
-  // Fetch all existing data from the sheet to check for duplicates
-  const existingData = await GoogleSheets.getSheetData(sheetsClient, spreadsheetId, `${sheetName}!A2:Z`);
-  console.log(`Fetched ${existingData.length} existing rows from the sheet`);
+  return { sheetsClient, sheetName, headers, orderNumberIndex, skuIndex };
+}
 
+/**
+ * Process orders in paginated batches
+ * @param {Object} options - Processing options
+ * @returns {Promise<Object>} - Statistics about processed orders
+ */
+async function processOrderPages({
+  shopify,
+  sheetsClient,
+  spreadsheetId,
+  sheetName,
+  headers,
+  orderNumberIndex,
+  skuIndex,
+  existingData,
+  ordersPerPage,
+  orderQuery
+}) {
   // Initialize tracking variables
   let hasNextPage = true;
   let cursor = null;
@@ -89,76 +148,25 @@ export async function process({ shopify, env, shopConfig }) {
 
     console.log(`Found ${orders.edges.length} orders on page ${pageNumber}`);
 
-    // Process each order
-    let addedCount = 0;
-    const newRows = [];
-    let processedCount = 0;
-
-    // Process orders in batches to avoid memory issues
-    const orderBatchSize = 20;
-    const totalBatches = Math.ceil(orders.edges.length / orderBatchSize);
-
-    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-      const batchStart = batchIndex * orderBatchSize;
-      const batchEnd = Math.min(batchStart + orderBatchSize, orders.edges.length);
-      const currentBatch = orders.edges.slice(batchStart, batchEnd);
-
-      console.log(`Processing batch ${batchIndex + 1}/${totalBatches} of page ${pageNumber} (orders ${batchStart + 1}-${batchEnd})`);
-
-      // Process each order in the current batch
-      for (const edge of currentBatch) {
-        const order = edge.node;
-        processedCount++;
-
-        // Extract order data
-        const orderData = SheetsHelpers.extractOrderData(order, shopify);
-        const lineItems = SheetsHelpers.extractLineItems(order);
-
-        // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
-        const filteredLineItems = SheetsHelpers.filterLineItemsBySku(lineItems);
-
-        if (filteredLineItems.length === 0) {
-          console.log(`Order ${orderData.orderNumber} has no line items with matching SKUs, skipping`);
-          continue;
-        }
-
-        console.log(`Processing order ${orderData.orderNumber} with ${filteredLineItems.length} matching line items`);
-
-        // Create rows for each filtered line item
-        const rows = SheetsHelpers.createDynamicSheetRows(orderData, filteredLineItems, headers);
-
-        // Check each row to see if it already exists in the sheet
-        for (const row of rows) {
-          const orderNumber = row[orderNumberIndex];
-          const sku = row[skuIndex];
-
-          if (!SheetsHelpers.orderLineItemExists(existingData, orderNumber, sku, orderNumberIndex, skuIndex)) {
-            // This order line item doesn't exist in the sheet, add it
-            newRows.push(row);
-            addedCount++;
-
-            // Also add to existingData to prevent duplicates within the current run
-            existingData.push(row);
-          }
-        }
-      }
-
-      // Add new rows to the sheet in batches if there are any
-      if (newRows.length > 0) {
-        console.log(`Adding ${newRows.length} new rows to the sheet for this batch`);
-        await GoogleSheets.appendSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1:Z1`, newRows);
-        console.log(chalk.green(`Successfully added ${newRows.length} new rows to the sheet`));
-
-        // Clear newRows array to free memory after adding the batch
-        newRows.length = 0;
-      }
-    }
+    // Process the current page of orders
+    const pageStats = await processOrderPage({
+      orders,
+      shopify,
+      sheetsClient,
+      spreadsheetId,
+      sheetName,
+      headers,
+      orderNumberIndex,
+      skuIndex,
+      existingData,
+      pageNumber
+    });
 
     // Update counters and progress
-    totalProcessedOrders += processedCount;
-    totalAddedRows += addedCount;
+    totalProcessedOrders += pageStats.processedCount;
+    totalAddedRows += pageStats.addedCount;
 
-    console.log(chalk.yellow(`\nPage ${pageNumber} complete: Processed ${processedCount} orders, added ${addedCount} rows`));
+    console.log(chalk.yellow(`\nPage ${pageNumber} complete: Processed ${pageStats.processedCount} orders, added ${pageStats.addedCount} rows`));
     console.log(chalk.yellow(`Running total: Processed ${totalProcessedOrders} orders, added ${totalAddedRows} rows`));
 
     // Move to next page
@@ -171,6 +179,108 @@ export async function process({ shopify, env, shopConfig }) {
     }
   }
 
-  console.log(chalk.green(`\nBackfill complete: Processed ${totalProcessedOrders} orders across ${pageNumber - 1} pages`));
-  console.log(chalk.green(`Added ${totalAddedRows} new line items to the sheet`));
+  return {
+    totalProcessedOrders,
+    totalAddedRows,
+    pageCount: pageNumber - 1
+  };
+}
+
+/**
+ * Process a single page of orders
+ * @param {Object} options - Processing options
+ * @returns {Promise<Object>} - Statistics for this page
+ */
+async function processOrderPage({
+  orders,
+  shopify,
+  sheetsClient,
+  spreadsheetId,
+  sheetName,
+  headers,
+  orderNumberIndex,
+  skuIndex,
+  existingData,
+  pageNumber
+}) {
+  let addedCount = 0;
+  let processedCount = 0;
+  const newRows = [];
+
+  // Process each order in the current page
+  for (const edge of orders.edges) {
+    const order = edge.node;
+    processedCount++;
+
+    const orderRows = processOrder({
+      order,
+      shopify,
+      headers,
+      orderNumberIndex,
+      skuIndex,
+      existingData
+    });
+
+    // Track new rows and count
+    newRows.push(...orderRows);
+    addedCount += orderRows.length;
+  }
+
+  // Add new rows to the sheet if there are any
+  if (newRows.length > 0) {
+    console.log(`Adding ${newRows.length} new rows to the sheet for this page`);
+    await GoogleSheets.appendSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1:Z1`, newRows);
+    console.log(chalk.green(`Successfully added ${newRows.length} new rows to the sheet`));
+  }
+
+  return { processedCount, addedCount };
+}
+
+/**
+ * Process a single order and return new rows to add
+ * @param {Object} options - Processing options
+ * @returns {Array} - New rows to add to the sheet
+ */
+function processOrder({
+  order,
+  shopify,
+  headers,
+  orderNumberIndex,
+  skuIndex,
+  existingData
+}) {
+  const newOrderRows = [];
+
+  // Extract order data
+  const orderData = SheetsHelpers.extractOrderData(order, shopify);
+  const lineItems = SheetsHelpers.extractLineItems(order);
+
+  // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
+  const filteredLineItems = SheetsHelpers.filterLineItemsBySku(lineItems);
+
+  if (filteredLineItems.length === 0) {
+    console.log(`Order ${orderData.orderNumber} has no line items with matching SKUs, skipping`);
+    return newOrderRows;
+  }
+
+  console.log(`Processing order ${orderData.orderNumber} with ${filteredLineItems.length} matching line items`);
+
+  // Create rows for each filtered line item
+  const rows = SheetsHelpers.createDynamicSheetRows(orderData, filteredLineItems, headers);
+
+  // Check each row to see if it already exists in the sheet
+  for (const row of rows) {
+    const orderNumber = row[orderNumberIndex];
+    const sku = row[skuIndex];
+
+    if (!SheetsHelpers.orderLineItemExists(existingData, orderNumber, sku, orderNumberIndex, skuIndex)) {
+      // This order line item doesn't exist in the sheet, add it
+      newOrderRows.push(row);
+
+      // Also add to existingData to prevent duplicates within the current run
+      existingData.push(row);
+    }
+  }
+
+  return newOrderRows;
 }
