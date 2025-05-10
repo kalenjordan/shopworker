@@ -2,6 +2,8 @@
  * Shared Shopify client implementation that works in both CLI and Worker environments
  * Uses GraphQL API exclusively
  */
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Recursively search for userErrors in a GraphQL response
@@ -52,14 +54,16 @@ function truncateQuery(query) {
 /**
  * Creates a Shopify admin API client using GraphQL
  * @param {Object} options - Configuration options
- * @param {string} options.shopDomain - The Shopify shop domain
+ * @param {string} options.shop - The Shopify shop domain
  * @param {string} options.accessToken - The Shopify admin API access token
- * @param {string} [options.apiVersion='2024-07'] - The Shopify API version to use
+ * @param {string} [options.apiVersion='2025-04'] - The Shopify API version to use
+ * @param {number} [options.retries=3] - Number of retries for failed requests
+ * @param {number} [options.timeout=30000] - Timeout in ms for requests
  * @returns {Object} A Shopify client with GraphQL capabilities
  */
-export function createShopifyClient({ shopDomain, accessToken, apiVersion = '2024-07' }) {
+export function createShopifyClient({ shop, accessToken, apiVersion = '2025-04', retries = 3, timeout = 30000 }) {
   // Format shop name (remove .myshopify.com if present)
-  const shopName = shopDomain.replace('.myshopify.com', '');
+  const shopName = shop.replace('.myshopify.com', '');
   const graphqlUrl = `https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`;
 
   // Create the client with enhanced GraphQL capabilities
@@ -187,4 +191,83 @@ export function createShopifyClient({ shopDomain, accessToken, apiVersion = '202
   };
 
   return shopifyClient;
+}
+
+/**
+ * Initialize Shopify API client for a specific job
+ * @param {string} cliDir - The directory where cli.js is located (project root)
+ * @param {string} jobPath - The job path relative to jobs/
+ * @param {string} shopParam - Optional shop domain or name to override the one in job config
+ * @returns {Object} The Shopify client
+ */
+export function initShopify(cliDir, jobPath, shopParam) {
+  try {
+    if (!jobPath) {
+      throw new Error('jobPath is required to initialize Shopify client.');
+    }
+
+    const jobConfigPath = path.join(cliDir, 'jobs', jobPath, 'config.json');
+    if (!fs.existsSync(jobConfigPath)) {
+      throw new Error(`Job configuration file not found: ${jobConfigPath}`);
+    }
+    const jobConfigFile = fs.readFileSync(jobConfigPath, 'utf8');
+    const jobConfig = JSON.parse(jobConfigFile);
+
+    // Get shop identifier from job config
+    let shopIdentifier = jobConfig.shop;
+
+    const shopworkerFilePath = path.join(cliDir, '.shopworker.json');
+    if (!fs.existsSync(shopworkerFilePath)) {
+      throw new Error('.shopworker.json file not found. Please create one.');
+    }
+    const shopworkerFileContent = fs.readFileSync(shopworkerFilePath, 'utf8');
+    const shopworkerData = JSON.parse(shopworkerFileContent);
+
+    if (!shopworkerData.shops || !Array.isArray(shopworkerData.shops)) {
+      throw new Error('Invalid .shopworker.json format: "shops" array is missing or not an array.');
+    }
+
+    // If shopParam is provided, look it up in .shopworker.json
+    let shopDetails = null;
+    if (shopParam) {
+      // Try to find shop by domain or name
+      shopDetails = shopworkerData.shops.find(s =>
+        s.shopify_domain === shopParam || s.name === shopParam
+      );
+
+      if (!shopDetails) {
+        throw new Error(`Shop with domain or name '${shopParam}' not found in .shopworker.json.`);
+      }
+    } else {
+      // Use shop from job config
+      if (!shopIdentifier) {
+        throw new Error(`'shop' not defined in job configuration: ${jobConfigPath}`);
+      }
+
+      shopDetails = shopworkerData.shops.find(s => s.name === shopIdentifier);
+      if (!shopDetails) {
+        throw new Error(`Shop configuration for '${shopIdentifier}' not found in .shopworker.json.`);
+      }
+    }
+
+    const shopDomain = shopDetails.shopify_domain;
+    const accessToken = shopDetails.shopify_token;
+
+    if (!shopDomain) {
+      throw new Error(`'shopify_domain' not set for shop '${shopDetails.name}' in .shopworker.json`);
+    }
+    if (!accessToken) {
+      throw new Error(`'shopify_token' not set for shop '${shopDetails.name}' in .shopworker.json`);
+    }
+
+    return createShopifyClient({
+      shop: shopDomain,
+      accessToken,
+      apiVersion: '2025-04' // Consider making this configurable
+    });
+  } catch (error) {
+    console.error(`Failed to initialize Shopify API for job '${jobPath}': ${error.message}`);
+    if (error.cause) console.error('Cause:', error.cause);
+    process.exit(1); // Critical failure
+  }
 }

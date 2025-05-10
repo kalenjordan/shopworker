@@ -1,6 +1,6 @@
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
-import { initShopify } from './shopify-api-helpers.js';
-import { getAvailableJobDirs, loadAndValidateWebhookConfigs } from './common-helpers.js';
+import { initShopify } from './shopify.js';
+import { getAvailableJobDirs, loadAndValidateWebhookConfigs } from './cli-helpers.js';
 import WEBHOOK_CREATE_MUTATION from '../graphql/webhookSubscriptionCreate.js';
 import WEBHOOK_DELETE_MUTATION from '../graphql/webhookSubscriptionDelete.js';
 import GET_WEBHOOKS_QUERY from '../graphql/getWebhooks.js';

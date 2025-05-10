@@ -4,4 +4,4 @@ wrangler.toml
 .wrangler
 .shopworker.json
 google-sheets-credentials.json
-docs
+docs/codebase-structure.md

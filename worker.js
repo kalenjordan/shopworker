@@ -2,8 +2,45 @@
  * Cloudflare Worker entry point for Shopify webhooks
  */
 
-import { verifyShopifyWebhook } from './utils/worker-utils.js';
-import { createShopifyClient } from './utils/shopify-client.js';
+import { createShopifyClient } from './utils/shopify.js';
+import { logToWorker } from './utils/log.js';
+import { hmacSha256 } from './utils/crypto.js';
+
+/**
+ * Verify that a webhook request is authentic and from Shopify
+ * @param {Request} req - The request object
+ * @param {string} body - The request body as string
+ * @param {Object} env - Environment variables
+ * @param {Object} shopConfig - Configuration for the shop
+ * @returns {Promise<boolean>} Whether the webhook is verified
+ */
+async function verifyShopifyWebhook(req, body, env, shopConfig) {
+  try {
+    if (!shopConfig || !shopConfig.shopify_api_secret_key) {
+      logToWorker(env, "Missing API secret for shop. Cannot verify webhook.");
+      return false;
+    }
+
+    const hmac = req.headers.get('X-Shopify-Hmac-Sha256');
+    if (!hmac) {
+      logToWorker(env, "Missing HMAC signature in webhook request");
+      return false;
+    }
+
+    const secret = shopConfig.shopify_api_secret_key;
+    const generatedHmac = await hmacSha256(secret, body);
+
+    if (generatedHmac !== hmac) {
+      logToWorker(env, "HMAC verification failed for webhook");
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logToWorker(env, "Error verifying webhook:", error);
+    return false;
+  }
+}
 
 /**
  * Dynamically load a job handler

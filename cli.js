@@ -5,14 +5,17 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
-// Import utility functions from our new modules
+// Import utility functions from our new consolidated module
 import {
   detectJobDirectory,
   ensureAndResolveJobName,
-  getWorkerUrl
-} from './utils/common-helpers.js';
-import { runJobTest, findSampleRecordForJob, runJobRemoteTest } from './utils/job-executor.js';
-import { handleCloudflareDeployment } from './utils/deployment-manager.js';
+  getWorkerUrl,
+  runJobTest,
+  findSampleRecordForJob,
+  runJobRemoteTest,
+  handleCloudflareDeployment
+} from './utils/cli-helpers.js';
+
 import {
   handleAllJobsStatus,
   handleSingleJobStatus,
