@@ -1,7 +1,7 @@
 import GetOrderById from "../../graphql/GetOrderById.js";
 import * as GoogleSheets from "../../connectors/google-sheets.js";
 import chalk from "chalk";
-import { isCloudflareWorker, workerLog } from "../../utils/worker-helpers.js";
+import { logToCli, logToWorker } from "../../utils/worker-helpers.js";
 
 // Define column mappings in one place
 const COLUMN_MAPPINGS = [
@@ -183,10 +183,13 @@ async function verifySheetHeaders(sheetsClient, spreadsheetId, sheetName) {
  * @param {Object} options.shopConfig - Shop-specific configuration
  */
 export async function process({ record: orderData, shopify, env, shopConfig }) {
-  workerLog("Webhook payload: " + JSON.stringify(orderData));
+  logToWorker(env, "Webhook payload: " + JSON.stringify(orderData));
+
+  // Use shopConfig if available, otherwise fall back to env
+  const config = shopConfig || env;
 
   // Validate required environment variables
-  if (!shopConfig.google_sheets_credentials) {
+  if (!config.google_sheets_credentials) {
     throw new Error("Missing required google_sheets_credentials configuration");
   }
   if (!orderData.id) {
@@ -199,7 +202,7 @@ export async function process({ record: orderData, shopify, env, shopConfig }) {
   // Live sheet ID
   const spreadsheetId ="1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY";
 
-  const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
+  const sheetsClient = await GoogleSheets.createSheetsClient(config.google_sheets_credentials);
 
   // Get spreadsheet title and available sheets
   const spreadsheetTitle = await GoogleSheets.getSpreadsheetTitle(sheetsClient, spreadsheetId);
@@ -232,10 +235,11 @@ export async function process({ record: orderData, shopify, env, shopConfig }) {
   }
 
   // Log the data
-  workerLog("Order details: ", {
-    order: JSON.stringify(orderDetails, null, 2),
-    lineItems: JSON.stringify(lineItems, null, 2)
+  logToWorker(env, "Order details: ", {
+    order: orderDetails,
+    lineItems: lineItems
   });
+  logToCli(env, "Order: " + orderDetails.orderNumber);
 
   // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
   const filteredLineItems = lineItems.filter((item) => {
@@ -247,6 +251,9 @@ export async function process({ record: orderData, shopify, env, shopConfig }) {
 
   // Format data for Google Sheets using dynamic headers
   const rows = createDynamicSheetRows(orderDetails, filteredLineItems, headers);
+  for (const row of rows) {
+    logToCli(env, `• ${row.join(' | ')}`);
+  }
 
   // Log what we're doing
   console.log(`\nAdding ${rows.length} rows to sheet for order ${order.name || order.id}`);

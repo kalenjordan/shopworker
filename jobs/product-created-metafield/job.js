@@ -7,7 +7,6 @@ import ProductMetafieldUpdate from "../../graphql/ProductMetafieldUpdate.js";
  * @param {Object} [params.env] - Environment variables (not used by this job)
  */
 export async function process({ record: product, shopify, shopConfig, env }) {
-  console.log("env: ", env);
   // Format the current date in ISO format
   const currentDate = new Date().toISOString();
 
