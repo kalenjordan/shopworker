@@ -19,6 +19,20 @@ async function loadJobHandler(jobPath) {
 }
 
 /**
+ * Dynamically load a job config
+ */
+async function loadJobConfig(jobPath) {
+  try {
+    // Import the config.json file from the job directory
+    const configModule = await import(`./jobs/${jobPath}/config.json`, { assert: { type: 'json' } });
+    return configModule.default;
+  } catch (error) {
+    console.error(`Failed to load job config for ${jobPath}:`, error.message);
+    throw new Error(`Job config not found for: ${jobPath}`);
+  }
+}
+
+/**
  * Parse the Shopworker configuration from environment
  */
 function parseShopworkerConfig(env) {
@@ -74,17 +88,7 @@ function createAuthenticatedShopifyClient(shopDomain, shopConfig, env) {
  */
 async function processWebhook(jobModule, bodyData, shopify, env, shopConfig, jobPath) {
   // Load job config from the jobPath
-  let jobConfig = {};
-  try {
-    // In the worker environment, we rely on the jobPath to create a simple jobConfig
-    // since we can't directly read files
-    jobConfig = {
-      jobPath: jobPath,
-      shop: shopConfig?.name || 'unknown'
-    };
-  } catch (error) {
-    console.error(`Failed to create jobConfig for ${jobPath}:`, error.message);
-  }
+  const jobConfig = await loadJobConfig(jobPath);
 
   await jobModule.process({
     record: bodyData,
