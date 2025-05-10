@@ -180,13 +180,14 @@ async function verifySheetHeaders(sheetsClient, spreadsheetId, sheetName) {
  * @param {Object} options.record - Shopify order data
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.env - Environment variables
+ * @param {Object} options.shopConfig - Shop-specific configuration
  */
-export async function process({ record: orderData, shopify, env }) {
+export async function process({ record: orderData, shopify, env, shopConfig }) {
   workerLog("Webhook payload: " + JSON.stringify(orderData));
 
   // Validate required environment variables
-  if (!env.google_sheets_credentials) {
-    throw new Error("Missing required env.google_sheets_credentials configuration");
+  if (!shopConfig.google_sheets_credentials) {
+    throw new Error("Missing required google_sheets_credentials configuration");
   }
   if (!orderData.id) {
     throw new Error("No order ID provided");
@@ -198,7 +199,7 @@ export async function process({ record: orderData, shopify, env }) {
   // Live sheet ID
   const spreadsheetId ="1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY";
 
-  const sheetsClient = await GoogleSheets.createSheetsClient(env.google_sheets_credentials);
+  const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
 
   // Get spreadsheet title and available sheets
   const spreadsheetTitle = await GoogleSheets.getSpreadsheetTitle(sheetsClient, spreadsheetId);

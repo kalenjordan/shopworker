@@ -145,7 +145,13 @@ export async function runJobTest(cliDirname, jobName, queryParam, shopParam) {
   //   console.log(`Processing manual trigger for job ${jobName}...`);
   // }
 
-  await jobModule.process({ record, shopify: shopify, env: shopConfig });
+  // Pass process.env as env and shopConfig as shopConfig for consistency with worker environment
+  await jobModule.process({
+    record,
+    shopify: shopify,
+    env: process.env,   // Pass Node.js process.env as env
+    shopConfig: shopConfig  // Pass shopConfig separately
+  });
   console.log('Processing complete!');
 }
 

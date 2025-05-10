@@ -7,8 +7,6 @@
  * @returns {boolean} True if running in a Cloudflare Worker
  */
 export function isCloudflareWorker() {
-  console.log("websocketpair", typeof WebSocketPair);
-  console.log("navigator", typeof navigator);
   return typeof WebSocketPair !== 'undefined' && typeof navigator === 'undefined';
 }
 

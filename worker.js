@@ -69,12 +69,6 @@ async function handleRequest(request, env, ctx) {
     let shopConfig = null;
     if (shopworkerConfig.shops) {
       shopConfig = shopworkerConfig.shops.find(shop => shop.shopify_domain === shopDomain);
-
-      // Merge shop config into env for job to access
-      if (shopConfig) {
-        // Copy all shop configuration properties to env
-        Object.assign(env, shopConfig);
-      }
     }
 
     // Now verify the webhook signature with the correct shop config
@@ -121,7 +115,8 @@ async function handleRequest(request, env, ctx) {
     await jobModule.process({
       record: bodyData, // The webhook payload is passed as 'record' (previously 'order')
       shopify: shopify,
-      env: env
+      env: env,
+      shopConfig: shopConfig // Pass shop config as a separate parameter
     });
 
     console.log('Webhook processed successfully');
