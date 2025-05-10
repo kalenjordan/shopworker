@@ -1,7 +1,7 @@
 # Refactored **/utils** Plan
 
 Generated 2025-05-10T22:39:53
-Updated 2025-05-11T00:30:00
+Updated 2025-05-14T10:45:00
 
 ---
 
@@ -10,11 +10,11 @@ Updated 2025-05-11T00:30:00
 ```
 utils/
 ├── crypto.js            ← shared  (hmacSha256) ✅
-├── job-loader.js        ← shared
+├── job-loader.js        ← shared  ✅
 ├── log.js               ← shared  (logToCli, logToWorker) ✅
 ├── shopify.js           ← shared  (Shopify client + helpers) ✅
 ├── cli-helpers.js       ← CLI‑only  (deploy, job discovery/testing) ✅
-└── webhook-cli.js       ← CLI‑only  (webhook status/enable/disable…)
+└── webhook-cli.js       ← CLI‑only  (webhook status/enable/disable…) ✅
 ```
 
 **Note:** verifyShopifyWebhook moved directly into worker.js ✅
@@ -108,9 +108,9 @@ utils/
 | `deployment-manager.js` | `handleCloudflareDeployment` | **cli-helpers.js** | Deployed alongside other CLI logic. | ✅ |
 | `job-executor.js` | `runJobTest`, `findSampleRecordForJob`, `runJobRemoteTest`, `getShopConfig`, `getShopDomain` | **cli-helpers.js** | Testing & shop helpers merged in. | ✅ |
 |  | `generateHmacSignature` | **crypto.js** (`hmacSha256`) | Single unified HMAC helper. | ✅ |
-| `job-loader.js` | *all exports* | **job-loader.js** *(unchanged)* | Already shared. | ⬜ |
+| `job-loader.js` | *all exports* | **job-loader.js** *(unchanged)* | Already shared. | ✅ |
 | `shopify-api-helpers.js` & `shopify-client.js` | `createShopifyClient`, `initShopify`, `findUserErrors`, `truncateQuery` | **shopify.js** | One combined Shopify module. | ✅ |
-| `webhook-handlers.js` | *all exports* | **webhook-cli.js** | Renamed; still CLI‑only. | ⬜ |
+| `webhook-handlers.js` | *all exports* | **webhook-cli.js** | Renamed; still CLI‑only. | ✅ |
 | `worker-helpers.js` | `logToWorker` | **log.js** | Moved to shared log module. | ✅ |
 |  | `logToCli` | **log.js** | Shared log module. | ✅ |
 |  | `isCloudflareWorker` | **removed** | No longer used. | ✅ |
@@ -134,8 +134,8 @@ utils/
 - [x] Create shopify.js (merged Shopify API functionality)
 - [x] Create log.js (shared logging functions)
 - [x] Move webhook validation directly to worker.js
-- [ ] Create webhook-cli.js (renamed webhook-handlers.js)
-- [ ] Update or ensure job-loader.js is properly structured
+- [x] Create webhook-cli.js (renamed webhook-handlers.js)
+- [x] Update or ensure job-loader.js is properly structured
 - [x] Update worker.js imports
 - [x] Update cli.js imports
 - [x] Remove old utility files that have been completely refactored
