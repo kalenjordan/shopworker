@@ -5,17 +5,17 @@ import { createShopifyClient } from './shopify-client.js';
 /**
  * Initialize Shopify API client for a specific job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} jobName - The job name
+ * @param {string} jobPath - The job path relative to jobs/
  * @param {string} shopParam - Optional shop domain or name to override the one in job config
  * @returns {Object} The Shopify client
  */
-export function initShopify(cliDirname, jobName, shopParam) {
+export function initShopify(cliDirname, jobPath, shopParam) {
   try {
-    if (!jobName) {
-      throw new Error('jobName is required to initialize Shopify client.');
+    if (!jobPath) {
+      throw new Error('jobPath is required to initialize Shopify client.');
     }
 
-    const jobConfigPath = path.join(cliDirname, 'jobs', jobName, 'config.json');
+    const jobConfigPath = path.join(cliDirname, 'jobs', jobPath, 'config.json');
     if (!fs.existsSync(jobConfigPath)) {
       throw new Error(`Job configuration file not found: ${jobConfigPath}`);
     }
@@ -75,7 +75,7 @@ export function initShopify(cliDirname, jobName, shopParam) {
       apiVersion: '2025-04' // Consider making this configurable
     });
   } catch (error) {
-    console.error(`Failed to initialize Shopify API for job '${jobName}': ${error.message}`);
+    console.error(`Failed to initialize Shopify API for job '${jobPath}': ${error.message}`);
     if (error.cause) console.error('Cause:', error.cause);
     process.exit(1); // Critical failure
   }

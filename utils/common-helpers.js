@@ -5,13 +5,36 @@ import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 /**
  * Get all job directories in the jobs folder
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @returns {Array<string>} List of job directory names
+ * @returns {Array<string>} List of job directory paths relative to jobs/
  */
 export const getAvailableJobDirs = (cliDirname) => {
   const jobsDir = path.join(cliDirname, 'jobs');
   if (!fs.existsSync(jobsDir)) return [];
-  return fs.readdirSync(jobsDir)
-    .filter(dir => fs.statSync(path.join(jobsDir, dir)).isDirectory());
+
+  const jobDirs = [];
+
+  // Helper function to recursively find directories with config.json
+  const findJobDirs = (dir, relativePath = '') => {
+    const entries = fs.readdirSync(dir);
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry);
+      const entryRelativePath = relativePath ? path.join(relativePath, entry) : entry;
+
+      if (fs.statSync(fullPath).isDirectory()) {
+        // Check if this directory contains a config.json file
+        if (fs.existsSync(path.join(fullPath, 'config.json'))) {
+          jobDirs.push(entryRelativePath);
+        }
+
+        // Recursively search subdirectories
+        findJobDirs(fullPath, entryRelativePath);
+      }
+    }
+  };
+
+  findJobDirs(jobsDir);
+  return jobDirs;
 };
 
 /**
@@ -34,7 +57,7 @@ export function listAvailableJobs(cliDirname, messagePrefix = 'Could not detect 
  * Detect the job directory from various possible locations
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} [specifiedDir] - An explicitly specified directory
- * @returns {string|null} The job name or null if not determined
+ * @returns {string|null} The job name or path or null if not determined
  */
 export function detectJobDirectory(cliDirname, specifiedDir) {
   if (specifiedDir) return specifiedDir;
@@ -46,14 +69,24 @@ export function detectJobDirectory(cliDirname, specifiedDir) {
   const validJobDirs = getAvailableJobDirs(cliDirname);
 
   for (const dir of dirsToCheck) {
-    const dirName = path.basename(dir);
-    if (validJobDirs.includes(dirName)) return dirName;
+    // Check if we're in a job directory
     const relPath = path.relative(jobsDir, dir);
     if (!relPath.startsWith('..') && relPath !== '') {
-      const jobName = relPath.split(path.sep)[0];
-      if (validJobDirs.includes(jobName)) return jobName;
+      // Find the closest parent directory that contains a config.json
+      let currentRelPath = relPath;
+      let pathParts = currentRelPath.split(path.sep);
+
+      while (pathParts.length > 0) {
+        const potentialJobPath = pathParts.join(path.sep);
+        if (validJobDirs.includes(potentialJobPath)) {
+          return potentialJobPath;
+        }
+        // Remove the last segment and try again
+        pathParts.pop();
+      }
     }
   }
+
   return null;
 }
 
@@ -116,24 +149,24 @@ export function getWorkerUrl(options, cliDirname = process.cwd()) {
 /**
  * Load and validate job and trigger configurations for webhook operations
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} jobName - The job name
+ * @param {string} jobPath - The job path relative to jobs/
  * @returns {Object|null} The job and trigger configurations or null if invalid
  */
-export function loadAndValidateWebhookConfigs(cliDirname, jobName) {
+export function loadAndValidateWebhookConfigs(cliDirname, jobPath) {
   try {
-    const jobConfig = loadJobConfig(jobName); // Can throw
+    const jobConfig = loadJobConfig(jobPath); // Can throw
     if (!jobConfig.trigger) {
-      console.error(`Job ${jobName} doesn't have a trigger defined. Cannot manage webhooks.`);
+      console.error(`Job ${jobPath} doesn't have a trigger defined. Cannot manage webhooks.`);
       return null;
     }
     const triggerConfig = loadTriggerConfig(jobConfig.trigger); // Can throw
     if (!triggerConfig.webhook || !triggerConfig.webhook.topic) {
-      console.error(`Trigger ${jobConfig.trigger} for job ${jobName} doesn't have a webhook topic defined. Cannot manage webhooks.`);
+      console.error(`Trigger ${jobConfig.trigger} for job ${jobPath} doesn't have a webhook topic defined. Cannot manage webhooks.`);
       return null;
     }
     return { jobConfig, triggerConfig };
   } catch (error) {
-    console.error(`Error loading configuration for job ${jobName}: ${error.message}`);
+    console.error(`Error loading configuration for job ${jobPath}: ${error.message}`);
     return null;
   }
 }

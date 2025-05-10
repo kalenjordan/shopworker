@@ -8,13 +8,12 @@ import { createShopifyClient } from './utils/shopify-client.js';
 /**
  * Dynamically load a job handler
  */
-async function loadJobHandler(jobName) {
+async function loadJobHandler(jobPath) {
   try {
-    // Use dynamic import with template path
-    // This pattern allows Webpack/bundlers to include all potential imports
-    return await import(`./jobs/${jobName}/job.js`);
+    // Handle job path which might include subdirectories
+    return await import(`./jobs/${jobPath}/job.js`);
   } catch (error) {
-    console.error(`Failed to load job handler for ${jobName}:`, error.message);
+    console.error(`Failed to load job handler for ${jobPath}:`, error.message);
     return null;
   }
 }
@@ -40,17 +39,17 @@ function findShopConfig(shopworkerConfig, shopDomain) {
 }
 
 /**
- * Get job name from URL parameters
+ * Get job path from URL parameters
  */
-function getJobNameFromUrl(request) {
+function getJobPathFromUrl(request) {
   const url = new URL(request.url);
-  const jobName = url.searchParams.get('job');
+  const jobPath = url.searchParams.get('job');
 
-  if (!jobName) {
-    throw new Error('Job name must be specified in the URL');
+  if (!jobPath) {
+    throw new Error('Job path must be specified in the URL');
   }
 
-  return jobName;
+  return jobPath;
 }
 
 /**
@@ -155,13 +154,13 @@ async function handleRequest(request, env, ctx) {
       return createErrorResponse('Missing X-Shopify-Topic header', 400);
     }
 
-    // Get job name from URL parameter
-    const jobName = getJobNameFromUrl(request);
+    // Get job path from URL parameter
+    const jobPath = getJobPathFromUrl(request);
 
     // Dynamically load the job handler
-    const jobModule = await loadJobHandler(jobName);
+    const jobModule = await loadJobHandler(jobPath);
     if (!jobModule) {
-      return createErrorResponse(`Job handler not found for: ${jobName}`, 404);
+      return createErrorResponse(`Job handler not found for: ${jobPath}`, 404);
     }
 
     // Create a Shopify client

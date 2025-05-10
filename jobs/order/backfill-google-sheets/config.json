@@ -1,0 +1,9 @@
+{
+  "name": "Backfill Orders To Google Sheets",
+  "shop": "kalen-test-store",
+  "description": "Backfills orders to Google Sheets",
+  "trigger": "manual",
+  "test": {
+    "skip_query": true
+  }
+}

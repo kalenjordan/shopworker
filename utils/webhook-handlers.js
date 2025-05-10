@@ -5,6 +5,8 @@ import WEBHOOK_CREATE_MUTATION from '../graphql/webhookSubscriptionCreate.js';
 import WEBHOOK_DELETE_MUTATION from '../graphql/webhookSubscriptionDelete.js';
 import GET_WEBHOOKS_QUERY from '../graphql/getWebhooks.js';
 import chalk from 'chalk';
+import path from 'path';
+import fs from 'fs';
 
 // ===================================================================
 // Display Formatting Utilities
@@ -55,9 +57,9 @@ function convertToGraphqlTopic(topic) {
   return topic.toUpperCase().replace('/', '_');
 }
 
-function createWebhookUrl(baseUrl, jobName) {
+function createWebhookUrl(baseUrl, jobPath) {
   const webhookUrl = new URL(baseUrl);
-  webhookUrl.searchParams.set('job', jobName);
+  webhookUrl.searchParams.set('job', jobPath);
   return webhookUrl.toString();
 }
 
@@ -84,25 +86,25 @@ function isValidResponse(response, path) {
   return true;
 }
 
-function isWebhookForJob(webhook, graphqlTopic, jobName) {
+function isWebhookForJob(webhook, graphqlTopic, jobPath) {
   if (webhook.topic !== graphqlTopic) return false;
   if (!webhook.endpoint || webhook.endpoint.__typename !== 'WebhookHttpEndpoint') return false;
 
   try {
     const url = new URL(webhook.endpoint.callbackUrl);
-    return url.searchParams.get('job') === jobName;
+    return url.searchParams.get('job') === jobPath;
   } catch (e) {
     return false;
   }
 }
 
-function isWebhookForTopicButNotJob(webhook, graphqlTopic, jobName) {
+function isWebhookForTopicButNotJob(webhook, graphqlTopic, jobPath) {
   if (webhook.topic !== graphqlTopic) return false;
 
   if (webhook.endpoint && webhook.endpoint.__typename === 'WebhookHttpEndpoint') {
     try {
       const url = new URL(webhook.endpoint.callbackUrl);
-      return url.searchParams.get('job') !== jobName;
+      return url.searchParams.get('job') !== jobPath;
     } catch (e) {
       return true;
     }
@@ -136,17 +138,18 @@ function doFieldConfigsDiffer(configFields, activeFields) {
 /**
  * Get display information for a job's webhook status
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} currentJobName - The job name
+ * @param {string} jobPath - The job path relative to jobs/
  * @returns {Promise<Object>} Object with job status display information
  */
-export async function getJobDisplayInfo(cliDirname, currentJobName) {
+export async function getJobDisplayInfo(cliDirname, jobPath) {
   // Load job configuration
   let jobConfig;
   try {
-    jobConfig = loadJobConfig(currentJobName);
+    jobConfig = loadJobConfig(jobPath);
   } catch (e) {
     return {
-      jobName: currentJobName,
+      jobPath,
+      displayName: jobPath,
       displayTopic: 'CONFIG ERROR',
       statusMsg: '⚠️ ERROR',
       webhookIdSuffix: '-',
@@ -160,6 +163,8 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
   let webhookIdSuffix = '-';
   const shop = jobConfig.shop || null;
   let includeFields = null;
+  // Use either the job config name or the jobPath for display
+  const displayName = jobConfig.name || jobPath;
 
   // Get includeFields from job config
   if (jobConfig.webhook?.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
@@ -168,7 +173,8 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
 
   if (!jobConfig.trigger) {
     return {
-      jobName: currentJobName,
+      jobPath,
+      displayName,
       displayTopic,
       statusMsg,
       webhookIdSuffix,
@@ -183,7 +189,8 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
     triggerConfig = loadTriggerConfig(jobConfig.trigger);
   } catch(e) {
     return {
-      jobName: currentJobName,
+      jobPath,
+      displayName,
       displayTopic: jobConfig.trigger,
       statusMsg: '⚠️ TRIGGER CONFIG ERROR',
       webhookIdSuffix: '-',
@@ -196,7 +203,8 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
   // If no webhook topic in trigger, return early
   if (!triggerConfig.webhook?.topic) {
     return {
-      jobName: currentJobName,
+      jobPath,
+      displayName,
       displayTopic,
       statusMsg,
       webhookIdSuffix,
@@ -208,15 +216,15 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
   // Check webhook status
   const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
   try {
-    const shopifyForJob = initShopify(cliDirname, currentJobName);
+    const shopifyForJob = initShopify(cliDirname, jobPath);
     const response = await shopifyForJob.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
     if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
-      console.warn(`Warning: Could not retrieve webhooks for job ${currentJobName} (Shop: ${chalk.blue(jobConfig.shop)}). Response format unexpected.`);
+      console.warn(`Warning: Could not retrieve webhooks for job ${displayName} (Shop: ${chalk.blue(jobConfig.shop)}). Response format unexpected.`);
       statusMsg = '⚠️ NO DATA';
     } else {
       const shopWebhooks = response.webhookSubscriptions.nodes;
-      const jobWebhook = shopWebhooks.find(webhook => isWebhookForJob(webhook, graphqlTopic, currentJobName));
+      const jobWebhook = shopWebhooks.find(webhook => isWebhookForJob(webhook, graphqlTopic, jobPath));
 
       if (jobWebhook) {
         statusMsg = 'Enabled';
@@ -226,13 +234,14 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
       }
     }
   } catch (error) {
-    console.warn(`Warning: Error fetching webhook status for job ${currentJobName} (Shop: ${chalk.blue(jobConfig.shop)}): ${error.message}`);
+    console.warn(`Warning: Error fetching webhook status for job ${displayName} (Shop: ${chalk.blue(jobConfig.shop)}): ${error.message}`);
     statusMsg = '⚠️ API ERROR';
     webhookIdSuffix = 'ERR';
   }
 
   return {
-    jobName: currentJobName,
+    jobPath,
+    displayName,
     displayTopic,
     statusMsg,
     webhookIdSuffix,
@@ -248,36 +257,77 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
 /**
  * Check and display status for all jobs
  * @param {string} cliDirname - The directory where cli.js is located (project root)
+ * @param {boolean} filterByCurrentDir - Whether to filter jobs by current directory
  */
-export async function handleAllJobsStatus(cliDirname) {
-  console.log('Checking status for all jobs in the project...');
+export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false) {
+  // Get all available job directories
   const jobDirs = getAvailableJobDirs(cliDirname);
-
   if (jobDirs.length === 0) {
     console.log('No jobs found in the jobs/ directory.');
     return;
+  }
+
+  // Determine if we should filter based on current directory
+  let currentDirPrefix = null;
+  let filteredJobDirs = jobDirs;
+
+  if (filterByCurrentDir) {
+    // Use INIT_CWD from npm or current directory
+    const currentDir = process.env.INIT_CWD || process.cwd();
+    const jobsDir = path.join(cliDirname, 'jobs');
+    const relPath = path.relative(jobsDir, currentDir);
+
+    // Only filter if we're in a subdirectory of jobs/ and not in jobs/ itself
+    if (!relPath.startsWith('..') && relPath !== '') {
+      // Get the first segment of the path to determine parent directory (e.g., "order")
+      const firstSegment = relPath.split(path.sep)[0];
+
+      // If current directory is a job directory parent (like jobs/order/),
+      // filter to only show jobs under that parent directory
+      filteredJobDirs = jobDirs.filter(jobPath =>
+        jobPath === firstSegment ||
+        jobPath.startsWith(`${firstSegment}${path.sep}`)
+      );
+
+      if (filteredJobDirs.length > 0) {
+        console.log(`Checking status for jobs in the '${firstSegment}' directory...`);
+      } else {
+        console.log(`No jobs found in the '${firstSegment}' directory.`);
+        return;
+      }
+    } else {
+      console.log('Checking status for all jobs in the project...');
+    }
+  } else {
+    console.log('Checking status for all jobs in the project...');
   }
 
   // Prepare table header
   const totalWidth = Object.values(COLUMN_WIDTHS).reduce((sum, width) => sum + width, 0) + 5; // 5 spaces between columns
   console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(totalWidth));
   console.log(
-    cropAndPad('STATUS', COLUMN_WIDTHS.status) + ' ' +
-    cropAndPad('SHOP', COLUMN_WIDTHS.shop) + ' ' +
-    cropAndPad('JOB', COLUMN_WIDTHS.job) + ' ' +
-    cropAndPad('TRIGGER/TOPIC', COLUMN_WIDTHS.topic) + ' ' +
+    cropAndPad('STATUS', COLUMN_WIDTHS.status),
+    cropAndPad('SHOP', COLUMN_WIDTHS.shop),
+    cropAndPad('JOB', COLUMN_WIDTHS.job),
+    cropAndPad('TOPIC', COLUMN_WIDTHS.topic),
     cropAndPad('WEBHOOK ID', COLUMN_WIDTHS.webhookId)
   );
-  console.log('-'.repeat(totalWidth));
+  console.log(
+    ''.padEnd(COLUMN_WIDTHS.status, '-'),
+    ''.padEnd(COLUMN_WIDTHS.shop, '-'),
+    ''.padEnd(COLUMN_WIDTHS.job, '-'),
+    ''.padEnd(COLUMN_WIDTHS.topic, '-'),
+    ''.padEnd(COLUMN_WIDTHS.webhookId, '-')
+  );
 
   // Collect all job display info
-  const jobDisplayInfos = await getAllJobDisplayInfo(cliDirname, jobDirs);
+  const jobDisplayInfos = await getAllJobDisplayInfo(cliDirname, filteredJobDirs);
 
   // Sort jobs by status priority then alphabetically
   const sortedJobDisplayInfos = sortJobDisplayInfos(jobDisplayInfos);
 
-  // Display the sorted job information
-  displayJobsTable(sortedJobDisplayInfos);
+  // Display the sorted job information - we'll print our own header above, so don't need the one in displayJobsTable
+  displayJobsTable(sortedJobDisplayInfos, false);
 
   console.log('-'.repeat(totalWidth));
   console.log('\nUse "shopworker enable <jobName>" to enable a job with a webhook.');
@@ -294,7 +344,8 @@ async function getAllJobDisplayInfo(cliDirname, jobDirs) {
     } catch (error) {
       console.error(`Error processing job ${currentJobName}: ${error.message}`);
       jobDisplayInfos.push({
-        jobName: currentJobName,
+        jobPath: currentJobName,
+        displayName: currentJobName,
         displayTopic: 'ERROR',
         statusMsg: '⚠️ ERROR',
         webhookIdSuffix: '-',
@@ -324,56 +375,70 @@ function sortJobDisplayInfos(jobDisplayInfos) {
       return aPriority - bPriority;
     }
     // Then sort alphabetically by job name
-    return a.jobName.localeCompare(b.jobName);
+    return a.jobPath.localeCompare(b.jobPath);
   });
 }
 
-function displayJobsTable(jobDisplayInfos) {
-  for (const { jobName, displayTopic, statusMsg, webhookIdSuffix, shop } of jobDisplayInfos) {
-    const isDisabled = statusMsg === 'Disabled';
-
-    const statusDisplay = formatStatusColumn(statusMsg);
-    const shopDisplay = formatShopColumn(shop, isDisabled);
-
-    // Prepare display columns
-    const jobDisplay = cropAndPad(jobName, COLUMN_WIDTHS.job);
-    const topicDisplay = cropAndPad(displayTopic, COLUMN_WIDTHS.topic);
-    const webhookIdDisplay = cropAndPad(webhookIdSuffix, COLUMN_WIDTHS.webhookId);
-
-    // Apply color to columns if the job is disabled
-    const coloredJobDisplay = applyColorIfDisabled(jobDisplay, isDisabled);
-    const coloredTopicDisplay = applyColorIfDisabled(topicDisplay, isDisabled);
-    const coloredWebhookIdDisplay = applyColorIfDisabled(webhookIdDisplay, isDisabled);
+/**
+ * Display a simple status entry for a job
+ * @param {Array} jobDisplayInfos - Array of job info objects to display
+ * @param {boolean} [printHeader=true] - Whether to print the table header
+ */
+function displayJobsTable(jobDisplayInfos, printHeader = true) {
+  // Print headers if requested
+  if (printHeader) {
+    console.log();
+    console.log(
+      cropAndPad('STATUS', COLUMN_WIDTHS.status),
+      cropAndPad('SHOP', COLUMN_WIDTHS.shop),
+      cropAndPad('JOB', COLUMN_WIDTHS.job),
+      cropAndPad('TOPIC', COLUMN_WIDTHS.topic),
+      cropAndPad('WEBHOOK ID', COLUMN_WIDTHS.webhookId)
+    );
 
     console.log(
-      statusDisplay + ' ' +
-      shopDisplay + ' ' +
-      coloredJobDisplay + ' ' +
-      coloredTopicDisplay + ' ' +
-      coloredWebhookIdDisplay
+      ''.padEnd(COLUMN_WIDTHS.status, '-'),
+      ''.padEnd(COLUMN_WIDTHS.shop, '-'),
+      ''.padEnd(COLUMN_WIDTHS.job, '-'),
+      ''.padEnd(COLUMN_WIDTHS.topic, '-'),
+      ''.padEnd(COLUMN_WIDTHS.webhookId, '-')
     );
   }
+
+  // Print job status rows
+  for (const info of jobDisplayInfos) {
+    const disabled = info.statusMsg === 'Disabled';
+
+    console.log(
+      formatStatusColumn(info.statusMsg, disabled),
+      formatShopColumn(info.shop, disabled),
+      applyColorIfDisabled(cropAndPad(info.displayName, COLUMN_WIDTHS.job), disabled),
+      applyColorIfDisabled(cropAndPad(info.displayTopic, COLUMN_WIDTHS.topic), disabled),
+      applyColorIfDisabled(cropAndPad(info.webhookIdSuffix, COLUMN_WIDTHS.webhookId), disabled)
+    );
+  }
+  console.log();
 }
 
 /**
  * Check and display status for a specific job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} jobName - The job name
+ * @param {string} jobPath - The job path relative to jobs/
  */
-export async function handleSingleJobStatus(cliDirname, jobName) {
+export async function handleSingleJobStatus(cliDirname, jobPath) {
   // Load job configuration
   let jobConfig;
   try {
-    jobConfig = loadJobConfig(jobName);
+    jobConfig = loadJobConfig(jobPath);
   } catch (e) {
-    console.error(`Error loading configuration for job ${jobName}: ${e.message}`);
+    console.error(`Error loading configuration for job ${jobPath}: ${e.message}`);
     return;
   }
 
   // Handle job with no trigger
   if (!jobConfig.trigger) {
-    console.log(`Job ${jobName} is configured for manual trigger (no trigger defined in config).`);
-    console.log(`${jobName.padEnd(40)} ${'N/A'.padEnd(30)} ${'✅ MANUAL'.padEnd(13)} -`);
+    console.log(`Job ${jobPath} is configured for manual trigger (no trigger defined in config).`);
+    console.log(`${jobPath.padEnd(40)} ${'N/A'.padEnd(30)} ${'✅ MANUAL'.padEnd(13)} -`);
     return;
   }
 
@@ -382,28 +447,28 @@ export async function handleSingleJobStatus(cliDirname, jobName) {
   try {
     triggerConfig = loadTriggerConfig(jobConfig.trigger);
   } catch(e) {
-    console.error(`Error loading trigger configuration '${jobConfig.trigger}' for job ${jobName}: ${e.message}`);
+    console.error(`Error loading trigger configuration '${jobConfig.trigger}' for job ${jobPath}: ${e.message}`);
     return;
   }
 
   // Handle non-webhook trigger
   if (!triggerConfig.webhook?.topic) {
-    console.log(`Job ${jobName} (trigger: '${jobConfig.trigger}') is not a webhook trigger (no webhook topic defined).`);
-    console.log(`${jobName.padEnd(40)} ${(jobConfig.trigger).padEnd(30)} ${'✅ MANUAL'.padEnd(13)} -`);
+    console.log(`Job ${jobPath} (trigger: '${jobConfig.trigger}') is not a webhook trigger (no webhook topic defined).`);
+    console.log(`${jobPath.padEnd(40)} ${(jobConfig.trigger).padEnd(30)} ${'✅ MANUAL'.padEnd(13)} -`);
     return;
   }
 
   // Display basic info
-  console.log(`Checking webhooks for job: ${jobName} (Shop: ${chalk.blue(jobConfig.shop)})`);
+  console.log(`Checking webhooks for job: ${jobPath} (Shop: ${chalk.blue(jobConfig.shop)})`);
   console.log(`Shopify Topic: ${triggerConfig.webhook.topic}`);
 
   // Show include fields from configurations
   displayIncludeFieldsInfo(jobConfig, triggerConfig);
 
   try {
-    await displayDetailedWebhookStatus(cliDirname, jobName, jobConfig, triggerConfig);
+    await displayDetailedWebhookStatus(cliDirname, jobPath, jobConfig, triggerConfig);
   } catch (error) {
-    console.error(`Error checking webhook status for job '${jobName}': ${error.message}`);
+    console.error(`Error checking webhook status for job '${jobPath}': ${error.message}`);
   }
 }
 
@@ -421,8 +486,8 @@ function displayIncludeFieldsInfo(jobConfig, triggerConfig) {
   }
 }
 
-async function displayDetailedWebhookStatus(cliDirname, jobName, jobConfig, triggerConfig) {
-  const shopify = initShopify(cliDirname, jobName);
+async function displayDetailedWebhookStatus(cliDirname, jobPath, jobConfig, triggerConfig) {
+  const shopify = initShopify(cliDirname, jobPath);
   const response = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
   if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
@@ -436,20 +501,20 @@ async function displayDetailedWebhookStatus(cliDirname, jobName, jobConfig, trig
 
   // Find webhooks for this job and topic
   const matchingWebhooksForJobAndTopic = webhooks.filter(
-    webhook => isWebhookForJob(webhook, graphqlTopic, jobName)
+    webhook => isWebhookForJob(webhook, graphqlTopic, jobPath)
   );
 
   // Find other webhooks for the same topic but not this job
   const otherWebhooksForTopic = webhooks.filter(
-    webhook => isWebhookForTopicButNotJob(webhook, graphqlTopic, jobName)
+    webhook => isWebhookForTopicButNotJob(webhook, graphqlTopic, jobPath)
   );
 
   // Display matching webhooks
   if (matchingWebhooksForJobAndTopic.length > 0) {
-    console.log(`\n🟢 Job '${jobName}' is ENABLED for topic '${triggerConfig.webhook.topic}'.`);
+    console.log(`\n🟢 Job '${jobPath}' is ENABLED for topic '${triggerConfig.webhook.topic}'.`);
     matchingWebhooksForJobAndTopic.forEach(webhook => displayWebhookDetails(webhook, jobConfig));
   } else {
-    console.log(`\n🔴 Job '${jobName}' is DISABLED for topic '${triggerConfig.webhook.topic}'.`);
+    console.log(`\n🔴 Job '${jobPath}' is DISABLED for topic '${triggerConfig.webhook.topic}'.`);
     console.log(`   No active webhook found specifically for this job and topic on its configured shop.`);
   }
 
@@ -485,52 +550,74 @@ function displayWebhookDetails(webhook, jobConfig) {
 /**
  * Enable a job by creating a webhook
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} jobName - The job name
+ * @param {string} jobPath - The job path relative to jobs/
  * @param {string} workerUrl - The Cloudflare worker URL
  */
-export async function enableJobWebhook(cliDirname, jobName, workerUrl) {
-  const configs = loadAndValidateWebhookConfigs(cliDirname, jobName);
-  if (!configs) return;
+export async function enableJobWebhook(cliDirname, jobPath, workerUrl) {
+  // Validate configs
+  const configs = loadAndValidateWebhookConfigs(cliDirname, jobPath);
+  if (!configs) return false;
+
   const { jobConfig, triggerConfig } = configs;
+  const displayName = jobConfig.name || jobPath;
+
+  console.log(`Enabling webhook for job: ${chalk.yellow(displayName)}`);
+  console.log(`Shop: ${chalk.blue(jobConfig.shop)}`);
+  console.log(`Webhook topic: ${chalk.cyan(triggerConfig.webhook.topic)}`);
+  console.log(`Worker URL: ${chalk.cyan(workerUrl)}`);
+
+  // Convert webhook topic to GraphQL format
+  const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
 
   try {
-    const shopify = initShopify(cliDirname, jobName);
-    const webhookAddress = createWebhookUrl(workerUrl, jobName);
+    // Initialize Shopify client for this job
+    const shopify = initShopify(cliDirname, jobPath);
 
-    // Log configuration details
-    console.log(`Registering webhook for job: ${jobName} (Shop: ${chalk.blue(configs.jobConfig.shop)})`);
-    console.log(`Topic: ${triggerConfig.webhook.topic}`);
-    console.log(`Worker URL: ${webhookAddress}`);
+    // Construct the full webhook URL with the job name as a query parameter
+    const webhookAddress = createWebhookUrl(workerUrl, jobPath);
+    console.log(`Webhook address: ${chalk.cyan(webhookAddress)}`);
 
-    // Prepare webhook subscription data
-    const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
-    const webhookSubscription = prepareWebhookSubscription(webhookAddress, jobConfig);
-
-    // Create the webhook
-    const response = await createWebhook(shopify, graphqlTopic, webhookSubscription);
-
-    if (!isValidResponse(response, 'webhookSubscriptionCreate')) {
-      console.error('Unexpected response format from Shopify GraphQL API during webhook creation.');
-      console.log('Response structure:', JSON.stringify(response, null, 2));
-      return;
+    // Get existing webhooks
+    const webhookResponse = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
+    if (!webhookResponse.webhookSubscriptions || !webhookResponse.webhookSubscriptions.nodes) {
+      console.error('Error fetching webhooks: Unexpected response format');
+      return false;
     }
 
-    if (response.webhookSubscriptionCreate.userErrors?.length > 0) {
-      const errors = response.webhookSubscriptionCreate.userErrors.map(err => err.message).join(", ");
-      throw new Error(`Failed to create webhook: ${errors}`);
+    // Check if a matching webhook already exists
+    const webhooks = webhookResponse.webhookSubscriptions.nodes;
+    const matchingWebhooks = findMatchingWebhooks(webhooks, graphqlTopic, webhookAddress);
+
+    if (matchingWebhooks.length > 0) {
+      const webhook = matchingWebhooks[0];
+      console.log(`Webhook already exists with ID: ${chalk.green(getWebhookIdSuffix(webhook.id))}`);
+
+      // Check if includeFields configuration has changed
+      if (jobConfig.webhook?.includeFields) {
+        const configFields = jobConfig.webhook.includeFields;
+        const activeFields = webhook.includeFields;
+
+        if (doFieldConfigsDiffer(configFields, activeFields)) {
+          console.log(chalk.yellow('Webhook includeFields have changed. Recreating webhook...'));
+          await deleteMatchingWebhooks(shopify, matchingWebhooks);
+          const webhookSubscription = prepareWebhookSubscription(webhookAddress, jobConfig);
+          await createWebhook(shopify, graphqlTopic, webhookSubscription);
+        }
+      }
+    } else {
+      // No matching webhook exists, create a new one
+      const webhookSubscription = prepareWebhookSubscription(webhookAddress, jobConfig);
+      await createWebhook(shopify, graphqlTopic, webhookSubscription);
     }
 
-    // Display success message
-    const webhook = response.webhookSubscriptionCreate.webhookSubscription;
-    console.log(`Successfully registered webhook with ID: ${webhook.id}`);
-
-    if (webhook.includeFields?.length > 0) {
-      console.log(`Webhook will only include these fields: ${webhook.includeFields.join(', ')}`);
-    }
-
-    console.log('Job enabled successfully!');
+    console.log(chalk.green('✔ Webhook enabled successfully'));
+    return true;
   } catch (error) {
-    console.error(`Error enabling job '${jobName}': ${error.message}`);
+    console.error(`Error enabling webhook: ${error.message}`);
+    if (error.response) {
+      console.error('API Error details:', error.response);
+    }
+    return false;
   }
 }
 
@@ -564,57 +651,64 @@ async function createWebhook(shopify, topic, webhookSubscription) {
 /**
  * Disable a job by removing its webhook
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} jobName - The job name
+ * @param {string} jobPath - The job path relative to jobs/
  * @param {string} workerUrl - The Cloudflare worker URL
  */
-export async function disableJobWebhook(cliDirname, jobName, workerUrl) {
-  const configs = loadAndValidateWebhookConfigs(cliDirname, jobName);
-  if (!configs) return;
-  const { triggerConfig } = configs;
+export async function disableJobWebhook(cliDirname, jobPath, workerUrl) {
+  // Validate configs
+  const configs = loadAndValidateWebhookConfigs(cliDirname, jobPath);
+  if (!configs) return false;
+
+  const { jobConfig, triggerConfig } = configs;
+  const displayName = jobConfig.name || jobPath;
+
+  console.log(`Disabling webhook for job: ${chalk.yellow(displayName)}`);
+  console.log(`Shop: ${chalk.blue(jobConfig.shop)}`);
+  console.log(`Webhook topic: ${chalk.cyan(triggerConfig.webhook.topic)}`);
+  console.log(`Worker URL: ${chalk.cyan(workerUrl)}`);
+
+  // Convert webhook topic to GraphQL format
+  const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
 
   try {
-    const shopify = initShopify(cliDirname, jobName);
-    const webhookAddress = createWebhookUrl(workerUrl, jobName);
-    const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
+    // Initialize Shopify client for this job
+    const shopify = initShopify(cliDirname, jobPath);
 
-    // Log operation details
-    console.log(`Disabling webhook for job: ${jobName} (Shop: ${chalk.blue(configs.jobConfig.shop)})`);
-    console.log(`Topic: ${triggerConfig.webhook.topic}`);
-    console.log(`Worker URL (match criteria): ${webhookAddress}`);
+    // Construct the full webhook URL with the job name as a query parameter
+    const webhookAddress = createWebhookUrl(workerUrl, jobPath);
+    console.log(`Webhook address: ${chalk.cyan(webhookAddress)}`);
 
-    // Get all webhooks
-    const getResponse = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
-    if (!isValidResponse(getResponse, 'webhookSubscriptions.nodes')) {
-      console.error('Unexpected response format from Shopify GraphQL API when fetching webhooks for deletion.');
-      console.log('Response structure:', JSON.stringify(getResponse, null, 2));
-      return;
+    // Get existing webhooks
+    const webhookResponse = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
+    if (!webhookResponse.webhookSubscriptions || !webhookResponse.webhookSubscriptions.nodes) {
+      console.error('Error fetching webhooks: Unexpected response format');
+      return false;
     }
 
-    // Find matching webhooks to delete
-    const matchingWebhooks = findMatchingWebhooks(
-      getResponse.webhookSubscriptions.nodes,
-      graphqlTopic,
-      webhookAddress
-    );
+    // Find matching webhooks
+    const webhooks = webhookResponse.webhookSubscriptions.nodes;
+    const matchingWebhooks = findMatchingWebhooks(webhooks, graphqlTopic, webhookAddress);
 
     if (matchingWebhooks.length === 0) {
-      console.log('No matching webhooks found to disable for this job.');
-      return;
+      console.log(chalk.yellow('No matching webhooks found. Nothing to disable.'));
+      return true;
     }
 
-    // Delete each matching webhook
-    const result = await deleteMatchingWebhooks(shopify, matchingWebhooks);
-
-    // Display results
-    if (result.successCount > 0 && result.successCount === matchingWebhooks.length) {
-      console.log('Job disabled successfully!');
-    } else if (result.successCount > 0) {
-      console.log(`${result.successCount} of ${matchingWebhooks.length} webhooks disabled. Some errors occurred.`);
+    // Delete all matching webhooks
+    const deletionSuccess = await deleteMatchingWebhooks(shopify, matchingWebhooks);
+    if (deletionSuccess) {
+      console.log(chalk.green(`✔ ${matchingWebhooks.length} webhook(s) disabled successfully`));
+      return true;
     } else {
-      console.log('Job disable process completed, but no webhooks were successfully deleted.');
+      console.error('Failed to disable one or more webhooks');
+      return false;
     }
   } catch (error) {
-    console.error(`Error disabling job '${jobName}': ${error.message}`);
+    console.error(`Error disabling webhook: ${error.message}`);
+    if (error.response) {
+      console.error('API Error details:', error.response);
+    }
+    return false;
   }
 }
 
@@ -653,37 +747,42 @@ async function deleteWebhook(shopify, webhookId) {
 /**
  * Delete a webhook by its ID
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} jobName - The job name (for initializing the Shopify client)
+ * @param {string} jobPath - The job path relative to jobs/
  * @param {string} webhookId - The ID of the webhook to delete
  */
-export async function deleteWebhookById(cliDirname, jobName, webhookId) {
+export async function deleteWebhookById(cliDirname, jobPath, webhookId) {
   try {
-    const shopify = initShopify(cliDirname, jobName);
-    console.log(`Attempting to delete webhook with ID: ${webhookId}`);
+    // Initialize Shopify client for this job
+    const shopify = initShopify(cliDirname, jobPath);
 
-    // Ensure webhook ID is in the correct format
+    // Format the webhook ID properly if needed
     const fullWebhookId = getFullWebhookId(webhookId);
-    if (fullWebhookId !== webhookId) {
-      console.log(`Using full webhook ID: ${fullWebhookId}`);
-    }
 
     // Delete the webhook
-    const deleteResponse = await shopify.graphql(WEBHOOK_DELETE_MUTATION, { id: fullWebhookId });
+    const response = await deleteWebhook(shopify, fullWebhookId);
 
-    if (deleteResponse?.webhookSubscriptionDelete?.userErrors?.length > 0) {
-      const errors = deleteResponse.webhookSubscriptionDelete.userErrors.map(err => err.message).join(", ");
-      console.error(`Error deleting webhook ${webhookId}: ${errors}`);
-      return false;
-    } else if (deleteResponse?.webhookSubscriptionDelete?.deletedWebhookSubscriptionId) {
-      console.log(`Successfully deleted webhook with ID: ${webhookId}`);
+    // Check if deletion was successful
+    if (response && response.webhookSubscriptionDelete) {
+      if (response.webhookSubscriptionDelete.userErrors &&
+          response.webhookSubscriptionDelete.userErrors.length > 0) {
+        console.error('Error deleting webhook:');
+        response.webhookSubscriptionDelete.userErrors.forEach(error => {
+          console.error(`- ${error.message}`);
+        });
+        return false;
+      }
+
+      console.log(chalk.green(`✔ Webhook ${webhookId} deleted successfully`));
       return true;
-    } else {
-      console.error(`Error deleting webhook ${webhookId}: Unexpected response format.`);
-      console.log(JSON.stringify(deleteResponse, null, 2));
-      return false;
     }
+
+    console.error('Failed to delete webhook, unexpected response format');
+    return false;
   } catch (error) {
-    console.error(`Error deleting webhook '${webhookId}': ${error.message}`);
+    console.error(`Error deleting webhook: ${error.message}`);
+    if (error.response) {
+      console.error('API Error details:', error.response);
+    }
     return false;
   }
 }

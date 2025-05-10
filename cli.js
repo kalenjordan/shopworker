@@ -90,15 +90,32 @@ program
   .command('status [jobNameArg]')
   .description('Check the status of webhooks for a job or all jobs')
   .option('-d, --dir <jobDirectory>', 'Job directory name')
+  .option('-a, --all', 'Show status of all jobs, ignoring current directory context')
   .action(async (jobNameArg, options) => {
-    // For 'status', jobName can be undefined to mean "all jobs"
-    // detectJobDirectory will be tried. If it's still undefined, then all jobs.
-    let jobName = jobNameArg || detectJobDirectory(__dirname, options.dir);
+    // If a specific job is specified, use that
+    if (jobNameArg) {
+      await handleSingleJobStatus(__dirname, jobNameArg);
+      return;
+    }
 
-    if (!jobName) {
-      await handleAllJobsStatus(__dirname);
-    } else {
+    // If directory option is specified, use that
+    if (options.dir) {
+      const resolved = await ensureAndResolveJobName(__dirname, null, options.dir, false);
+      if (resolved) {
+        await handleSingleJobStatus(__dirname, resolved);
+        return;
+      }
+    }
+
+    // Otherwise, try to auto-detect current directory context
+    const jobName = detectJobDirectory(__dirname, null);
+    if (jobName && !options.all) {
+      // We detected a specific job directory
       await handleSingleJobStatus(__dirname, jobName);
+    } else {
+      // We're not in a specific job directory, show filtered or all jobs
+      const filterByCurrentDir = !options.all;
+      await handleAllJobsStatus(__dirname, filterByCurrentDir);
     }
   });
 

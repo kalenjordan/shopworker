@@ -38,16 +38,16 @@ function getShopConfig(cliDirname, shopName) {
 /**
  * Find a sample record for testing a job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} jobName - The job name
+ * @param {string} jobPath - The job path relative to jobs/
  * @param {string} queryParam - Optional query parameter for filtering results
  * @param {string} shopParam - Optional shop domain to override the one in job config
  * @returns {Promise<{record: Object, recordName: string, shopify: Object, triggerConfig: Object, jobConfig: Object}>}
  * The sample record and related configuration
  */
-export async function findSampleRecordForJob(cliDirname, jobName, queryParam, shopParam) {
-  const jobConfig = loadJobConfig(jobName);
+export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam) {
+  const jobConfig = loadJobConfig(jobPath);
   if (!jobConfig.trigger) {
-    throw new Error(`Job ${jobName} doesn't have a trigger defined`);
+    throw new Error(`Job ${jobPath} doesn't have a trigger defined`);
   }
 
   const triggerConfig = loadTriggerConfig(jobConfig.trigger);
@@ -69,7 +69,7 @@ export async function findSampleRecordForJob(cliDirname, jobName, queryParam, sh
     console.log(chalk.yellow(`Overriding shop with: ${shopConfig.name} (${shopConfig.shopify_domain})`));
   }
 
-  const shopify = initShopify(cliDirname, jobName, shopParam);
+  const shopify = initShopify(cliDirname, jobPath, shopParam);
 
   if (triggerConfig.test && triggerConfig.test.skipQuery) {
     return {
@@ -102,7 +102,7 @@ export async function findSampleRecordForJob(cliDirname, jobName, queryParam, sh
   );
 
   if (!topLevelKey || !response[topLevelKey].edges || response[topLevelKey].edges.length === 0) {
-    throw new Error(`No ${topLevelKey || 'data'} found in response for job ${jobName}. Query: ${triggerConfig.test.query}`);
+    throw new Error(`No ${topLevelKey || 'data'} found in response for job ${jobPath}. Query: ${triggerConfig.test.query}`);
   }
 
   const record = response[topLevelKey].edges[0].node;
@@ -121,12 +121,12 @@ export async function findSampleRecordForJob(cliDirname, jobName, queryParam, sh
 /**
  * Run a test for a specific job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} jobName - The job name
+ * @param {string} jobPath - The job path relative to jobs/
  * @param {string} queryParam - Optional query parameter for filtering results
  * @param {string} shopParam - Optional shop domain to override the one in job config
  */
-export async function runJobTest(cliDirname, jobName, queryParam, shopParam) {
-  const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobName, queryParam, shopParam);
+export async function runJobTest(cliDirname, jobPath, queryParam, shopParam) {
+  const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam);
 
   // Get shop configuration from .shopworker.json
   const shopConfig = getShopConfig(cliDirname, jobConfig.shop);
@@ -135,14 +135,14 @@ export async function runJobTest(cliDirname, jobName, queryParam, shopParam) {
   console.log(chalk.magenta(`Processing for shop: ${shopConfig.shopify_domain}`));
 
   // Use path.resolve with pathToFileURL to ensure proper module resolution
-  const jobModulePath = pathToFileURL(path.resolve(cliDirname, `jobs/${jobName}/job.js`)).href;
+  const jobModulePath = pathToFileURL(path.resolve(cliDirname, `jobs/${jobPath}/job.js`)).href;
   const jobModule = await import(jobModulePath);
 
   // Disable for now so cli logs match the worker logs
   // if (topLevelKey) {
-  //   console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${recordName} for job ${jobName}...`);
+  //   console.log(`Processing ${topLevelKey.replace(/s$/, '')} ${recordName} for job ${jobPath}...`);
   // } else {
-  //   console.log(`Processing manual trigger for job ${jobName}...`);
+  //   console.log(`Processing manual trigger for job ${jobPath}...`);
   // }
 
   // Pass process.env as env and shopConfig as shopConfig for consistency with worker environment
@@ -196,11 +196,11 @@ export async function generateHmacSignature(secret, body) {
 /**
  * Run a remote test against the worker for a specific job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {string} jobName - The job name
+ * @param {string} jobPath - The job path relative to jobs/
  * @param {Object} options - Command options including workerUrl, recordId, and queryParam
  * @returns {Promise<void>}
  */
-export async function runJobRemoteTest(cliDirname, jobName, options) {
+export async function runJobRemoteTest(cliDirname, jobPath, options) {
   // Get worker URL
   const workerUrl = options.worker;
   if (!workerUrl) {
@@ -208,9 +208,9 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
   }
 
   // Load job and trigger configs
-  const jobConfig = loadJobConfig(jobName);
+  const jobConfig = loadJobConfig(jobPath);
   if (!jobConfig) {
-    throw new Error(`Could not load configuration for job: ${jobName}`);
+    throw new Error(`Could not load configuration for job: ${jobPath}`);
   }
 
   const triggerConfig = jobConfig.trigger ? loadTriggerConfig(jobConfig.trigger) : null;
@@ -235,7 +235,7 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
   let recordId = options.id;
   if (!recordId) {
     console.log("No record ID provided. Finding a sample record...");
-    const { record } = await findSampleRecordForJob(cliDirname, jobName, options.query, options.shop);
+    const { record } = await findSampleRecordForJob(cliDirname, jobPath, options.query, options.shop);
     recordId = record.id;
     if (!recordId) {
       throw new Error("Could not extract ID from the sample record.");
@@ -245,7 +245,7 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
 
   // Format webhook URL
   const webhookUrl = new URL(workerUrl);
-  webhookUrl.searchParams.set('job', jobName);
+  webhookUrl.searchParams.set('job', jobPath);
   const webhookAddress = webhookUrl.toString();
 
   let data = {
@@ -258,7 +258,7 @@ export async function runJobRemoteTest(cliDirname, jobName, options) {
   // Generate HMAC signature using our shared function
   const hmacSignature = await generateHmacSignature(apiSecret, jsonData);
 
-  console.log(`Sending test request to worker for job: ${jobName}: ${webhookAddress}`);
+  console.log(`Sending test request to worker for job: ${jobPath}: ${webhookAddress}`);
   console.log(`Topic: ${webhookTopic}`);
   console.log(`Shop: ${chalk.magenta(shopDomain)}`);
   console.log(`Data: ${jsonData}`);

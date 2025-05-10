@@ -13,14 +13,17 @@ const rootDir = path.join(__dirname, '..');
 
 /**
  * Load the configuration for a specific job
- * @param {string} jobName - The name of the job
+ * @param {string} jobPath - The path of the job relative to jobs/
  * @returns {Object} The job configuration
  */
-export function loadJobConfig(jobName) {
-  const configPath = path.join(rootDir, 'jobs', jobName, 'config.json');
+export function loadJobConfig(jobPath) {
+  const configPath = path.join(rootDir, 'jobs', jobPath, 'config.json');
   try {
     const configData = fs.readFileSync(configPath, 'utf8');
     const config = JSON.parse(configData);
+
+    // Add the jobPath to the config for reference
+    config.jobPath = jobPath;
 
     // If there's a trigger, load its information too
     if (config.trigger) {
@@ -32,7 +35,7 @@ export function loadJobConfig(jobName) {
 
     return config;
   } catch (error) {
-    console.error(`Error loading job config for ${jobName}:`, error);
+    console.error(`Error loading job config for ${jobPath}:`, error);
     return null;
   }
 }
@@ -55,20 +58,33 @@ export function loadTriggerConfig(triggerName) {
 
 /**
  * Load configurations for all jobs
- * @returns {Object} Map of job names to their configurations
+ * @returns {Object} Map of job paths to their configurations
  */
 export async function loadJobsConfig() {
   const jobsDir = path.join(rootDir, 'jobs');
   const jobs = {};
 
   try {
-    const jobDirs = fs.readdirSync(jobsDir)
-      .filter(dir => fs.statSync(path.join(jobsDir, dir)).isDirectory());
+    const jobPaths = fs.readdirSync(jobsDir)
+      .filter(dir => fs.statSync(path.join(jobsDir, dir)).isDirectory())
+      .flatMap(dir => {
+        // Check if this is a job directory (has config.json)
+        if (fs.existsSync(path.join(jobsDir, dir, 'config.json'))) {
+          return [dir];
+        }
 
-    for (const jobName of jobDirs) {
-      const config = loadJobConfig(jobName);
+        // Check for nested job directories
+        const nestedDir = path.join(jobsDir, dir);
+        return fs.readdirSync(nestedDir)
+          .filter(subdir => fs.statSync(path.join(nestedDir, subdir)).isDirectory())
+          .filter(subdir => fs.existsSync(path.join(nestedDir, subdir, 'config.json')))
+          .map(subdir => path.join(dir, subdir));
+      });
+
+    for (const jobPath of jobPaths) {
+      const config = loadJobConfig(jobPath);
       if (config) {
-        jobs[jobName] = config;
+        jobs[jobPath] = config;
       }
     }
 
