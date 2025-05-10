@@ -91,6 +91,23 @@ export async function getSheetData(sheetsClient, spreadsheetId, range) {
 }
 
 /**
+ * Get just the headers from a Google Sheet (first row)
+ * @param {Object} sheetsClient - The Google Sheets client
+ * @param {string} spreadsheetId - The ID of the spreadsheet
+ * @param {string} sheetName - The name of the sheet
+ * @returns {Promise<Array>} The sheet headers
+ */
+export async function getSheetHeaders(sheetsClient, spreadsheetId, sheetName) {
+  const headerData = await getSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1:Z1`);
+
+  if (!headerData?.length || !headerData[0]?.length) {
+    throw new Error(`Sheet is not initialized with headers. Please create the sheet first.`);
+  }
+
+  return headerData[0];
+}
+
+/**
  * Write data to a Google Sheet
  * @param {Object} sheetsClient - The Google Sheets client
  * @param {string} spreadsheetId - The ID of the spreadsheet
