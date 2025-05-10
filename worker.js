@@ -114,7 +114,7 @@ function createAuthenticatedShopifyClient(shopDomain, shopConfig, env) {
   }
 
   return createShopifyClient({
-    shopDomain,
+    shop: shopDomain,
     accessToken,
     apiVersion: '2025-04'
   });
