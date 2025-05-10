@@ -16,9 +16,12 @@
     "remote-test": "node cli.js remote-test",
     "all-webhooks": "node cli.js all-webhooks",
     "delete-webhook": "node cli.js delete-webhook",
-    "put-secrets": "node cli.js put-secrets"
+    "put-secrets": "node cli.js put-secrets",
+    "generate-structure": "node tools/generate-codebase-structure.js"
   },
   "dependencies": {
+    "acorn": "^8.11.3",
+    "acorn-walk": "^8.3.2",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "googleapis": "^131.0.0",
