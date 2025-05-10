@@ -6,6 +6,23 @@ import WEBHOOK_DELETE_MUTATION from '../graphql/webhookSubscriptionDelete.js';
 import GET_WEBHOOKS_QUERY from '../graphql/getWebhooks.js';
 import chalk from 'chalk';
 
+// Column widths for job status summary table
+const COLUMN_WIDTHS = {
+  job: 35, // Job name
+  shop: 18, // Shop
+  topic: 20, // Trigger/Topic
+  status: 13, // Status
+  webhookId: 12 // Webhook ID
+};
+
+// Helper to crop and pad a string
+function cropAndPad(str, width) {
+  if (str.length > width) {
+    return str.slice(0, width - 3) + '...';
+  }
+  return str.padEnd(width);
+}
+
 /**
  * Get display information for a job's webhook status
  * @param {string} cliDirname - The directory where cli.js is located (project root)
@@ -25,12 +42,10 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
   let webhookIdSuffix = '-';
   const shop = jobConfig.shop || null;
   let includeFields = null;
-  let webhookConfigSource = null;
 
-  // Check for includeFields in job config
+  // Only use includeFields from job config
   if (jobConfig.webhook && jobConfig.webhook.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
     includeFields = jobConfig.webhook.includeFields;
-    webhookConfigSource = 'job';
   }
 
   if (jobConfig.trigger) {
@@ -42,12 +57,6 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
     }
 
     displayTopic = triggerConfig.webhook?.topic || jobConfig.trigger;
-
-    // Use trigger config includeFields as fallback if job config doesn't have them
-    if (!includeFields && triggerConfig.webhook && triggerConfig.webhook.includeFields && Array.isArray(triggerConfig.webhook.includeFields)) {
-      includeFields = triggerConfig.webhook.includeFields;
-      webhookConfigSource = 'trigger';
-    }
 
     if (triggerConfig.webhook && triggerConfig.webhook.topic) {
       const graphqlTopic = triggerConfig.webhook.topic.toUpperCase().replace('/', '_');
@@ -73,11 +82,6 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
           if (jobWebhook) {
             statusMsg = '🟢 ENABLED';
             webhookIdSuffix = jobWebhook.id.split('/').pop();
-            // Actual includeFields from the active webhook supersede config values
-            if (jobWebhook.includeFields && jobWebhook.includeFields.length > 0) {
-              includeFields = jobWebhook.includeFields;
-              webhookConfigSource = 'active';
-            }
           } else {
             statusMsg = '🔴 DISABLED';
           }
@@ -89,7 +93,7 @@ export async function getJobDisplayInfo(cliDirname, currentJobName) {
       }
     }
   }
-  return { jobName: currentJobName, displayTopic, statusMsg, webhookIdSuffix, shop, includeFields, webhookConfigSource };
+  return { jobName: currentJobName, displayTopic, statusMsg, webhookIdSuffix, shop };
 }
 
 /**
@@ -105,46 +109,49 @@ export async function handleAllJobsStatus(cliDirname) {
     return;
   }
 
-  console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(130));
-  console.log(`${'JOB'.padEnd(25)} ${'SHOP'.padEnd(20)} ${'TRIGGER/TOPIC'.padEnd(30)} ${'STATUS'.padEnd(15)} ${'WEBHOOK ID'.padEnd(10)} ${'SOURCE'.padEnd(10)} FIELDS`);
-  console.log('-'.repeat(130));
+  const totalWidth = COLUMN_WIDTHS.job + COLUMN_WIDTHS.shop + COLUMN_WIDTHS.topic + COLUMN_WIDTHS.status + COLUMN_WIDTHS.webhookId + 5; // 5 spaces between columns
+  console.log('\nJOB STATUS SUMMARY\n' + '-'.repeat(totalWidth));
+  console.log(
+    cropAndPad('JOB', COLUMN_WIDTHS.job) + ' ' +
+    cropAndPad('SHOP', COLUMN_WIDTHS.shop) + ' ' +
+    cropAndPad('TRIGGER/TOPIC', COLUMN_WIDTHS.topic) + ' ' +
+    cropAndPad('STATUS', COLUMN_WIDTHS.status) + ' ' +
+    cropAndPad('WEBHOOK ID', COLUMN_WIDTHS.webhookId)
+  );
+  console.log('-'.repeat(totalWidth));
 
   for (const currentJobName of jobDirs) {
     try {
-      const { jobName, displayTopic, statusMsg, webhookIdSuffix, shop, includeFields, webhookConfigSource } = await getJobDisplayInfo(cliDirname, currentJobName);
-      const shopDisplay = shop ? chalk.blue(shop).padEnd(20) : 'N/A'.padEnd(20);
-      let fieldsDisplay = '';
-      let sourceDisplay = '';
-
-      if (includeFields && includeFields.length > 0) {
-        // Show first 3 fields with ellipsis if more
-        const fieldCount = includeFields.length;
-        const fieldsToShow = includeFields.slice(0, 3);
-        fieldsDisplay = fieldsToShow.join(', ');
-        if (fieldCount > 3) {
-          fieldsDisplay += ` +${fieldCount - 3} more`;
-        }
-
-        // Add source information
-        if (webhookConfigSource === 'job') {
-          sourceDisplay = 'job';
-        } else if (webhookConfigSource === 'trigger') {
-          sourceDisplay = 'trigger';
-        } else if (webhookConfigSource === 'active') {
-          sourceDisplay = 'active';
-        }
+      const { jobName, displayTopic, statusMsg, webhookIdSuffix, shop } = await getJobDisplayInfo(cliDirname, currentJobName);
+      // Pad the shop name first, then color only the padded shop name
+      let shopDisplay = 'N/A';
+      if (shop) {
+        const paddedShop = cropAndPad(shop, COLUMN_WIDTHS.shop);
+        shopDisplay = chalk.blue(paddedShop);
+      } else {
+        shopDisplay = cropAndPad('N/A', COLUMN_WIDTHS.shop);
       }
-
-      console.log(`${jobName.padEnd(25)} ${shopDisplay} ${displayTopic.padEnd(30)} ${statusMsg.padEnd(15)} ${webhookIdSuffix.padEnd(10)} ${sourceDisplay.padEnd(10)} ${fieldsDisplay}`);
-    } catch (error) { // Catch errors from getJobDisplayInfo if they are not handled internally
+      console.log(
+        cropAndPad(jobName, COLUMN_WIDTHS.job) + ' ' +
+        shopDisplay + ' ' +
+        cropAndPad(displayTopic, COLUMN_WIDTHS.topic) + ' ' +
+        cropAndPad(statusMsg, COLUMN_WIDTHS.status) + ' ' +
+        cropAndPad(webhookIdSuffix, COLUMN_WIDTHS.webhookId)
+      );
+    } catch (error) {
       console.error(`Error processing job ${currentJobName}: ${error.message}`);
-      console.log(`${currentJobName.padEnd(25)} ${'ERROR'.padEnd(20)} ${'ERROR'.padEnd(30)} ${'⚠️ UNKNOWN ERROR'.padEnd(15)} ${'-'.padEnd(10)} ${'-'.padEnd(10)} -`);
+      console.log(
+        cropAndPad(currentJobName, COLUMN_WIDTHS.job) + ' ' +
+        cropAndPad('ERROR', COLUMN_WIDTHS.shop) + ' ' +
+        cropAndPad('ERROR', COLUMN_WIDTHS.topic) + ' ' +
+        cropAndPad('⚠️ UNKNOWN ERROR', COLUMN_WIDTHS.status) + ' ' +
+        cropAndPad('-', COLUMN_WIDTHS.webhookId)
+      );
     }
   }
 
-  console.log('-'.repeat(130));
-  console.log('\nSources: job = job config, trigger = trigger config, active = from active webhook');
-  console.log('Use "shopworker enable <jobName>" to enable a job with a webhook.');
+  console.log('-'.repeat(totalWidth));
+  console.log('\nUse "shopworker enable <jobName>" to enable a job with a webhook.');
   console.log('Use "shopworker status <jobName>" to see detailed webhook information for a specific job.');
 }
 
@@ -301,19 +308,11 @@ export async function enableJobWebhook(cliDirname, jobName, workerUrl) {
       format: "JSON"
     };
 
-    // Prioritize includeFields from job config over trigger config
+    // Only use includeFields from job config
     if (jobConfig.webhook && jobConfig.webhook.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
       webhookSubscription.includeFields = jobConfig.webhook.includeFields;
       console.log(`Include Fields (from job config):`);
       jobConfig.webhook.includeFields.forEach(field => {
-        console.log(`  - ${field}`);
-      });
-    }
-    // Fall back to trigger config if job config doesn't have includeFields
-    else if (triggerConfig.webhook.includeFields && Array.isArray(triggerConfig.webhook.includeFields)) {
-      webhookSubscription.includeFields = triggerConfig.webhook.includeFields;
-      console.log(`Include Fields (from trigger config):`);
-      triggerConfig.webhook.includeFields.forEach(field => {
         console.log(`  - ${field}`);
       });
     }
