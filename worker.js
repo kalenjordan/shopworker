@@ -72,7 +72,7 @@ async function handleRequest(request, env, ctx) {
     }
 
     // Now verify the webhook signature with the correct shop config
-    if (!await verifyShopifyWebhook(request, bodyText, env)) {
+    if (!await verifyShopifyWebhook(request, bodyText, env, shopConfig)) {
       return new Response('Invalid webhook signature', { status: 401 });
     }
 

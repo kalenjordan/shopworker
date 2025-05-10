@@ -41,10 +41,11 @@ export async function generateHmacSignature(secret, body) {
  * Verify Shopify webhook signature
  * @param {Request} request - The incoming request
  * @param {string} body - The request body as string
- * @param {Object} [env] - Optional worker environment variables or shop configuration
+ * @param {Object} [env] - Environment variables
+ * @param {Object} [shopConfig] - Shop-specific configuration
  * @returns {Promise<boolean>} Whether the signature is valid
  */
-export async function verifyShopifyWebhook(request, body, env) {
+export async function verifyShopifyWebhook(request, body, env, shopConfig) {
   const hmac = request.headers.get('X-Shopify-Hmac-Sha256');
 
   if (!hmac) {
@@ -56,14 +57,13 @@ export async function verifyShopifyWebhook(request, body, env) {
   // Try to get the shop domain from headers
   const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
 
-  // If env is provided, try to get the secret from it
-  if (!env || !env.shopify_api_secret_key) {
-    throw new Error('Missing API secret key in environment variables');
+  // First check shopConfig for the API secret key
+  if (shopConfig && shopConfig.shopify_api_secret_key) {
+    secret = shopConfig.shopify_api_secret_key;
   }
-
-  secret = env.shopify_api_secret_key;
-  if (!secret) {
-    throw new Error('Missing API secret key in environment variables');
+  // If neither has the key, throw an error
+  else {
+    throw new Error('Missing API secret key in shop configuration and environment variables');
   }
 
   try {
