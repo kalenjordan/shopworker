@@ -38,13 +38,6 @@ function formatStatusColumn(status, isDisabled = false) {
   }
 }
 
-function formatShopColumn(shop, isDisabled = false) {
-  if (!shop) return cropAndPad('N/A', COLUMN_WIDTHS.shop);
-
-  const paddedShop = cropAndPad(shop, COLUMN_WIDTHS.shop);
-  return isDisabled ? chalk.gray(paddedShop) : paddedShop;
-}
-
 function applyColorIfDisabled(text, isDisabled) {
   return isDisabled ? chalk.gray(text) : text;
 }
@@ -92,7 +85,10 @@ function isWebhookForJob(webhook, graphqlTopic, jobPath) {
 
   try {
     const url = new URL(webhook.endpoint.callbackUrl);
-    return url.searchParams.get('job') === jobPath;
+    const urlJobParam = url.searchParams.get('job');
+
+    // Handle URL encoding differences by comparing the decoded values
+    return decodeURIComponent(urlJobParam) === decodeURIComponent(jobPath);
   } catch (e) {
     return false;
   }
@@ -114,11 +110,28 @@ function isWebhookForTopicButNotJob(webhook, graphqlTopic, jobPath) {
 }
 
 function findMatchingWebhooks(webhooks, graphqlTopic, webhookAddress) {
-  return webhooks.filter(webhook =>
-    webhook.topic === graphqlTopic &&
-    webhook.endpoint?.__typename === 'WebhookHttpEndpoint' &&
-    webhook.endpoint.callbackUrl === webhookAddress
-  );
+  return webhooks.filter(webhook => {
+    if (webhook.topic !== graphqlTopic) return false;
+    if (!webhook.endpoint || webhook.endpoint.__typename !== 'WebhookHttpEndpoint') return false;
+
+    try {
+      // Compare base URLs (domain and path)
+      const storedUrl = new URL(webhook.endpoint.callbackUrl);
+      const newUrl = new URL(webhookAddress);
+
+      if (storedUrl.origin !== newUrl.origin || storedUrl.pathname !== newUrl.pathname) {
+        return false;
+      }
+
+      // Compare job parameter specifically
+      const storedJobParam = storedUrl.searchParams.get('job');
+      const newJobParam = newUrl.searchParams.get('job');
+
+      return decodeURIComponent(storedJobParam) === decodeURIComponent(newJobParam);
+    } catch (e) {
+      return false;
+    }
+  });
 }
 
 function doFieldConfigsDiffer(configFields, activeFields) {
@@ -359,9 +372,9 @@ function displayJobsTable(jobDisplayInfos, printHeader = true) {
 
     console.log(
       formatStatusColumn(info.statusMsg, isDisabled) +
-      formatShopColumn(info.shop, isDisabled) +
+      (info.shop ? chalk.magenta(cropAndPad(info.shop, COLUMN_WIDTHS.shop)) : cropAndPad('N/A', COLUMN_WIDTHS.shop)) +
       applyColorIfDisabled(cropAndPad(info.jobPath, COLUMN_WIDTHS.path), isDisabled) +
-      applyColorIfDisabled(cropAndPad(info.displayName, COLUMN_WIDTHS.job), isDisabled) +
+      applyColorIfDisabled(chalk.blue(cropAndPad(info.displayName, COLUMN_WIDTHS.job)), isDisabled) +
       applyColorIfDisabled(cropAndPad(info.displayTopic, COLUMN_WIDTHS.topic), isDisabled)
     );
   }
@@ -381,9 +394,9 @@ export async function handleSingleJobStatus(cliDirname, jobPath) {
     }
 
     const jobName = jobConfig.name || jobPath;
-    console.log(chalk.bold(`\nJob: ${chalk.blue(jobName)}`));
+    console.log(`\nShop: ${chalk.magenta(jobConfig.shop || 'Not specified')}`);
+    console.log(`Job: ${chalk.blue(jobName)}`);
     console.log(`Path: ${jobPath}`);
-    console.log(`Shop: ${jobConfig.shop || 'Not specified'}`);
 
     if (!jobConfig.trigger) {
       console.log(chalk.yellow('\nThis job has no trigger configured.'));
@@ -516,10 +529,10 @@ export async function enableJobWebhook(cliDirname, jobPath, workerUrl) {
     if (!jobConfig || !triggerConfig) return;
 
     const webhookAddress = createWebhookUrl(workerUrl, jobPath);
+    console.log(`Shop: ${chalk.magenta(jobConfig.shop)}`);
     console.log(`Enabling webhook for job: ${chalk.blue(jobConfig.name || jobPath)}`);
-    console.log(`Shop: ${chalk.blue(jobConfig.shop)}`);
-    console.log(`Topic: ${chalk.blue(triggerConfig.webhook.topic)}`);
-    console.log(`Endpoint: ${chalk.blue(webhookAddress)}`);
+    console.log(`Topic: ${triggerConfig.webhook.topic}`);
+    console.log(`Endpoint: ${webhookAddress}`);
 
     // Check if subscription already exists
     const shopify = initShopify(cliDirname, jobPath);
@@ -531,31 +544,62 @@ export async function enableJobWebhook(cliDirname, jobPath, workerUrl) {
 
     const webhooks = response.webhookSubscriptions.nodes;
     const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
-    const existingWebhooks = findMatchingWebhooks(webhooks, graphqlTopic, webhookAddress);
 
-    if (existingWebhooks.length > 0) {
-      console.log(chalk.yellow('\nWebhook already exists:'));
-      existingWebhooks.forEach(webhook => {
-        console.log(`- ID: ${webhook.id}`);
+    // First, check for exact match (same topic, same endpoint)
+    const exactMatchWebhooks = findMatchingWebhooks(webhooks, graphqlTopic, webhookAddress);
+    if (exactMatchWebhooks.length > 0) {
+      console.log(chalk.green('\n✓ Webhook is already enabled for this job with the same endpoint'));
+      exactMatchWebhooks.forEach(webhook => {
+        console.log(`- ID: ${getWebhookIdSuffix(webhook.id)}`);
         console.log(`  Created: ${new Date(webhook.createdAt).toLocaleString()}`);
       });
 
-      // Handle include fields mismatch
+      // Check if include fields match configuration
       if (jobConfig.webhook?.includeFields &&
-          existingWebhooks.some(webhook => doFieldConfigsDiffer(jobConfig.webhook.includeFields, webhook.includeFields))) {
-        console.log(chalk.yellow('\nExisting webhook has different include fields than your configuration.'));
-        console.log(chalk.yellow('Removing existing webhook and creating a new one...'));
-        await deleteMatchingWebhooks(shopify, existingWebhooks);
-      } else {
-        return;
+          exactMatchWebhooks.some(webhook => doFieldConfigsDiffer(jobConfig.webhook.includeFields, webhook.includeFields))) {
+        console.log(chalk.yellow('\nNote: The existing webhook has different include fields than your configuration.'));
+        console.log(chalk.yellow('You may want to disable and re-enable this webhook to update the fields.'));
       }
+
+      return;
+    }
+
+    // Next, check for webhooks with same topic but different endpoint
+    const sameTopicWebhooks = webhooks.filter(webhook =>
+      webhook.topic === graphqlTopic &&
+      webhook.endpoint?.__typename === 'WebhookHttpEndpoint' &&
+      webhook.endpoint.callbackUrl !== webhookAddress
+    );
+
+    if (sameTopicWebhooks.length > 0) {
+      console.log(chalk.yellow('\nWebhook for this topic already exists with a different endpoint:'));
+      sameTopicWebhooks.forEach(webhook => {
+        console.log(`- ID: ${getWebhookIdSuffix(webhook.id)}`);
+        console.log(`  Endpoint: ${webhook.endpoint.callbackUrl}`);
+      });
+      console.log(chalk.yellow('\nShopify only allows one webhook per topic per shop.'));
+      console.log(chalk.yellow('Please disable the existing webhook first using:'));
+      console.log(chalk.cyan(`shopworker delete-webhook ${getWebhookIdSuffix(sameTopicWebhooks[0].id)} --job ${jobPath}`));
+
+      return;
     }
 
     // Create the subscription
-    const webhookSubscription = prepareWebhookSubscription(webhookAddress, jobConfig);
-    await createWebhook(shopify, triggerConfig.webhook.topic, webhookSubscription);
-
-    console.log(chalk.green('\n✓ Webhook created successfully'));
+    try {
+      const webhookSubscription = prepareWebhookSubscription(webhookAddress, jobConfig);
+      await createWebhook(shopify, triggerConfig.webhook.topic, webhookSubscription);
+      console.log(chalk.green('\n✓ Webhook created successfully'));
+    } catch (error) {
+      // Check if this is a URL not allowed error
+      if (error.message.includes('Address is not allowed')) {
+        console.log(chalk.red('\nError: The webhook URL is not allowed by Shopify.'));
+        console.log('Shopify requires webhook URLs to be HTTPS and from a trusted domain.');
+        console.log('For testing, you can use the Shopify CLI or a service like ngrok.');
+      } else {
+        // Re-throw other errors
+        throw error;
+      }
+    }
   } catch (error) {
     console.error(`Error enabling webhook: ${error.message}`);
   }
@@ -616,10 +660,10 @@ export async function disableJobWebhook(cliDirname, jobPath, workerUrl) {
     if (!jobConfig || !triggerConfig) return;
 
     const webhookAddress = createWebhookUrl(workerUrl, jobPath);
+    console.log(`Shop: ${chalk.magenta(jobConfig.shop)}`);
     console.log(`Disabling webhook for job: ${chalk.blue(jobConfig.name || jobPath)}`);
-    console.log(`Shop: ${chalk.blue(jobConfig.shop)}`);
-    console.log(`Topic: ${chalk.blue(triggerConfig.webhook.topic)}`);
-    console.log(`Endpoint: ${chalk.blue(webhookAddress)}`);
+    console.log(`Topic: ${triggerConfig.webhook.topic}`);
+    console.log(`Endpoint: ${webhookAddress}`);
 
     // Find the subscription
     const shopify = initShopify(cliDirname, jobPath);
@@ -631,10 +675,42 @@ export async function disableJobWebhook(cliDirname, jobPath, workerUrl) {
 
     const webhooks = response.webhookSubscriptions.nodes;
     const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
-    const matchingWebhooks = findMatchingWebhooks(webhooks, graphqlTopic, webhookAddress);
+
+    // Use isWebhookForJob which has better URL matching
+    const matchingWebhooks = webhooks.filter(webhook => isWebhookForJob(webhook, graphqlTopic, jobPath));
 
     if (matchingWebhooks.length === 0) {
+      // Also check without URL encoding
       console.log(chalk.yellow('\nNo matching webhook found. Nothing to disable.'));
+
+      // If there are webhooks with same topic but different endpoints, show them
+      const sameTopicWebhooks = webhooks.filter(webhook =>
+        webhook.topic === graphqlTopic &&
+        webhook.endpoint?.__typename === 'WebhookHttpEndpoint'
+      );
+
+      if (sameTopicWebhooks.length > 0) {
+        console.log(chalk.yellow(`\nFound ${sameTopicWebhooks.length} webhook(s) with topic ${triggerConfig.webhook.topic}:`));
+        sameTopicWebhooks.forEach(webhook => {
+          console.log(`- ID: ${getWebhookIdSuffix(webhook.id)}`);
+          console.log(`  URL: ${webhook.endpoint.callbackUrl}`);
+
+          // Try to extract the job from the URL
+          try {
+            const url = new URL(webhook.endpoint.callbackUrl);
+            const urlJob = url.searchParams.get('job');
+            if (urlJob) {
+              console.log(`  Job in URL: ${urlJob}`);
+            }
+          } catch (e) {
+            // Ignore URL parsing errors
+          }
+        });
+
+        console.log(chalk.yellow('\nTo delete one of these webhooks, use:'));
+        console.log(chalk.cyan(`shopworker delete-webhook <webhook-id> --job ${jobPath}`));
+      }
+
       return;
     }
 
@@ -696,9 +772,9 @@ export async function deleteWebhookById(cliDirname, jobPath, webhookId) {
     }
 
     const fullWebhookId = getFullWebhookId(webhookId);
-    console.log(`Deleting webhook ID: ${chalk.blue(webhookId)}`);
+    console.log(`Shop: ${chalk.magenta(jobConfig.shop)}`);
     console.log(`For job: ${chalk.blue(jobConfig.name || jobPath)}`);
-    console.log(`Shop: ${chalk.blue(jobConfig.shop)}`);
+    console.log(`Deleting webhook ID: ${webhookId}`);
 
     const shopify = initShopify(cliDirname, jobPath);
     await deleteWebhook(shopify, fullWebhookId);
