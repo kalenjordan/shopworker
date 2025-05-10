@@ -14,7 +14,7 @@ import fs from 'fs';
 
 const COLUMN_WIDTHS = {
   status: 13,
-  path: 30,
+  path: 40,
   shop: 18,
   job: 35,
   topic: 20
