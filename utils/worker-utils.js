@@ -90,6 +90,7 @@ export async function verifyShopifyWebhook(request, body, env) {
   try {
     // Generate HMAC signature using our common function
     const generatedHash = await generateHmacSignature(secret, body);
+    console.log(`Generated HMAC signature: ${generatedHash}`, secret, body);
 
     // Compare the generated hash with the one from the request headers
     return hmac === generatedHash;
