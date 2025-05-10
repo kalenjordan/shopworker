@@ -1,7 +1,7 @@
-import GetOrderById from "../../graphql/GetOrderById.js";
-import * as GoogleSheets from "../../connectors/google-sheets.js";
+import GetOrderById from "../../../graphql/GetOrderById.js";
+import * as GoogleSheets from "../../../connectors/google-sheets.js";
 import chalk from "chalk";
-import { logToCli, logToWorker } from "../../utils/worker-helpers.js";
+import { logToCli, logToWorker } from "../../../utils/worker-helpers.js";
 
 // Define column mappings in one place
 const COLUMN_MAPPINGS = [

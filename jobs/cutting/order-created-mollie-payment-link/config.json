@@ -1,5 +1,6 @@
 {
   "name": "Send Mollie Payment Link In Order Invoice",
+  "handle": "send-mollie-payment-link-in-order-invoice",
   "shop": "cutting",
   "description": "Fetches data from an external API and sets it as the custom message for the order invoice",
   "version": "1.0.0",
