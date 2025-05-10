@@ -114,37 +114,6 @@ export function getWorkerUrl(options, cliDirname = process.cwd()) {
 }
 
 /**
- * Detect whether the code is running in CLI or Cloudflare Worker environment
- * @returns {'cli'|'worker'} The current environment
- */
-export function getEnvironment() {
-  // Check for Node.js specific globals
-  if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-    return 'cli';
-  }
-
-  // Check for Cloudflare Worker specific globals
-  if (typeof globalThis !== 'undefined' &&
-      typeof globalThis.caches !== 'undefined' &&
-      typeof globalThis.addEventListener === 'function') {
-    return 'worker';
-  }
-
-  // Fallback
-  return 'cli';
-}
-
-/**
- * Simple worker-only logging function
- * @param {...any} args - Arguments to pass to console.log
- */
-export function workerLog(...args) {
-  if (getEnvironment() === 'worker') {
-    console.log(...args);
-  }
-}
-
-/**
  * Load and validate job and trigger configurations for webhook operations
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} jobName - The job name
