@@ -94,7 +94,6 @@ const EXCLUDE_PATHS = [
   'jobs/cutting',
   'jobs/product',
   'jobs/order',
-  'connectors',
   'graphql',
   'docs',
   'tools',
@@ -140,6 +139,178 @@ function shouldExcludeFile(filePath) {
   return EXCLUDE_FILES.includes(fileName);
 }
 
+// Function to count lines in a method body
+function countMethodLines(fileContent, node) {
+  if (!node || !node.loc) return 0;
+
+  // For function declarations and expressions
+  if (node.body && node.body.loc) {
+    const startLine = node.body.loc.start.line;
+    const endLine = node.body.loc.end.line;
+    return endLine - startLine + 1;
+  }
+
+  return 0;
+}
+
+// Function to extract method calls within a method body
+function extractMethodCalls(fileContent, node, definedMethods, imports) {
+  const methodCalls = new Set();
+
+  if (!node || !node.body) return methodCalls;
+
+  // Skip common utility method names that are likely not local methods
+  const commonGenericMethods = new Set([
+    'get', 'set', 'push', 'pop', 'map', 'filter', 'forEach', 'find',
+    'indexOf', 'includes', 'join', 'split', 'slice', 'substring',
+    'replace', 'trim', 'toString', 'valueOf', 'parse', 'stringify',
+    'keys', 'values', 'entries', 'fill', 'concat', 'shift', 'unshift',
+    'every', 'some', 'reduce', 'reduceRight', 'reverse', 'sort',
+    'splice', 'copyWithin', 'isArray', 'fromCharCode', 'match', 'test',
+    'exec', 'hasOwnProperty', 'freeze', 'assign', 'create', 'defineProperty',
+    'getOwnPropertyDescriptor', 'getOwnPropertyNames', 'seal', 'is', 'isExtensible',
+    'isSealed', 'isFrozen', 'isInteger', 'isFinite', 'parseInt', 'parseFloat',
+    'toString', 'toFixed', 'toPrecision'
+  ]);
+
+  // Built-in objects with methods we should ignore
+  const builtInObjects = new Set([
+    'Array', 'Object', 'String', 'Number', 'Boolean', 'Date', 'Math',
+    'RegExp', 'JSON', 'Promise', 'Set', 'Map', 'WeakMap', 'WeakSet',
+    'Symbol', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array',
+    'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array',
+    'ArrayBuffer', 'SharedArrayBuffer', 'DataView', 'Error', 'File',
+    'URL', 'URLSearchParams', 'TextEncoder', 'TextDecoder', 'Blob'
+  ]);
+
+  // Map of imported functions to their source modules
+  const importedFunctions = new Map();
+
+  // Process imports to track imported functions
+  if (imports) {
+    imports.forEach(importStmt => {
+      // Extract import name
+      const fromMatch = importStmt.match(/import\s+(?:{([^}]+)}|([^\s{]+))\s+from\s+['"]([^'"]+)['"]/);
+      if (fromMatch) {
+        const namedImports = fromMatch[1];
+        const defaultImport = fromMatch[2];
+        const source = fromMatch[3];
+
+        if (namedImports) {
+          // Handle named imports like { func1, func2 }
+          const funcNames = namedImports.split(',').map(name => {
+            const parts = name.trim().split(/\s+as\s+/);
+            return parts[parts.length - 1].trim(); // Get the local name after 'as' if present
+          });
+
+          funcNames.forEach(funcName => {
+            importedFunctions.set(funcName, source);
+          });
+        }
+
+        if (defaultImport) {
+          // Handle default import
+          importedFunctions.set(defaultImport.trim(), source);
+        }
+      }
+
+      // Check for require syntax
+      const requireMatch = importStmt.match(/(?:const|let|var)\s+(?:{([^}]+)}|([^\s{=]+))\s*=\s*require\(['"]([^'"]+)['"]\)/);
+      if (requireMatch) {
+        const namedImports = requireMatch[1];
+        const defaultImport = requireMatch[2];
+        const source = requireMatch[3];
+
+        if (namedImports) {
+          const funcNames = namedImports.split(',').map(name => name.trim());
+          funcNames.forEach(funcName => {
+            importedFunctions.set(funcName, source);
+          });
+        }
+
+        if (defaultImport) {
+          importedFunctions.set(defaultImport.trim(), source);
+        }
+      }
+    });
+  }
+
+  try {
+    // Walk the function body to find method calls
+    walk(node.body, {
+      CallExpression(callNode) {
+        // Direct function calls like func()
+        if (callNode.callee.type === 'Identifier') {
+          const methodName = callNode.callee.name;
+
+          // Skip console.* methods
+          if (methodName === 'console') {
+            return;
+          }
+
+          // Check if it's a defined method in this file
+          if (definedMethods.has(methodName)) {
+            methodCalls.add(methodName);
+          }
+          // Check if it's an imported function
+          else if (importedFunctions.has(methodName)) {
+            const source = importedFunctions.get(methodName);
+            const moduleName = source.split('/').pop().replace(/\.js$/, '');
+            methodCalls.add(`${moduleName}.${methodName}`);
+          }
+          // We're skipping all other direct method calls since they might be native or globals
+        }
+        // Object method calls like obj.method()
+        else if (callNode.callee.type === 'MemberExpression' &&
+                callNode.callee.property &&
+                callNode.callee.property.type === 'Identifier') {
+
+          const methodName = callNode.callee.property.name;
+
+          // Skip console logging methods
+          if (callNode.callee.object.type === 'Identifier' &&
+              callNode.callee.object.name === 'console') {
+            return;
+          }
+
+          // Skip common utility methods
+          if (commonGenericMethods.has(methodName)) {
+            return;
+          }
+
+          // Try to get the object name for context
+          if (callNode.callee.object) {
+            if (callNode.callee.object.type === 'Identifier') {
+              const objectName = callNode.callee.object.name;
+
+              // Skip built-in objects
+              if (builtInObjects.has(objectName)) {
+                return;
+              }
+
+              // Check if it's an imported module
+              if (importedFunctions.has(objectName)) {
+                const source = importedFunctions.get(objectName);
+                const moduleName = source.split('/').pop().replace(/\.js$/, '');
+                methodCalls.add(`${moduleName}.${methodName}`);
+              } else if (definedMethods.has(objectName)) {
+                // Only include object method calls if the object is defined in this file
+                methodCalls.add(`${objectName}.${methodName}`);
+              }
+              // Skip other object method calls since they might be on native objects or parameters
+            }
+            // Skip complex object expressions
+          }
+        }
+      }
+    });
+  } catch (error) {
+    // Ignore errors in dependency extraction
+  }
+
+  return Array.from(methodCalls);
+}
+
 // Function to extract method signatures from JS file
 function extractMethodSignatures(filePath) {
   try {
@@ -147,6 +318,36 @@ function extractMethodSignatures(filePath) {
     const signatures = [];
     const commentMap = {};
     const imports = []; // Track imports
+    const definedMethods = new Set(); // Track method names defined in this file
+
+    // First pass: collect all defined method names
+    try {
+      const firstPassAst = parse(fileContent, {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      });
+
+      walk(firstPassAst, {
+        FunctionDeclaration(node) {
+          if (node.id && node.id.name) {
+            definedMethods.add(node.id.name);
+          }
+        },
+        MethodDefinition(node) {
+          if (node.key && (node.key.name || node.key.value)) {
+            definedMethods.add(node.key.name || node.key.value);
+          }
+        },
+        VariableDeclarator(node) {
+          if (node.id && node.id.name && node.init &&
+             (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression')) {
+            definedMethods.add(node.id.name);
+          }
+        }
+      });
+    } catch (error) {
+      // Ignore errors in first pass
+    }
 
     // Extract JSDoc comments if they are requested
     if (includeJsDoc) {
@@ -263,33 +464,39 @@ function extractMethodSignatures(filePath) {
           const name = node.id.name;
           const params = extractParams(node.params, fileContent, node);
           const returnType = extractReturnType(fileContent, node);
+          const lineCount = countMethodLines(fileContent, node);
+          const methodCalls = extractMethodCalls(fileContent, node, definedMethods, imports);
 
-          const signature = formatSignature("function", name, params, returnType);
-          const description = includeJsDoc && commentMap[name] ? `\n   ${commentMap[name]}` : '';
+          const signature = formatSignature("function", name, params, returnType, false, lineCount);
+          const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
-          signatures.push(`${signature}${description}`);
+          signatures.push({ signature, description, methodCalls });
         },
         MethodDefinition(node) {
           const methodName = node.key.name || node.key.value;
           const params = extractParams(node.value.params, fileContent, node.value);
           const returnType = extractReturnType(fileContent, node.value);
+          const lineCount = countMethodLines(fileContent, node.value);
+          const methodCalls = extractMethodCalls(fileContent, node.value, definedMethods, imports);
 
           const kind = node.kind === 'method' ? '' : `${node.kind} `;
-          const signature = formatSignature(kind, methodName, params, returnType);
-          const description = includeJsDoc && commentMap[methodName] ? `\n   ${commentMap[methodName]}` : '';
+          const signature = formatSignature(kind, methodName, params, returnType, false, lineCount);
+          const description = includeJsDoc && commentMap[methodName] ? commentMap[methodName] : '';
 
-          signatures.push(`${signature}${description}`);
+          signatures.push({ signature, description, methodCalls });
         },
         VariableDeclarator(node) {
           if (node.init && (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression')) {
             const name = node.id.name;
             const params = extractParams(node.init.params, fileContent, node.init);
             const returnType = extractReturnType(fileContent, node.init);
+            const lineCount = countMethodLines(fileContent, node.init);
+            const methodCalls = extractMethodCalls(fileContent, node.init, definedMethods, imports);
 
-            const signature = formatSignature("const", name, params, returnType, true);
-            const description = includeJsDoc && commentMap[name] ? `\n   ${commentMap[name]}` : '';
+            const signature = formatSignature("const", name, params, returnType, true, lineCount);
+            const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
-            signatures.push(`${signature}${description}`);
+            signatures.push({ signature, description, methodCalls });
           }
         },
         ExportNamedDeclaration(node) {
@@ -298,11 +505,13 @@ function extractMethodSignatures(filePath) {
               const name = node.declaration.id.name;
               const params = extractParams(node.declaration.params, fileContent, node.declaration);
               const returnType = extractReturnType(fileContent, node.declaration);
+              const lineCount = countMethodLines(fileContent, node.declaration);
+              const methodCalls = extractMethodCalls(fileContent, node.declaration, definedMethods, imports);
 
-              const signature = formatSignature("export function", name, params, returnType);
-              const description = includeJsDoc && commentMap[name] ? `\n   ${commentMap[name]}` : '';
+              const signature = formatSignature("export function", name, params, returnType, false, lineCount);
+              const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
-              signatures.push(`${signature}${description}`);
+              signatures.push({ signature, description, methodCalls });
             }
           }
         },
@@ -311,21 +520,25 @@ function extractMethodSignatures(filePath) {
             const name = node.declaration.id ? node.declaration.id.name : 'default';
             const params = extractParams(node.declaration.params, fileContent, node.declaration);
             const returnType = extractReturnType(fileContent, node.declaration);
+            const lineCount = countMethodLines(fileContent, node.declaration);
+            const methodCalls = extractMethodCalls(fileContent, node.declaration, definedMethods, imports);
 
-            const signature = formatSignature("export default function", name, params, returnType);
-            const description = includeJsDoc && commentMap[name] ? `\n   ${commentMap[name]}` : '';
+            const signature = formatSignature("export default function", name, params, returnType, false, lineCount);
+            const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
-            signatures.push(`${signature}${description}`);
+            signatures.push({ signature, description, methodCalls });
           } else if (node.declaration.type === 'ArrowFunctionExpression') {
             const params = extractParams(node.declaration.params, fileContent, node.declaration);
             const returnType = extractReturnType(fileContent, node.declaration);
+            const lineCount = countMethodLines(fileContent, node.declaration);
+            const methodCalls = extractMethodCalls(fileContent, node.declaration, definedMethods, imports);
 
-            const signature = formatSignature("export default", "", params, returnType, true);
-            signatures.push(signature);
+            const signature = formatSignature("export default", "", params, returnType, true, lineCount);
+            signatures.push({ signature, description: '', methodCalls });
           } else if (node.declaration.type === 'Identifier') {
-            signatures.push(`export default ${node.declaration.name}`);
+            signatures.push({ signature: `export default ${node.declaration.name}`, description: '', methodCalls: [] });
           } else {
-            signatures.push(`export default ${node.declaration.type}`);
+            signatures.push({ signature: `export default ${node.declaration.type}`, description: '', methodCalls: [] });
           }
         }
       });
@@ -333,13 +546,13 @@ function extractMethodSignatures(filePath) {
       return { signatures, imports };
     } catch (parseError) {
       return {
-        signatures: [`[Unable to parse JavaScript: ${parseError.message}]`],
+        signatures: [{ signature: `[Unable to parse JavaScript: ${parseError.message}]`, description: '', methodCalls: [] }],
         imports: []
       };
     }
   } catch (error) {
     return {
-      signatures: [`[Error reading file: ${error.message}]`],
+      signatures: [{ signature: `[Error reading file: ${error.message}]`, description: '', methodCalls: [] }],
       imports: []
     };
   }
@@ -458,12 +671,21 @@ function extractParams(params, fileContent, node) {
 }
 
 // Function to format a method signature
-function formatSignature(prefix, name, params, returnType, isArrow = false) {
+function formatSignature(prefix, name, params, returnType, isArrow = false, lineCount = 0, methodCalls = []) {
+  // Base signature
+  let signature;
   if (isArrow) {
-    return `${prefix} ${name} = (${params}) => {...}${returnType ? ` : ${returnType}` : ''}`;
+    signature = `${prefix} ${name} = (${params}) => {...}${returnType ? ` : ${returnType}` : ''}`;
   } else {
-    return `${prefix} ${name}(${params})${returnType ? `: ${returnType}` : ''}`;
+    signature = `${prefix} ${name}(${params})${returnType ? `: ${returnType}` : ''}`;
   }
+
+  // Add line count
+  if (lineCount > 0) {
+    signature += ` [${lineCount} lines]`;
+  }
+
+  return signature;
 }
 
 // Function to analyze file and extract information
@@ -516,9 +738,43 @@ function analyzeFile(filePath, relativePath) {
 
     // Add method signatures
     if (signatures.length > 0) {
+      // De-duplicate functions that are both declared and exported
+      const uniqueSignatures = [];
+      const seenFunctions = new Set();
+
+      // First pass: collect function names and identify duplicates
+      for (const sig of signatures) {
+        const funcNameMatch = sig.signature.match(/(?:function|export function) (\w+)/);
+        if (funcNameMatch) {
+          const funcName = funcNameMatch[1];
+
+          // If we've seen this function before, skip it
+          if (seenFunctions.has(funcName)) {
+            continue;
+          }
+
+          seenFunctions.add(funcName);
+          uniqueSignatures.push(sig);
+        } else {
+          // For non-function or other special cases, keep them
+          uniqueSignatures.push(sig);
+        }
+      }
+
       fileInfo += 'Methods:\n';
-      signatures.forEach(sig => {
-        fileInfo += `- ${sig}\n`;
+      uniqueSignatures.forEach(({ signature, description, methodCalls }) => {
+        // Add the base signature
+        fileInfo += `- ${signature}\n`;
+
+        // Add description if present
+        if (description) {
+          fileInfo += `  - Description: ${description}\n`;
+        }
+
+        // Add method calls if present
+        if (methodCalls && methodCalls.length > 0) {
+          fileInfo += `  - Calls: ${methodCalls.join(', ')}\n`;
+        }
       });
     } else {
       fileInfo += '(No methods found)\n';
