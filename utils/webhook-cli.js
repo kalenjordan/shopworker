@@ -2,10 +2,6 @@ import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { initShopify } from './shopify.js';
 import { getAvailableJobDirs, loadAndValidateWebhookConfigs } from './cli-helpers.js';
 import {
-  COLUMN_WIDTHS,
-  cropAndPad,
-  formatStatusColumn,
-  applyColorIfDisabled,
   displayJobsTable,
   sortJobDisplayInfos,
   displayIncludeFieldsInfo,
@@ -16,8 +12,6 @@ import WEBHOOK_CREATE_MUTATION from '../graphql/webhookSubscriptionCreate.js';
 import WEBHOOK_DELETE_MUTATION from '../graphql/webhookSubscriptionDelete.js';
 import GET_WEBHOOKS_QUERY from '../graphql/getWebhooks.js';
 import chalk from 'chalk';
-import path from 'path';
-import fs from 'fs';
 
 // ===================================================================
 // Webhook Utility Functions
