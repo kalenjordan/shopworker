@@ -13,15 +13,11 @@ const COLUMN_MAPPINGS = [
   { key: "title", label: "Title" },
   { key: "vendor", label: "Vendor" },
   { key: "productType", label: "Product Type" },
-  { key: "sku", label: "SKU" },
-  { key: "price", label: "Price" },
-  { key: "inventoryQuantity", label: "Inventory" },
   { key: "status", label: "Status" },
   { key: "tags", label: "Tags" },
   { key: "handle", label: "Handle" },
   { key: "updatedAt", label: "Updated At" },
-  { key: "imageUrl", label: "Image URL" },
-  { key: "variantTitle", label: "Variant Title" }
+  { key: "imageUrl", label: "Image URL" }
 ];
 
 // -----------------------------------------------------------------------------
@@ -67,7 +63,7 @@ function createRangeString(sheetName, startRow, endRow, columnCount) {
 /**
  * Extract and prepare product data for the Google Sheet
  * @param {Object} product - Shopify product data
- * @returns {Object} Structured product data (without variants)
+ * @returns {Object} Structured product data
  */
 function extractProductData(product) {
   // Get the first image URL if available
@@ -93,60 +89,26 @@ function extractProductData(product) {
   };
 }
 
-/**
- * Extract variants from product
- * @param {Object} product - Shopify product data
- * @returns {Array} Array of variant objects
- */
-function extractVariants(product) {
-  const variants = [];
-
-  if (product.variants?.edges) {
-    product.variants.edges.forEach((edge) => {
-      if (edge.node) {
-        variants.push({
-          sku: edge.node.sku || "",
-          price: edge.node.price || "",
-          inventoryQuantity: edge.node.inventoryQuantity || 0,
-          variantTitle: edge.node.title || ""
-        });
-      }
-    });
-  }
-
-  return variants;
-}
-
 // -----------------------------------------------------------------------------
 // SHEET DATA FORMATTING
 // -----------------------------------------------------------------------------
 
 /**
- * Create rows for Google Sheet from product data and variants
+ * Create rows for Google Sheet from product data
  * @param {Object} productData - Structured product data
- * @param {Array} variants - Array of variants
  * @param {Array} headers - Headers from the Google Sheet
- * @returns {Array} Array of rows for the sheet (one per variant)
+ * @returns {Array} Array with a single row for the sheet
  */
-function createSheetRows(productData, variants, headers) {
+function createSheetRows(productData, headers) {
   // Create a mapping from header labels to data keys
   const headerToKeyMap = {};
   COLUMN_MAPPINGS.forEach((mapping) => {
     headerToKeyMap[mapping.label] = mapping.key;
   });
 
-  // If there are no variants, return a single row with the product data
-  if (variants.length === 0) {
-    const row = mapDataToHeaders(productData, headers, headerToKeyMap);
-    return [row];
-  }
-
-  // Otherwise, create a row for each variant
-  return variants.map((variant) => {
-    // Create a merged data object with product data and variant data
-    const rowData = { ...productData, ...variant };
-    return mapDataToHeaders(rowData, headers, headerToKeyMap);
-  });
+  // Create a single row with the product data
+  const row = mapDataToHeaders(productData, headers, headerToKeyMap);
+  return [row];
 }
 
 /**
@@ -228,25 +190,6 @@ async function updateProductRows(sheetsClient, spreadsheetId, sheetName, newRows
 }
 
 /**
- * Log information about excess rows that should be deleted
- * @param {Array} rowIndices - Indices of all product rows
- * @param {number} rowsUpdated - Number of rows that were updated
- */
-function logExcessRows(rowIndices, rowsUpdated) {
-  // If all rows were updated, no excess rows to delete
-  if (rowIndices.length <= rowsUpdated) {
-    return;
-  }
-
-  // Get the indices of rows that should be deleted (those that weren't updated)
-  const rowsToDelete = rowIndices.slice(rowsUpdated);
-
-  // For now, just log this - actual deletion requires batch update API
-  console.log(`Note: ${rowsToDelete.length} excess rows detected at indices: ${rowsToDelete.map(i => i + 1).join(', ')}`);
-  console.log("These would need to be deleted manually or through an extended API implementation");
-}
-
-/**
  * Append product rows to the sheet
  * @param {Object} sheetsClient - Google Sheets client
  * @param {string} spreadsheetId - Spreadsheet ID
@@ -322,8 +265,7 @@ export async function process({ record: productData, shopify, env, shopConfig, j
 
     // Extract and transform product data
     const productDetails = extractProductData(product);
-    const variants = extractVariants(product);
-    const newRows = createSheetRows(productDetails, variants, headers);
+    const newRows = createSheetRows(productDetails, headers);
 
     // Find any existing rows for this product
     const { existingRows, rowIndices, idColumnIndex } = await findExistingProductRows(
@@ -427,51 +369,39 @@ async function updateProductInSheet(
   productId
 ) {
   if (rowIndices.length > 0) {
-    // Product exists, update its rows
-    console.log(`Updating existing product with ID ${productId} at rows: ${rowIndices.map(i => i + 1).join(', ')}`);
+    // Product exists, update its row
+    console.log(`Updating existing product with ID ${productId} at row: ${rowIndices[0] + 1}`);
 
-    // Update existing rows
+    // Update the first existing row
     const { updateResult, rowsUpdated } = await updateProductRows(
       sheetsClient,
       spreadsheetId,
       sheetName,
-      newRows,
-      rowIndices,
+      [newRows[0]], // Only use the first row
+      [rowIndices[0]], // Only update the first row found
       columnCount
     );
 
-    console.log(`Updated ${rowsUpdated} rows for product ${productId}`);
+    console.log(`Updated row for product ${productId}`);
 
-    // Log information about rows that should be deleted (if product now has fewer variants)
-    if (existingRows.length > newRows.length) {
-      logExcessRows(rowIndices, rowsUpdated);
-    }
-
-    // Handle case where product now has more variants than before
-    if (newRows.length > existingRows.length) {
-      const additionalRows = newRows.slice(existingRows.length);
-      await appendProductRows(
-        sheetsClient,
-        spreadsheetId,
-        sheetName,
-        additionalRows,
-        columnCount
-      );
-
-      console.log(`Appended ${additionalRows.length} additional variant rows for product ${productId}`);
+    // If there are more rows for this product, log that they should be deleted
+    if (rowIndices.length > 1) {
+      const excessRowIndices = rowIndices.slice(1);
+      console.log(`Note: ${excessRowIndices.length} excess rows detected at indices: ${excessRowIndices.map(i => i + 1).join(', ')}`);
+      console.log("These would need to be deleted manually or through an extended API implementation");
     }
   } else {
-    // Product doesn't exist, append new rows
-    console.log(`Creating new entries for product ${productId}`);
+    // Product doesn't exist, append new row
+    console.log(`Creating new entry for product ${productId}`);
 
     await appendProductRows(
       sheetsClient,
       spreadsheetId,
       sheetName,
-      newRows,
+      newRows, // This is already a single row array
       columnCount
     );
 
-    console.log(`Added ${newRows.length} new rows for product ${productId}`);
+    console.log(`Added new row for product ${productId}`);
   }
 }
