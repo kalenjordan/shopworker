@@ -80,6 +80,35 @@ function parseShopworkerConfig(env) {
 }
 
 /**
+ * Load secrets from environment variables
+ * Any environment variable starting with SECRET_ will be added to the secrets object
+ * with the key being the part after SECRET_
+ */
+function loadSecretsFromEnv(env) {
+  const secrets = {};
+
+  // Look for environment variables with keys starting with SECRET_
+  for (const key in env) {
+    if (key.startsWith('SECRET_')) {
+      const secretKey = key.substring(7); // Remove 'SECRET_' prefix
+
+      try {
+        // Try to parse as JSON, fall back to string if it fails
+        try {
+          secrets[secretKey] = JSON.parse(env[key]);
+        } catch (e) {
+          secrets[secretKey] = env[key];
+        }
+      } catch (error) {
+        console.error(`Error parsing secret ${key}:`, error);
+      }
+    }
+  }
+
+  return secrets;
+}
+
+/**
  * Find shop configuration for the given domain
  */
 function findShopConfig(shopworkerConfig, shopDomain) {
@@ -127,9 +156,8 @@ async function processWebhook(jobModule, bodyData, shopify, env, shopConfig, job
   // Load job config from the jobPath
   const jobConfig = await loadJobConfig(jobPath);
 
-  // In the future, this will be implementation to load secrets from env vars
-  // For now, just providing an empty object to maintain compatibility with CLI
-  const secrets = {};
+  // Load secrets from environment variables
+  const secrets = loadSecretsFromEnv(env);
 
   await jobModule.process({
     record: bodyData,
