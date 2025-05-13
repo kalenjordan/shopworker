@@ -11,21 +11,28 @@ import * as SheetsHelpers from "../sheets-helpers.js";
  * @param {Object} options.env - Environment variables
  * @param {Object} options.shopConfig - Shop-specific configuration
  * @param {Object} options.jobConfig - Job-specific configuration
+ * @param {Object} options.secrets - Secrets loaded from .secrets directory
  */
-export async function process({ shopify, env, shopConfig, jobConfig }) {
+export async function process({ shopify, env, shopConfig, jobConfig, secrets }) {
   // Validate required configuration
-  GoogleSheets.validateSheetCredentials(shopConfig);
+  GoogleSheets.validateSheetCredentials(secrets);
 
   const spreadsheetId = jobConfig.spreadsheet_id;
   if (!spreadsheetId) {
     throw new Error("Missing required spreadsheet_id in job configuration");
   }
 
-  const ordersPerPage = 100;
+  // Use credentials from secrets if available, otherwise fall back to shopConfig
+  const sheetsCredentials = secrets.GOOGLE_SHEETS_CREDENTIALS;
+  if (!sheetsCredentials) {
+    throw new Error("Missing required GOOGLE_SHEETS_CREDENTIALS in secrets");
+  }
+
+  const ordersPerPage = jobConfig.batch_size || 3;
   const orderQuery = ""; // Fetch all recent orders for SKU matching
 
   // Initialize Google Sheets setup
-  const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
+  const sheetsClient = await GoogleSheets.createSheetsClient(sheetsCredentials);
 
   // Get spreadsheet information and first sheet - using the universal function
   const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);

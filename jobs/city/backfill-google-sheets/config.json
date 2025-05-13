@@ -6,6 +6,7 @@
   "test": {
     "skip_query": true
   },
+  "batch_size": 3,
   "spreadsheet_id": "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw",
   "spreadsheet_id_live": "1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY"
 }

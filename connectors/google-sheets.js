@@ -5,13 +5,14 @@ const GOOGLE_SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
 /**
- * Validate that Google Sheets credentials exist in the shop configuration
+ * Validate that Google Sheets credentials exist in the shop configuration or secrets
  * @param {Object} shopConfig - Shop configuration object
- * @throws {Error} If Google Sheets credentials are missing from shopConfig
+ * @param {Object} [secrets] - Optional secrets object
+ * @throws {Error} If Google Sheets credentials are missing
  */
-export function validateSheetCredentials(shopConfig) {
-  if (!shopConfig || !shopConfig.google_sheets_credentials) {
-    throw new Error("Missing required google_sheets_credentials configuration in shopConfig");
+export function validateSheetCredentials(secrets) {
+  if (!secrets || !secrets.GOOGLE_SHEETS_CREDENTIALS) {
+    throw new Error("Missing required Google Sheets credentials. Expected in secrets.GOOGLE_SHEETS_CREDENTIALS");
   }
 }
 

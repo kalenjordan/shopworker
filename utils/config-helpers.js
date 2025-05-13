@@ -103,3 +103,48 @@ export function getShopConfigWithSecret(cliDirname, shopName, optionalShopDomain
 
   return { shopConfig, apiSecret, shopDomain };
 }
+
+/**
+ * Load secrets from .secrets directory
+ * @param {string} cliDirname - The directory where cli.js is located
+ * @returns {Object} Object containing secrets with filenames as keys
+ */
+export function loadSecrets(cliDirname) {
+  const secretsDir = path.join(cliDirname, '.secrets');
+  const secrets = {};
+
+  if (!fs.existsSync(secretsDir)) {
+    console.warn('Warning: .secrets directory not found. No secrets will be loaded.');
+    return secrets;
+  }
+
+  // Read all files in the .secrets directory
+  const files = fs.readdirSync(secretsDir);
+  for (const file of files) {
+    const filePath = path.join(secretsDir, file);
+
+    // Skip directories
+    if (fs.statSync(filePath).isDirectory()) {
+      continue;
+    }
+
+    try {
+      // Read the file content
+      const content = fs.readFileSync(filePath, 'utf8');
+
+      // Get key by removing the file extension
+      const key = path.parse(file).name;
+
+      // Try to parse as JSON, if it fails, use the raw content
+      try {
+        secrets[key] = JSON.parse(content);
+      } catch (jsonError) {
+        secrets[key] = content;
+      }
+    } catch (error) {
+      console.warn(`Warning: Could not read secret file ${file}: ${error.message}`);
+    }
+  }
+
+  return secrets;
+}

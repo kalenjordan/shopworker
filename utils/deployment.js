@@ -92,6 +92,24 @@ export function updateShopworkerFile(cliDirname, currentCommit) {
 }
 
 /**
+ * Executes a git push to the remote repository
+ * @returns {Promise<boolean>} Whether the git push was successful
+ */
+export async function executeGitPush() {
+  try {
+    const { execSync } = await import('child_process');
+    console.log('Pushing changes to remote Git repository...');
+    execSync('git push', { stdio: 'inherit', encoding: 'utf8' });
+    console.log('Successfully pushed to remote Git repository.');
+    return true;
+  } catch (error) {
+    console.error('Error pushing to Git repository:', error.message);
+    console.warn('Cloudflare deployment was successful, but Git push failed.');
+    return false;
+  }
+}
+
+/**
  * Handle Cloudflare deployment logic
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @returns {Promise<boolean>} Whether the deployment was successful
@@ -116,6 +134,9 @@ export async function handleCloudflareDeployment(cliDirname) {
 
     if (deploymentSuccess) {
       updateShopworkerFile(cliDirname, currentCommit);
+
+      // Execute git push after successful deployment
+      await executeGitPush();
     }
 
     return deploymentSuccess;

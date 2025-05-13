@@ -127,12 +127,17 @@ async function processWebhook(jobModule, bodyData, shopify, env, shopConfig, job
   // Load job config from the jobPath
   const jobConfig = await loadJobConfig(jobPath);
 
+  // In the future, this will be implementation to load secrets from env vars
+  // For now, just providing an empty object to maintain compatibility with CLI
+  const secrets = {};
+
   await jobModule.process({
     record: bodyData,
     shopify,
     env,
     shopConfig,
-    jobConfig
+    jobConfig,
+    secrets
   });
 
   console.log('Webhook processed successfully');

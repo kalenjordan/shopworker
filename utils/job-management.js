@@ -4,7 +4,7 @@ import { pathToFileURL } from 'url';
 import chalk from 'chalk';
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { initShopify } from './shopify.js';
-import { getShopConfig } from './config-helpers.js';
+import { getShopConfig, loadSecrets } from './config-helpers.js';
 
 /**
  * Get all available job directories
@@ -233,6 +233,9 @@ export async function runJobTest(cliDirname, jobPath, queryParam, shopParam) {
   // Get shop configuration from .shopworker.json
   const shopConfig = getShopConfig(cliDirname, jobConfig.shop);
 
+  // Load secrets from .secrets directory
+  const secrets = loadSecrets(cliDirname);
+
   // Log shop domain in purple using chalk
   console.log(chalk.magenta(`Processing for shop: ${shopConfig.shopify_domain}`));
 
@@ -240,13 +243,14 @@ export async function runJobTest(cliDirname, jobPath, queryParam, shopParam) {
   const jobModulePath = pathToFileURL(path.resolve(cliDirname, `jobs/${jobPath}/job.js`)).href;
   const jobModule = await import(jobModulePath);
 
-  // Pass process.env as env and shopConfig as shopConfig for consistency with worker environment
+  // Pass process.env as env, shopConfig as shopConfig, and secrets for consistency with worker environment
   await jobModule.process({
     record,
     shopify: shopify,
     env: process.env,   // Pass Node.js process.env as env
     shopConfig: shopConfig,  // Pass shopConfig separately
-    jobConfig: jobConfig  // Pass the job config to the process function
+    jobConfig: jobConfig,  // Pass the job config to the process function
+    secrets: secrets    // Pass secrets to the process function
   });
   console.log('Processing complete!');
 }
