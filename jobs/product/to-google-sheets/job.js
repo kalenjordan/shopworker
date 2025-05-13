@@ -237,13 +237,13 @@ async function appendProductRows(sheetsClient, spreadsheetId, sheetName, rows, c
  * @param {Object} options.shopConfig - Shop-specific configuration
  * @param {Object} options.jobConfig - Job-specific configuration from config.json
  */
-export async function process({ record: productData, shopify, env, shopConfig, jobConfig }) {
+export async function process({ record: productData, shopify, env, jobConfig, secrets }) {
   console.log("Product webhook payload received");
   logToWorker(env, "Webhook payload: " + JSON.stringify(productData));
 
   try {
     // Validate required data and configuration
-    GoogleSheets.validateSheetCredentials(shopConfig);
+    GoogleSheets.validateSheetCredentials(secrets);
 
     if (!productData.id) {
       throw new Error("No product ID provided in webhook data");
@@ -256,7 +256,7 @@ export async function process({ record: productData, shopify, env, shopConfig, j
     }
 
     // Create Google Sheets client
-    const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
+    const sheetsClient = await GoogleSheets.createSheetsClient(secrets.GOOGLE_SHEETS_CREDENTIALS);
 
     // Get spreadsheet and sheet information using the standardized function
     const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
