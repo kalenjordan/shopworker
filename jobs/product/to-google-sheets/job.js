@@ -1,6 +1,7 @@
 import GetProductById from "../../../graphql/GetProductById.js";
 import * as GoogleSheets from "../../../connectors/google-sheets.js";
 import chalk from "chalk";
+import { logToCli, logToWorker } from "../../../utils/log.js";
 
 // -----------------------------------------------------------------------------
 // CONFIGURATION
@@ -170,43 +171,6 @@ function mapDataToHeaders(data, headers, headerMap) {
 // -----------------------------------------------------------------------------
 
 /**
- * Initialize sheet with headers if needed
- * @param {Object} sheetsClient - Google Sheets client
- * @param {string} spreadsheetId - Google Sheets spreadsheet ID
- * @param {string} sheetName - Google Sheets sheet name
- * @returns {Promise<Array>} Array of headers
- */
-async function initializeSheetHeaders(sheetsClient, spreadsheetId, sheetName) {
-  try {
-    // Try to get existing headers
-    const headerData = await GoogleSheets.getSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1:Z1`);
-
-    // If headers exist, return them
-    if (headerData?.length && headerData[0]?.length) {
-      return headerData[0];
-    }
-
-    // Otherwise, initialize the sheet with our headers
-    const headers = COLUMN_MAPPINGS.map(column => column.label);
-    const headerRange = createRangeString(sheetName, 1, 1, headers.length);
-
-    await GoogleSheets.writeSheetData(
-      sheetsClient,
-      spreadsheetId,
-      headerRange,
-      [headers],
-      "RAW"
-    );
-
-    console.log("Initialized sheet with headers:", headers.join(", "));
-    return headers;
-  } catch (error) {
-    console.error("Error initializing sheet headers:", error);
-    throw error;
-  }
-}
-
-/**
  * Find rows containing a specific product ID
  * @param {Array} sheetData - The full sheet data
  * @param {string} productId - Product ID to search for
@@ -315,32 +279,51 @@ async function appendProductRows(sheetsClient, spreadsheetId, sheetName, rows, c
  * @param {Object} options.record - Shopify product data from webhook
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.env - Environment variables
+ * @param {Object} options.shopConfig - Shop-specific configuration
+ * @param {Object} options.jobConfig - Job-specific configuration from config.json
  */
-export async function process({ record: productData, shopify, env }) {
+export async function process({ record: productData, shopify, env, shopConfig, jobConfig }) {
   console.log("Product webhook payload received");
+  logToWorker(env, "Webhook payload: " + JSON.stringify(productData));
 
   try {
-    // Validate required data and environment
-    validateEnvironment(env);
-    validateProductData(productData);
+    // Validate required data and configuration
+    GoogleSheets.validateSheetCredentials(shopConfig);
 
-    // Use the provided Google Sheet ID
-    const spreadsheetId = "1VD-OtBr0l_V2Hoz7qSRsOqsbaC1Fima2Kn9q6gYvhY4";
+    if (!productData.id) {
+      throw new Error("No product ID provided in webhook data");
+    }
+
+    // Get spreadsheet ID from job config
+    const spreadsheetId = jobConfig.spreadsheet_id;
+    if (!spreadsheetId) {
+      throw new Error("No spreadsheet ID provided in job config.json");
+    }
 
     // Create Google Sheets client
-    const sheetsClient = await GoogleSheets.createSheetsClient(env.google_sheets_credentials);
+    const sheetsClient = await GoogleSheets.createSheetsClient(shopConfig.google_sheets_credentials);
 
-    // Get spreadsheet and sheet information
-    const { sheetName, sheetId } = await getSheetInformation(sheetsClient, spreadsheetId);
+    // Get spreadsheet and sheet information using the standardized function
+    const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
+
+    console.log(chalk.blue(`Accessing spreadsheet: "${spreadsheetTitle}"`));
+    console.log(`Using sheet: "${sheetName}"`);
 
     // Fetch complete product data from Shopify
     const product = await fetchProductData(shopify, productData.id);
 
-    // Initialize or get sheet headers
-    const headers = await initializeSheetHeaders(sheetsClient, spreadsheetId, sheetName);
+    // Verify sheet headers and get header map
+    const { headers, headerMap } = await GoogleSheets.validateSheetHeaders(
+      sheetsClient,
+      spreadsheetId,
+      sheetName,
+      COLUMN_MAPPINGS
+    );
 
     // Extract and transform product data
-    const { productDetails, variants, newRows } = prepareProductData(product, headers);
+    const productDetails = extractProductData(product);
+    const variants = extractVariants(product);
+    const newRows = createSheetRows(productDetails, variants, headers);
 
     // Find any existing rows for this product
     const { existingRows, rowIndices, idColumnIndex } = await findExistingProductRows(
@@ -356,7 +339,7 @@ export async function process({ record: productData, shopify, env }) {
       sheetsClient,
       spreadsheetId,
       sheetName,
-      sheetId,
+      null, // No longer using sheetId
       newRows,
       rowIndices,
       existingRows,
@@ -364,7 +347,7 @@ export async function process({ record: productData, shopify, env }) {
       productDetails.id
     );
 
-    console.log("Product data successfully processed");
+    logToCli(env, `Product ${productDetails.title} (ID: ${productDetails.id}) successfully processed`);
   } catch (error) {
     console.error(`Error processing product data: ${error.message}`);
     throw error;
@@ -374,49 +357,6 @@ export async function process({ record: productData, shopify, env }) {
 // -----------------------------------------------------------------------------
 // PROCESS HELPER FUNCTIONS
 // -----------------------------------------------------------------------------
-
-/**
- * Validate required environment variables
- * @param {Object} env - Environment variables
- */
-function validateEnvironment(env) {
-  if (!env.google_sheets_credentials) {
-    throw new Error("Missing required env.google_sheets_credentials configuration");
-  }
-}
-
-/**
- * Validate product data
- * @param {Object} productData - Product data from webhook
- */
-function validateProductData(productData) {
-  if (!productData.id) {
-    throw new Error("No product ID provided in webhook data");
-  }
-}
-
-/**
- * Get sheet information
- * @param {Object} sheetsClient - Google Sheets client
- * @param {string} spreadsheetId - Spreadsheet ID
- * @returns {Promise<Object>} Sheet information
- */
-async function getSheetInformation(sheetsClient, spreadsheetId) {
-  // Get spreadsheet title and available sheets
-  const spreadsheetTitle = await GoogleSheets.getSpreadsheetTitle(sheetsClient, spreadsheetId);
-  console.log(chalk.blue(`Accessing spreadsheet: "${spreadsheetTitle}"`));
-
-  const sheets = await GoogleSheets.getSheets(sheetsClient, spreadsheetId);
-  if (sheets.length === 0) {
-    throw new Error(`No sheets found in spreadsheet "${spreadsheetTitle}"`);
-  }
-
-  const sheetName = sheets[0].title;
-  const sheetId = sheets[0].sheetId;
-  console.log(`Using sheet: "${sheetName}"`);
-
-  return { sheetName, sheetId };
-}
 
 /**
  * Fetch complete product data from Shopify
@@ -434,23 +374,6 @@ async function fetchProductData(shopify, productId) {
   }
 
   return product;
-}
-
-/**
- * Prepare product data for the sheet
- * @param {Object} product - Shopify product
- * @param {Array} headers - Sheet headers
- * @returns {Object} Prepared product data
- */
-function prepareProductData(product, headers) {
-  // Extract core product data and variants
-  const productDetails = extractProductData(product);
-  const variants = extractVariants(product);
-
-  // Create formatted rows for the sheet
-  const newRows = createSheetRows(productDetails, variants, headers);
-
-  return { productDetails, variants, newRows };
 }
 
 /**
@@ -484,7 +407,7 @@ async function findExistingProductRows(sheetsClient, spreadsheetId, sheetName, p
  * @param {Object} sheetsClient - Google Sheets client
  * @param {string} spreadsheetId - Spreadsheet ID
  * @param {string} sheetName - Sheet name
- * @param {string} sheetId - Sheet ID
+ * @param {string} sheetId - Sheet ID (unused)
  * @param {Array} newRows - New rows to write
  * @param {Array} rowIndices - Indices of existing rows
  * @param {Array} existingRows - Existing row data
@@ -496,7 +419,7 @@ async function updateProductInSheet(
   sheetsClient,
   spreadsheetId,
   sheetName,
-  sheetId,
+  sheetId, // This parameter is kept for backwards compatibility but no longer used
   newRows,
   rowIndices,
   existingRows,

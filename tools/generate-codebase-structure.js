@@ -8,6 +8,7 @@
  * Options:
  *   --output, -o  Output file path (default: docs/codebase-structure.md)
  *   --depth, -d   Maximum directory depth to scan (default: unlimited)
+ *   --dir, -p     Directory to scan (default: current project root)
  *   --help, -h    Show help
  */
 
@@ -24,10 +25,12 @@ const rootDir = path.resolve(__dirname, '..');
 
 // Parse command-line arguments
 const args = process.argv.slice(2);
-let outputFile = path.join(rootDir, 'docs', 'codebase-structure.md');
+let outputFile = 'docs/codebase-structure.md'; // Default relative path
 let maxDepth = Infinity;
 let showHelp = false;
 let includeJsDoc = true; // Default to including JSDoc
+let customRootDir = rootDir; // Default to the project's root directory
+let isCustomDir = false; // Flag to track if a custom directory was specified
 
 // Create docs directory if it doesn't exist
 if (!fs.existsSync(path.join(rootDir, 'docs'))) {
@@ -44,15 +47,7 @@ for (let i = 0; i < args.length; i++) {
   } else if (arg === '--output' || arg === '-o') {
     if (i + 1 < args.length) {
       outputFile = args[++i];
-      // If path is not absolute, make it relative to root dir
-      if (!path.isAbsolute(outputFile)) {
-        outputFile = path.join(rootDir, outputFile);
-      }
-      // Ensure parent directory exists
-      const outputDir = path.dirname(outputFile);
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
+      // Keep as relative path for now, will resolve after determining root dir
     }
   } else if (arg === '--depth' || arg === '-d') {
     if (i + 1 < args.length) {
@@ -62,9 +57,32 @@ for (let i = 0; i < args.length; i++) {
         process.exit(1);
       }
     }
+  } else if (arg === '--dir' || arg === '-p') {
+    if (i + 1 < args.length) {
+      customRootDir = args[++i];
+      isCustomDir = true;
+      // If path is not absolute, make it relative to current directory
+      if (!path.isAbsolute(customRootDir)) {
+        customRootDir = path.resolve(process.cwd(), customRootDir);
+      }
+      if (!fs.existsSync(customRootDir)) {
+        console.error(`Error: Directory ${customRootDir} does not exist`);
+        process.exit(1);
+      }
+    }
   } else if (arg === '--no-jsdoc') {
     includeJsDoc = false;
   }
+}
+
+// Resolve output file path relative to the directory being scanned
+if (!path.isAbsolute(outputFile)) {
+  outputFile = path.join(customRootDir, outputFile);
+}
+// Ensure parent directory exists
+const outputDir = path.dirname(outputFile);
+if (!fs.existsSync(outputDir)) {
+  fs.mkdirSync(outputDir, { recursive: true });
 }
 
 // Show help if requested
@@ -73,8 +91,9 @@ if (showHelp) {
 Usage: node tools/generate-codebase-structure.js [options]
 
 Options:
-  --output, -o    Output file path (default: docs/codebase-structure.md)
+  --output, -o    Output file path (default: docs/codebase-structure.md in the scanned directory)
   --depth, -d     Maximum directory depth to scan (default: unlimited)
+  --dir, -p       Directory to scan (default: current project root)
   --no-jsdoc      Exclude JSDoc descriptions from output
   --help, -h      Show help
 `);
@@ -120,7 +139,7 @@ const INCLUDE_EXTENSIONS = [
 ];
 
 // Structure content
-let content = `# Shopworker Codebase Structure\nGenerated: ${new Date().toISOString()}\n\n`;
+let content = `# Codebase Structure\nGenerated: ${new Date().toISOString()}\n\n`;
 
 // Function to check if a path should be excluded
 function shouldExcludePath(relativePath) {
@@ -845,6 +864,7 @@ function scanDirectory(dirPath, level = 0, relativePath = '') {
 // Main execution
 try {
   console.log(`Generating codebase structure...`);
+  console.log(`Directory to scan: ${customRootDir}`);
   console.log(`Output file: ${outputFile}`);
   console.log(`Maximum depth: ${maxDepth === Infinity ? 'unlimited' : maxDepth}`);
   console.log(`Include JSDoc: ${includeJsDoc ? 'yes' : 'no'}`);
@@ -855,7 +875,22 @@ try {
     console.log(`Excluded files: ${EXCLUDE_FILES.join(', ')}`);
   }
 
-  scanDirectory(rootDir);
+  // Add directory name to content if using a custom directory
+  if (isCustomDir) {
+    const dirName = path.basename(customRootDir);
+    content += `## Root Directory: ${dirName}\n\n`;
+  }
+
+  // Set up EXCLUDE_PATHS to be relative to the custom directory
+  // This way paths like 'docs' will be excluded relative to the custom directory
+  if (isCustomDir && customRootDir !== rootDir) {
+    // If we're using a custom directory, we need to adjust the exclude paths
+    // to be correct for that directory structure
+    console.log(`Note: Using standard exclusion paths for custom directory.`);
+    console.log(`     You may need to adjust EXCLUDE_PATHS in the script if needed.`);
+  }
+
+  scanDirectory(customRootDir);
 
   // Write output
   fs.writeFileSync(outputFile, content, 'utf8');
