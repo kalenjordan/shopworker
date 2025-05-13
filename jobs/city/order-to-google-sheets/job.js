@@ -14,7 +14,7 @@ import * as SheetsHelpers from "../sheets-helpers.js";
  * @param {Object} options.jobConfig - Job-specific configuration from config.json
  * @param {Object} options.secrets - Secrets loaded from files or environment
  */
-export async function process({ record: orderData, shopify, env, jobConfig }) {
+export async function process({ record: orderData, shopify, env, jobConfig, secrets }) {
   logToWorker(env, "Webhook payload: " + JSON.stringify(orderData));
 
   // Validate required configuration
