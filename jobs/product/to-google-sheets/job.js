@@ -25,13 +25,25 @@ const COLUMN_MAPPINGS = [
 // -----------------------------------------------------------------------------
 
 /**
- * Format date as YYYY-MM-DD
+ * Format date as date and time string in Central Time Zone
  * @param {string} isoDate - ISO format date
- * @returns {string} Formatted date
+ * @returns {string} Formatted date and time in Central Time Zone
  */
 function formatDate(isoDate) {
   const date = new Date(isoDate);
-  return date.toISOString().split("T")[0]; // Returns YYYY-MM-DD
+
+  // Format date and time in Central Time Zone using Intl.DateTimeFormat
+  // This is compatible with the Cloudflare Workers environment
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+    timeZone: 'America/Chicago'  // Central Time Zone
+  }).format(date);
 }
 
 /**
