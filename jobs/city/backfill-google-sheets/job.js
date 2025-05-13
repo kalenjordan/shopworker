@@ -13,7 +13,7 @@ import * as SheetsHelpers from "../sheets-helpers.js";
  * @param {Object} options.jobConfig - Job-specific configuration
  * @param {Object} options.secrets - Secrets loaded from .secrets directory
  */
-export async function process({ shopify, env, shopConfig, jobConfig, secrets }) {
+export async function process({ shopify, env, jobConfig, secrets }) {
   // Validate required configuration
   GoogleSheets.validateSheetCredentials(secrets);
 
