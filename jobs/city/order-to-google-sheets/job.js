@@ -14,11 +14,11 @@ import * as SheetsHelpers from "../sheets-helpers.js";
  * @param {Object} options.jobConfig - Job-specific configuration from config.json
  * @param {Object} options.secrets - Secrets loaded from files or environment
  */
-export async function process({ record: orderData, shopify, env, shopConfig, jobConfig, secrets = {} }) {
+export async function process({ record: orderData, shopify, env, jobConfig }) {
   logToWorker(env, "Webhook payload: " + JSON.stringify(orderData));
 
   // Validate required configuration
-  GoogleSheets.validateSheetCredentials(shopConfig, secrets);
+  GoogleSheets.validateSheetCredentials(secrets);
 
   if (!orderData.id) {
     throw new Error("No order ID provided");
@@ -29,11 +29,8 @@ export async function process({ record: orderData, shopify, env, shopConfig, job
     throw new Error("No spreadsheet ID provided in job config.json");
   }
 
-  // Use credentials from secrets if available, otherwise fall back to shopConfig
-  const sheetsCredentials = secrets.GOOGLE_SHEETS_CREDENTIALS || shopConfig.google_sheets_credentials;
-
   // Get spreadsheet information and first sheet - using our new universal function
-  const sheetsClient = await GoogleSheets.createSheetsClient(sheetsCredentials);
+  const sheetsClient = await GoogleSheets.createSheetsClient(secrets.GOOGLE_SHEETS_CREDENTIALS);
   const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
 
   console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
