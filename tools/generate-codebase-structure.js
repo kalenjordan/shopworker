@@ -3,12 +3,14 @@
 /**
  * Script to generate a text file with the directory, file, and method signature structure of the codebase
  *
- * Usage: node tools/generate-codebase-structure.js [options]
+ * Usage: node tools/generate-codebase-structure.js [directory] [options]
+ *
+ * Arguments:
+ *   directory    Directory to scan (default: current project root)
  *
  * Options:
- *   --output, -o  Output file path (default: docs/codebase-structure.md)
+ *   --output, -o  Output file path (default: codebase-structure.md in the scanned directory)
  *   --depth, -d   Maximum directory depth to scan (default: unlimited)
- *   --dir, -p     Directory to scan (default: current project root)
  *   --help, -h    Show help
  */
 
@@ -25,54 +27,61 @@ const rootDir = path.resolve(__dirname, '..');
 
 // Parse command-line arguments
 const args = process.argv.slice(2);
-let outputFile = 'docs/codebase-structure.md'; // Default relative path
+let outputFile = 'codebase-structure.md'; // Default relative path
 let maxDepth = Infinity;
 let showHelp = false;
 let includeJsDoc = true; // Default to including JSDoc
 let customRootDir = rootDir; // Default to the project's root directory
 let isCustomDir = false; // Flag to track if a custom directory was specified
+let positionalArgs = [];
 
-// Create docs directory if it doesn't exist
-if (!fs.existsSync(path.join(rootDir, 'docs'))) {
-  fs.mkdirSync(path.join(rootDir, 'docs'), { recursive: true });
-}
-
-// Parse args
+// Process flags and collect positional arguments
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
 
-  if (arg === '--help' || arg === '-h') {
-    showHelp = true;
-    break;
-  } else if (arg === '--output' || arg === '-o') {
-    if (i + 1 < args.length) {
-      outputFile = args[++i];
-      // Keep as relative path for now, will resolve after determining root dir
-    }
-  } else if (arg === '--depth' || arg === '-d') {
-    if (i + 1 < args.length) {
-      maxDepth = parseInt(args[++i], 10);
-      if (isNaN(maxDepth)) {
-        console.error('Error: Depth must be a number');
-        process.exit(1);
+  if (arg.startsWith('--') || arg.startsWith('-')) {
+    // Handle flags
+    if (arg === '--help' || arg === '-h') {
+      showHelp = true;
+      break;
+    } else if (arg === '--output' || arg === '-o') {
+      if (i + 1 < args.length) {
+        outputFile = args[++i];
       }
-    }
-  } else if (arg === '--dir' || arg === '-p') {
-    if (i + 1 < args.length) {
-      customRootDir = args[++i];
-      isCustomDir = true;
-      // If path is not absolute, make it relative to current directory
-      if (!path.isAbsolute(customRootDir)) {
-        customRootDir = path.resolve(process.cwd(), customRootDir);
+    } else if (arg === '--depth' || arg === '-d') {
+      if (i + 1 < args.length) {
+        maxDepth = parseInt(args[++i], 10);
+        if (isNaN(maxDepth)) {
+          console.error('Error: Depth must be a number');
+          process.exit(1);
+        }
       }
-      if (!fs.existsSync(customRootDir)) {
-        console.error(`Error: Directory ${customRootDir} does not exist`);
-        process.exit(1);
-      }
+    } else if (arg === '--no-jsdoc') {
+      includeJsDoc = false;
     }
-  } else if (arg === '--no-jsdoc') {
-    includeJsDoc = false;
+  } else {
+    // Collect positional arguments
+    positionalArgs.push(arg);
   }
+}
+
+// Set directory from the first positional argument if provided
+if (positionalArgs.length > 0) {
+  customRootDir = positionalArgs[0];
+  isCustomDir = true;
+  // If path is not absolute, make it relative to current directory
+  if (!path.isAbsolute(customRootDir)) {
+    customRootDir = path.resolve(process.cwd(), customRootDir);
+  }
+  if (!fs.existsSync(customRootDir)) {
+    console.error(`Error: Directory ${customRootDir} does not exist`);
+    process.exit(1);
+  }
+}
+
+// Create docs directory if it doesn't exist (only in the default root dir)
+if (!isCustomDir && !fs.existsSync(path.join(rootDir, 'docs'))) {
+  fs.mkdirSync(path.join(rootDir, 'docs'), { recursive: true });
 }
 
 // Resolve output file path relative to the directory being scanned
@@ -88,12 +97,14 @@ if (!fs.existsSync(outputDir)) {
 // Show help if requested
 if (showHelp) {
   console.log(`
-Usage: node tools/generate-codebase-structure.js [options]
+Usage: node tools/generate-codebase-structure.js [directory] [options]
+
+Arguments:
+  directory      Directory to scan (default: current project root)
 
 Options:
-  --output, -o    Output file path (default: docs/codebase-structure.md in the scanned directory)
+  --output, -o    Output file path (default: codebase-structure.md in the scanned directory)
   --depth, -d     Maximum directory depth to scan (default: unlimited)
-  --dir, -p       Directory to scan (default: current project root)
   --no-jsdoc      Exclude JSDoc descriptions from output
   --help, -h      Show help
 `);
@@ -342,7 +353,7 @@ function extractMethodSignatures(filePath) {
     // First pass: collect all defined method names
     try {
       const firstPassAst = parse(fileContent, {
-        ecmaVersion: 'latest',
+        ecmaVersion: 2022,
         sourceType: 'module',
       });
 
@@ -362,6 +373,13 @@ function extractMethodSignatures(filePath) {
              (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression')) {
             definedMethods.add(node.id.name);
           }
+        },
+        // Add support for class properties that are functions
+        ClassProperty(node) {
+          if (node.key && (node.key.name || node.key.value) &&
+              node.value && (node.value.type === 'ArrowFunctionExpression' || node.value.type === 'FunctionExpression')) {
+            definedMethods.add(node.key.name || node.key.value);
+          }
         }
       });
     } catch (error) {
@@ -370,19 +388,39 @@ function extractMethodSignatures(filePath) {
 
     // Extract JSDoc comments if they are requested
     if (includeJsDoc) {
+      // Find all JSDoc comment blocks
       const jsdocComments = fileContent.match(/\/\*\*[\s\S]*?\*\//g) || [];
+
       for (const comment of jsdocComments) {
-        // Find the function or method declaration after the comment
-        const commentEndIndex = fileContent.indexOf(comment) + comment.length;
+        // Get the position of this comment in the file
+        const commentStartIndex = fileContent.indexOf(comment);
+        const commentEndIndex = commentStartIndex + comment.length;
+
+        // Extract everything after the comment until we hit another comment or EOF
         const afterComment = fileContent.substring(commentEndIndex).trim();
 
-        // Look for function name after the comment
+        // Try to match different function declaration styles that might follow the comment
         const functionMatch = afterComment.match(/(?:function|class|const|let|var|export\s+(?:default\s+)?function|export\s+(?:default\s+)?const)\s+([a-zA-Z0-9_$]+)/);
+        const methodMatch = afterComment.match(/(\w+)\s*\([^)]*\)\s*{/);
+        const asyncMethodMatch = afterComment.match(/async\s+(\w+)\s*\([^)]*\)\s*{/);
+
         if (functionMatch) {
           const functionName = functionMatch[1];
           const description = extractJSDocDescription(comment);
           if (description) {
             commentMap[functionName] = description;
+          }
+        } else if (methodMatch) {
+          const methodName = methodMatch[1];
+          const description = extractJSDocDescription(comment);
+          if (description) {
+            commentMap[methodName] = description;
+          }
+        } else if (asyncMethodMatch) {
+          const methodName = asyncMethodMatch[1];
+          const description = extractJSDocDescription(comment);
+          if (description) {
+            commentMap[methodName] = description;
           }
         }
       }
@@ -391,9 +429,9 @@ function extractMethodSignatures(filePath) {
     try {
       // Parse the JavaScript file
       const ast = parse(fileContent, {
-        ecmaVersion: 'latest',
+        ecmaVersion: 2022,
         sourceType: 'module',
-        locations: true, // Enable locations for finding comments
+        locations: true,
       });
 
       // Extract imports
@@ -493,26 +531,49 @@ function extractMethodSignatures(filePath) {
         },
         MethodDefinition(node) {
           const methodName = node.key.name || node.key.value;
+          const isAsync = node.value && node.value.async;
           const params = extractParams(node.value.params, fileContent, node.value);
           const returnType = extractReturnType(fileContent, node.value);
           const lineCount = countMethodLines(fileContent, node.value);
           const methodCalls = extractMethodCalls(fileContent, node.value, definedMethods, imports);
 
-          const kind = node.kind === 'method' ? '' : `${node.kind} `;
+          const kind = isAsync ? 'async ' : (node.kind === 'method' ? '' : `${node.kind} `);
           const signature = formatSignature(kind, methodName, params, returnType, false, lineCount);
           const description = includeJsDoc && commentMap[methodName] ? commentMap[methodName] : '';
 
           signatures.push({ signature, description, methodCalls });
         },
+        // Add support for class properties that are arrow functions
+        ClassProperty(node) {
+          if (node.key && (node.key.name || node.key.value) &&
+              node.value && (node.value.type === 'ArrowFunctionExpression' || node.value.type === 'FunctionExpression')) {
+
+            const name = node.key.name || node.key.value;
+            const isAsync = node.value.async;
+            const params = extractParams(node.value.params, fileContent, node.value);
+            const returnType = extractReturnType(fileContent, node.value);
+            const lineCount = countMethodLines(fileContent, node.value);
+            const methodCalls = extractMethodCalls(fileContent, node.value, definedMethods, imports);
+
+            const kind = isAsync ? 'async ' : '';
+            const signature = formatSignature(kind, name, params, returnType, true, lineCount);
+            const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
+
+            signatures.push({ signature, description, methodCalls });
+          }
+        },
         VariableDeclarator(node) {
-          if (node.init && (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression')) {
+          if (node.id && node.id.name && node.init &&
+             (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression')) {
             const name = node.id.name;
+            const isAsync = node.init.async;
             const params = extractParams(node.init.params, fileContent, node.init);
             const returnType = extractReturnType(fileContent, node.init);
             const lineCount = countMethodLines(fileContent, node.init);
             const methodCalls = extractMethodCalls(fileContent, node.init, definedMethods, imports);
 
-            const signature = formatSignature("const", name, params, returnType, true, lineCount);
+            const kind = isAsync ? 'async const' : 'const';
+            const signature = formatSignature(kind, name, params, returnType, true, lineCount);
             const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
             signatures.push({ signature, description, methodCalls });
@@ -522,12 +583,14 @@ function extractMethodSignatures(filePath) {
           if (node.declaration) {
             if (node.declaration.type === 'FunctionDeclaration') {
               const name = node.declaration.id.name;
+              const isAsync = node.declaration.async;
               const params = extractParams(node.declaration.params, fileContent, node.declaration);
               const returnType = extractReturnType(fileContent, node.declaration);
               const lineCount = countMethodLines(fileContent, node.declaration);
               const methodCalls = extractMethodCalls(fileContent, node.declaration, definedMethods, imports);
 
-              const signature = formatSignature("export function", name, params, returnType, false, lineCount);
+              const prefix = isAsync ? 'export async function' : 'export function';
+              const signature = formatSignature(prefix, name, params, returnType, false, lineCount);
               const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
               signatures.push({ signature, description, methodCalls });
@@ -537,22 +600,26 @@ function extractMethodSignatures(filePath) {
         ExportDefaultDeclaration(node) {
           if (node.declaration.type === 'FunctionDeclaration') {
             const name = node.declaration.id ? node.declaration.id.name : 'default';
+            const isAsync = node.declaration.async;
             const params = extractParams(node.declaration.params, fileContent, node.declaration);
             const returnType = extractReturnType(fileContent, node.declaration);
             const lineCount = countMethodLines(fileContent, node.declaration);
             const methodCalls = extractMethodCalls(fileContent, node.declaration, definedMethods, imports);
 
-            const signature = formatSignature("export default function", name, params, returnType, false, lineCount);
+            const prefix = isAsync ? 'export default async function' : 'export default function';
+            const signature = formatSignature(prefix, name, params, returnType, false, lineCount);
             const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
             signatures.push({ signature, description, methodCalls });
           } else if (node.declaration.type === 'ArrowFunctionExpression') {
+            const isAsync = node.declaration.async;
             const params = extractParams(node.declaration.params, fileContent, node.declaration);
             const returnType = extractReturnType(fileContent, node.declaration);
             const lineCount = countMethodLines(fileContent, node.declaration);
             const methodCalls = extractMethodCalls(fileContent, node.declaration, definedMethods, imports);
 
-            const signature = formatSignature("export default", "", params, returnType, true, lineCount);
+            const prefix = isAsync ? 'export default async' : 'export default';
+            const signature = formatSignature(prefix, "", params, returnType, true, lineCount);
             signatures.push({ signature, description: '', methodCalls });
           } else if (node.declaration.type === 'Identifier') {
             signatures.push({ signature: `export default ${node.declaration.name}`, description: '', methodCalls: [] });
@@ -744,7 +811,17 @@ function analyzeFile(filePath, relativePath) {
     }
 
     // Extract method signatures and imports for JavaScript files
-    const { signatures, imports } = extractMethodSignatures(filePath);
+    let { signatures, imports } = extractMethodSignatures(filePath);
+
+    // If no signatures were found, try the fallback method
+    if (!signatures || signatures.length === 0 ||
+        signatures.length === 1 && signatures[0].signature.startsWith('[Unable to parse')) {
+      const fallbackSignatures = extractMethodsFromRawContent(fileContent);
+      if (fallbackSignatures) {
+        signatures = fallbackSignatures;
+        console.log(`Used fallback method extraction for ${relativePath}`);
+      }
+    }
 
     // Add imports if there are any
     if (imports.length > 0) {
@@ -892,10 +969,46 @@ try {
 
   scanDirectory(customRootDir);
 
-  // Write output
+  // Write output to file
   fs.writeFileSync(outputFile, content, 'utf8');
   console.log(`Structure written to ${outputFile}`);
+
+  // Also output to console
+  console.log('\n=== CODEBASE STRUCTURE ===\n');
+  console.log(content);
+  console.log('=== END OF STRUCTURE ===');
 } catch (error) {
   console.error('Error generating structure:', error);
   process.exit(1);
+}
+
+// Add a new function for more robust method extraction that can be used as a fallback
+function extractMethodsFromRawContent(fileContent) {
+  const methodSignatures = [];
+
+  // Match normal methods
+  const methodRegex = /(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*{/g;
+  let match;
+
+  while ((match = methodRegex.exec(fileContent)) !== null) {
+    const [_, name, params] = match;
+    methodSignatures.push({
+      signature: `function ${name}(${params}) {}`,
+      description: '',
+      methodCalls: []
+    });
+  }
+
+  // Match class method declarations
+  const classMethodRegex = /class\s+(\w+)\s*{[^}]*(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*{/g;
+  while ((match = classMethodRegex.exec(fileContent)) !== null) {
+    const [_, className, methodName, params] = match;
+    methodSignatures.push({
+      signature: `method ${methodName}(${params}) {}`,
+      description: '',
+      methodCalls: []
+    });
+  }
+
+  return methodSignatures.length > 0 ? methodSignatures : null;
 }
