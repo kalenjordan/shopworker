@@ -48,22 +48,6 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
   logToWorker(env, "Order details from API: ", order);
   logToCli(env, "Processing Order: " + (order.name || order.id));
 
-  // Before processing, preview what we'll be working with
-  const lineItems = CitySheets.extractLineItems(order);
-  const filteredLineItems = CitySheets.filterLineItemsBySku(lineItems);
-  console.log(`Filtered from ${lineItems.length} to ${filteredLineItems.length} line items matching SKU criteria (CCS1, CC0, or starting with QCS)`);
-
-  if (filteredLineItems.length === 0) {
-    console.log(chalk.yellow(`Order ${order.name || order.id} has no line items with matching SKUs, skipping`));
-    return;
-  }
-
-  // Preview what will be added
-  console.log(`\nProcessing ${filteredLineItems.length} line items for order ${order.name || order.id}:`);
-  for (const item of filteredLineItems) {
-    logToCli(env, `• SKU: ${item.sku}, Qty: ${item.quantity}, Title: ${item.title}`);
-  }
-
   // Use the processOrderForSheet function to handle the common logic
   const result = await CitySheets.processOrderForSheet(order, shopify, sheetsClient);
 

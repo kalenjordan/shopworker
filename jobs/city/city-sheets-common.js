@@ -3,6 +3,7 @@
  */
 import * as GoogleSheets from "../../connectors/google-sheets.js";
 import { format, parseISO } from "date-fns";
+import chalk from "chalk";
 
 // Define column mappings specific to City's spreadsheet
 export const COLUMN_MAPPINGS = [
@@ -244,9 +245,19 @@ export async function processOrderForSheet(order, shopify, sheetsClient) {
   const lineItems = extractLineItems(order);
   const filteredItems = filterLineItemsBySku(lineItems);
 
+  // Log preview information
+  console.log(`Filtered from ${lineItems.length} to ${filteredItems.length} line items matching SKU criteria (CCS1, CC0, or starting with QCS)`);
+
   // Skip if no matching line items
   if (filteredItems.length === 0) {
+    console.log(chalk.yellow(`Order ${order.name || order.id} has no line items with matching SKUs, skipping`));
     return { skipped: true, reason: "No matching line items" };
+  }
+
+  // Preview what will be added
+  console.log(`\nProcessing ${filteredItems.length} line items for order ${order.name || order.id}:`);
+  for (const item of filteredItems) {
+    console.log(`• SKU: ${item.sku}, Qty: ${item.quantity}, Title: ${item.title}`);
   }
 
   // Transform order data into row data
