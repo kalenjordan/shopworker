@@ -17,9 +17,6 @@ import * as CitySheets from "../city-sheets-common.js";
 export async function process({ record: orderData, shopify, env, jobConfig, secrets }) {
   logToWorker(env, "Webhook payload: " + JSON.stringify(orderData));
 
-  // Validate required configuration
-  GoogleSheets.validateSheetCredentials(secrets);
-
   if (!orderData.id) {
     throw new Error("No order ID provided");
   }
@@ -29,15 +26,16 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
     throw new Error("No spreadsheet ID provided in job config.json");
   }
 
-  // Initialize Google Sheets client
-  const sheetsClient = await GoogleSheets.createSheetsClient(secrets.GOOGLE_SHEETS_CREDENTIALS);
-
-  // Get spreadsheet information and first sheet, and initialize headers
-  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(
-    sheetsClient,
+  // Initialize Google Sheets client with spreadsheet ID and column mappings
+  const sheetsClient = await GoogleSheets.createSheetsClient(
+    secrets.GOOGLE_SHEETS_CREDENTIALS,
     spreadsheetId,
+    null, // Let getFirstSheet determine the sheet name
     CitySheets.COLUMN_MAPPINGS
   );
+
+  // Get spreadsheet information
+  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient);
 
   console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
   console.log(`Using sheet: "${sheetName}" from spreadsheet "${spreadsheetTitle}"`);
@@ -46,48 +44,33 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
   const orderId = shopify.toGid(orderData.id, "Order");
   const { order } = await shopify.graphql(GetOrderById, { id: orderId });
 
-  // Extract data from the order
-  const orderDetails = CitySheets.extractOrderData(order, shopify);
+  // Log webhook data
+  logToWorker(env, "Order details from API: ", order);
+  logToCli(env, "Processing Order: " + (order.name || order.id));
+
+  // Before processing, preview what we'll be working with
   const lineItems = CitySheets.extractLineItems(order);
-
-  // Validate we have line items
-  if (lineItems.length === 0) {
-    console.log(chalk.yellow(`Order ${orderDetails.orderNumber} has no line items, skipping`));
-    return;
-  }
-
-  // Log the data
-  logToWorker(env, "Order details: ", {
-    order: orderDetails,
-    lineItems: lineItems
-  });
-  logToCli(env, "Order: " + orderDetails.orderNumber);
-
-  // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
   const filteredLineItems = CitySheets.filterLineItemsBySku(lineItems);
-
   console.log(`Filtered from ${lineItems.length} to ${filteredLineItems.length} line items matching SKU criteria (CCS1, CC0, or starting with QCS)`);
 
   if (filteredLineItems.length === 0) {
-    console.log(chalk.yellow(`Order ${orderDetails.orderNumber} has no line items with matching SKUs, skipping`));
+    console.log(chalk.yellow(`Order ${order.name || order.id} has no line items with matching SKUs, skipping`));
     return;
   }
 
-  // Transform order data into row data objects
-  const rowData = CitySheets.transformOrderDataToRows(orderDetails, filteredLineItems);
-
-  // Log rows being added
-  console.log(`\nAdding ${rowData.length} rows to sheet for order ${order.name || order.id}:`);
-  for (const row of rowData) {
-    logToCli(env, `• SKU: ${row.sku}, Qty: ${row.quantity}, Customer: ${row.firstName} ${row.lastName}`);
+  // Preview what will be added
+  console.log(`\nProcessing ${filteredLineItems.length} line items for order ${order.name || order.id}:`);
+  for (const item of filteredLineItems) {
+    logToCli(env, `• SKU: ${item.sku}, Qty: ${item.quantity}, Title: ${item.title}`);
   }
 
-  // Append rows directly using the client
-  const appendResult = await sheetsClient.appendRows(
-    spreadsheetId,
-    sheetName,
-    rowData
-  );
+  // Use the processOrderForSheet function to handle the common logic
+  const result = await CitySheets.processOrderForSheet(order, shopify, sheetsClient);
 
-  console.log(chalk.green(`Order data added to Google Sheet at range: ${appendResult.updates?.updatedRange || "unknown"}`));
+  if (result.skipped) {
+    console.log(chalk.yellow(`Order processing skipped: ${result.reason}`));
+    return;
+  }
+
+  console.log(chalk.green(`Order data added to Google Sheet at range: ${result.updates?.updatedRange || "unknown"}`));
 }

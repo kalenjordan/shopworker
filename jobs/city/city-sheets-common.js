@@ -206,8 +206,6 @@ export function orderLineItemExists(sheetData, orderNumber, sku, orderNumberInde
  * @param {Object} order - Shopify order data
  * @param {Object} shopify - Shopify client
  * @param {Object} sheetsClient - Google Sheets client
- * @param {string} spreadsheetId - Google Sheets spreadsheet ID
- * @param {string} sheetName - Google Sheets sheet name
  * @returns {Promise<Object>} Result of the append operation
  *
  * @example
@@ -218,25 +216,25 @@ export function orderLineItemExists(sheetData, orderNumber, sku, orderNumberInde
  * export async function process(shopify, data) {
  *   const { order } = data;
  *
- *   // Get credentials from secrets
+ *   // Get credentials from secrets and create pre-configured client
  *   const sheetsClient = await GoogleSheets.createSheetsClient(
- *     JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS)
+ *     JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS),
+ *     process.env.SPREADSHEET_ID,
+ *     null, // Sheet name will be auto-detected
+ *     CitySheets.COLUMN_MAPPINGS // Pass column mappings during creation
  *   );
  *
+ *   // Initialize sheet (gets first sheet if not specified)
+ *   await GoogleSheets.getFirstSheet(sheetsClient);
+ *
  *   // Process the order and add it to the sheet
- *   return CitySheets.processOrderForSheet(
- *     order,
- *     shopify,
- *     sheetsClient,
- *     process.env.SPREADSHEET_ID,
- *     process.env.SHEET_NAME
- *   );
+ *   return CitySheets.processOrderForSheet(order, shopify, sheetsClient);
  * }
  */
-export async function processOrderForSheet(order, shopify, sheetsClient, spreadsheetId, sheetName) {
+export async function processOrderForSheet(order, shopify, sheetsClient) {
   // Initialize headers if not already done
   if (!sheetsClient._headers) {
-    await sheetsClient.initializeHeaders(spreadsheetId, sheetName, COLUMN_MAPPINGS);
+    await sheetsClient.initializeHeaders();
   }
 
   // Extract order data
@@ -255,5 +253,5 @@ export async function processOrderForSheet(order, shopify, sheetsClient, spreads
   const rowData = transformOrderDataToRows(orderData, filteredItems);
 
   // Use the client's appendRows method to add data to the sheet
-  return sheetsClient.appendRows(spreadsheetId, sheetName, rowData);
+  return sheetsClient.appendRows(rowData);
 }

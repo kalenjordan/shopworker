@@ -19,15 +19,23 @@ export function validateSheetCredentials(secrets) {
 /**
  * Create an authenticated Google Sheets client credentials object
  * @param {Object} credentials - Google Sheets credentials JSON object
+ * @param {string} [spreadsheetId] - Optional spreadsheet ID to associate with this client
+ * @param {string} [sheetName] - Optional sheet name to associate with this client
+ * @param {Array} [columnMappings] - Optional column mappings for header initialization
  * @returns {Object} Enhanced client object with the following methods:
  *   - getToken() - Gets the access token for API calls
  *   - fetchFromSheets(endpoint, options) - Makes authenticated requests to the Sheets API
- *   - initializeHeaders(spreadsheetId, sheetName, expectedMappings) - Initializes and stores headers and mapping
- *   - appendRows(spreadsheetId, sheetName, dataObjects, valueInputOption) - Appends data objects to the sheet
- *   - writeRows(spreadsheetId, sheetName, dataObjects, valueInputOption) - Writes data objects to the sheet, replacing existing content
- *   - readRows(spreadsheetId, sheetName, range) - Reads data from the sheet and transforms it to objects
+ *   - initializeHeaders(expectedMappings) - Initializes and stores headers and mapping
+ *   - appendRows(dataObjects, valueInputOption) - Appends data objects to the sheet
+ *   - writeRows(dataObjects, valueInputOption) - Writes data objects to the sheet, replacing existing content
+ *   - readRows(range) - Reads data from the sheet and transforms it to objects
  */
-export async function createSheetsClient(credentials) {
+export async function createSheetsClient(credentials, spreadsheetId = null, sheetName = null, columnMappings = null) {
+  // Validate credentials
+  if (!credentials) {
+    throw new Error("Missing required Google Sheets credentials");
+  }
+
   if (typeof credentials === 'string') {
     console.error('Error: Expected credentials object but received string');
     throw new Error('Google Sheets credentials must be an object, not a string');
@@ -82,6 +90,9 @@ export async function createSheetsClient(credentials) {
     _accessToken: null,
     _headers: null,
     _headerMap: null,
+    _spreadsheetId: spreadsheetId,
+    _sheetName: sheetName,
+    _columnMappings: columnMappings,
 
     async getToken() {
       if (!this._accessToken) {
@@ -114,8 +125,17 @@ export async function createSheetsClient(credentials) {
     },
 
     // Initialize headers and store them in the client
-    async initializeHeaders(spreadsheetId, sheetName, expectedMappings) {
-      const result = await validateSheetHeaders(this, spreadsheetId, sheetName, expectedMappings);
+    /**
+     * Initialize and store headers and column mappings for the spreadsheet
+     * @param {Array} [expectedMappings] - Array of expected column mappings (uses client's stored mappings if not provided)
+     * @returns {Promise<Object>} Result containing headers and headerMap
+     */
+    async initializeHeaders(expectedMappings = this._columnMappings) {
+      if (!this._spreadsheetId) throw new Error("No spreadsheet ID set on client");
+      if (!this._sheetName) throw new Error("No sheet name set on client");
+      if (!expectedMappings) throw new Error("No column mappings provided or stored on client");
+
+      const result = await validateSheetHeaders(this, expectedMappings);
       this._headers = result.headers;
       this._headerMap = result.headerMap;
       return result;
@@ -123,15 +143,16 @@ export async function createSheetsClient(credentials) {
 
     /**
      * Append data objects to a Google Sheet
-     * @param {string} spreadsheetId - The ID of the spreadsheet
-     * @param {string} sheetName - The name of the sheet
      * @param {Array<Object>} dataObjects - Array of objects to append
      * @param {string} valueInputOption - How to interpret the data:
      *   - "RAW": The values will be stored as-is without any interpretation
      *   - "USER_ENTERED": The values will be interpreted as if entered by a user (formulas will be interpreted)
      * @returns {Promise<Object>} Result of the append operation
      */
-    async appendRows(spreadsheetId, sheetName, dataObjects, valueInputOption = "RAW") {
+    async appendRows(dataObjects, valueInputOption = "USER_ENTERED") {
+      if (!this._spreadsheetId) throw new Error("No spreadsheet ID set on client");
+      if (!this._sheetName) throw new Error("No sheet name set on client");
+
       if (!this._headers || !this._headerMap) {
         throw new Error("Headers not initialized. Call initializeHeaders first.");
       }
@@ -151,7 +172,7 @@ export async function createSheetsClient(credentials) {
 
       // Append to the sheet using the common fetchFromSheets method
       return this.fetchFromSheets(
-        `spreadsheets/${spreadsheetId}/values/${sheetName}!A1:append?valueInputOption=${valueInputOption}&insertDataOption=INSERT_ROWS`,
+        `spreadsheets/${this._spreadsheetId}/values/${this._sheetName}!A1:append?valueInputOption=${valueInputOption}&insertDataOption=INSERT_ROWS`,
         {
           method: 'POST',
           body: JSON.stringify({ values: rows }),
@@ -161,15 +182,16 @@ export async function createSheetsClient(credentials) {
 
     /**
      * Write data objects to a Google Sheet, replacing the existing content
-     * @param {string} spreadsheetId - The ID of the spreadsheet
-     * @param {string} sheetName - The name of the sheet
      * @param {Array<Object>} dataObjects - Array of objects to write
      * @param {string} valueInputOption - How to interpret the data:
      *   - "RAW": The values will be stored as-is without any interpretation
      *   - "USER_ENTERED": The values will be interpreted as if entered by a user (formulas will be interpreted)
      * @returns {Promise<Object>} Result of the write operation
      */
-    async writeRows(spreadsheetId, sheetName, dataObjects, valueInputOption = "RAW") {
+    async writeRows(dataObjects, valueInputOption = "RAW") {
+      if (!this._spreadsheetId) throw new Error("No spreadsheet ID set on client");
+      if (!this._sheetName) throw new Error("No sheet name set on client");
+
       if (!this._headers || !this._headerMap) {
         throw new Error("Headers not initialized. Call initializeHeaders first.");
       }
@@ -189,7 +211,7 @@ export async function createSheetsClient(credentials) {
 
       // Write to the sheet using the common fetchFromSheets method
       return this.fetchFromSheets(
-        `spreadsheets/${spreadsheetId}/values/${sheetName}!A1?valueInputOption=${valueInputOption}`,
+        `spreadsheets/${this._spreadsheetId}/values/${this._sheetName}!A1?valueInputOption=${valueInputOption}`,
         {
           method: 'PUT',
           body: JSON.stringify({ values: rows }),
@@ -199,21 +221,22 @@ export async function createSheetsClient(credentials) {
 
     /**
      * Read data from a Google Sheet and transform it to objects using header mappings
-     * @param {string} spreadsheetId - The ID of the spreadsheet
-     * @param {string} sheetName - The name of the sheet
      * @param {string} [range] - Optional range specification (e.g., 'A2:Z100'), defaults to all data after headers
      * @returns {Promise<Array<Object>>} Array of objects with keys from column mappings
      */
-    async readRows(spreadsheetId, sheetName, range = null) {
+    async readRows(range = null) {
+      if (!this._spreadsheetId) throw new Error("No spreadsheet ID set on client");
+      if (!this._sheetName) throw new Error("No sheet name set on client");
+
       if (!this._headers || !this._headerMap) {
         throw new Error("Headers not initialized. Call initializeHeaders first.");
       }
 
       // If no range specified, read all data after headers (A2:Z)
-      const readRange = range || `${sheetName}!A2:Z`;
+      const readRange = range || `${this._sheetName}!A2:Z`;
 
       // Get the raw data
-      const data = await this.fetchFromSheets(`spreadsheets/${spreadsheetId}/values/${readRange}`);
+      const data = await this.fetchFromSheets(`spreadsheets/${this._spreadsheetId}/values/${readRange}`);
       const rows = data.values || [];
 
       // Create reverse mapping from column index to key
@@ -241,12 +264,13 @@ export async function createSheetsClient(credentials) {
 /**
  * Get just the headers from a Google Sheet (first row)
  * @param {Object} sheetsClient - The Google Sheets client
- * @param {string} spreadsheetId - The ID of the spreadsheet
- * @param {string} sheetName - The name of the sheet
  * @returns {Promise<Array>} The sheet headers
  */
-export async function getSheetHeaders(sheetsClient, spreadsheetId, sheetName) {
-  const data = await sheetsClient.fetchFromSheets(`spreadsheets/${spreadsheetId}/values/${sheetName}!A1:Z1`);
+export async function getSheetHeaders(sheetsClient) {
+  if (!sheetsClient._spreadsheetId) throw new Error("No spreadsheet ID set on client");
+  if (!sheetsClient._sheetName) throw new Error("No sheet name set on client");
+
+  const data = await sheetsClient.fetchFromSheets(`spreadsheets/${sheetsClient._spreadsheetId}/values/${sheetsClient._sheetName}!A1:Z1`);
   const headerData = data.values || [];
 
   if (!headerData?.length || !headerData[0]?.length) {
@@ -259,13 +283,14 @@ export async function getSheetHeaders(sheetsClient, spreadsheetId, sheetName) {
 /**
  * Get and validate sheet headers against expected column mappings
  * @param {Object} sheetsClient - The Google Sheets client
- * @param {string} spreadsheetId - The ID of the spreadsheet
- * @param {string} sheetName - The name of the sheet
  * @param {Array} expectedMappings - Array of expected column mappings (objects with key and label properties)
  * @returns {Promise<Object>} Object containing headers array and headerMap mapping keys to column indices
  */
-export async function validateSheetHeaders(sheetsClient, spreadsheetId, sheetName, expectedMappings) {
-  const headers = await getSheetHeaders(sheetsClient, spreadsheetId, sheetName);
+export async function validateSheetHeaders(sheetsClient, expectedMappings) {
+  if (!sheetsClient._spreadsheetId) throw new Error("No spreadsheet ID set on client");
+  if (!sheetsClient._sheetName) throw new Error("No sheet name set on client");
+
+  const headers = await getSheetHeaders(sheetsClient);
 
   // Create a map of header keys to their positions in the sheet
   const headerMap = {};
@@ -305,39 +330,41 @@ export async function validateSheetHeaders(sheetsClient, spreadsheetId, sheetNam
 /**
  * Get all sheets in a spreadsheet
  * @param {Object} sheetsClient - The Google Sheets client
- * @param {string} spreadsheetId - The ID of the spreadsheet
  * @returns {Promise<Array>} List of sheet objects with properties: sheetId, title, index
  */
-export async function getSheets(sheetsClient, spreadsheetId) {
-  const data = await sheetsClient.fetchFromSheets(`spreadsheets/${spreadsheetId}?fields=sheets.properties`);
+export async function getSheets(sheetsClient) {
+  if (!sheetsClient._spreadsheetId) throw new Error("No spreadsheet ID set on client");
+
+  const data = await sheetsClient.fetchFromSheets(`spreadsheets/${sheetsClient._spreadsheetId}?fields=sheets.properties`);
   return data.sheets.map((sheet) => sheet.properties);
 }
 
 /**
  * Get the title of a spreadsheet
  * @param {Object} sheetsClient - The Google Sheets client
- * @param {string} spreadsheetId - The ID of the spreadsheet
  * @returns {Promise<string>} The title of the spreadsheet
  */
-export async function getSpreadsheetTitle(sheetsClient, spreadsheetId) {
-  const data = await sheetsClient.fetchFromSheets(`spreadsheets/${spreadsheetId}?fields=properties.title`);
+export async function getSpreadsheetTitle(sheetsClient) {
+  if (!sheetsClient._spreadsheetId) throw new Error("No spreadsheet ID set on client");
+
+  const data = await sheetsClient.fetchFromSheets(`spreadsheets/${sheetsClient._spreadsheetId}?fields=properties.title`);
   return data.properties?.title || 'Unknown';
 }
 
 /**
  * Get the first sheet from a spreadsheet and optionally initialize headers
  * @param {Object} sheetsClient - The Google Sheets client
- * @param {string} spreadsheetId - The ID of the spreadsheet
- * @param {Array} [expectedMappings] - Optional array of expected column mappings for header initialization
  * @returns {Promise<Object>} Object containing sheetName and spreadsheetTitle
  * @throws {Error} If no sheets are found in the spreadsheet
  */
-export async function getFirstSheet(sheetsClient, spreadsheetId, expectedMappings = null) {
+export async function getFirstSheet(sheetsClient) {
+  if (!sheetsClient._spreadsheetId) throw new Error("No spreadsheet ID set on client");
+
   // Get spreadsheet title
-  const spreadsheetTitle = await getSpreadsheetTitle(sheetsClient, spreadsheetId);
+  const spreadsheetTitle = await getSpreadsheetTitle(sheetsClient);
 
   // Get all sheets
-  const sheets = await getSheets(sheetsClient, spreadsheetId);
+  const sheets = await getSheets(sheetsClient);
 
   // Validate we have at least one sheet
   if (sheets.length === 0) {
@@ -346,9 +373,12 @@ export async function getFirstSheet(sheetsClient, spreadsheetId, expectedMapping
 
   const sheetName = sheets[0].title;
 
-  // Initialize headers if mappings are provided
-  if (expectedMappings) {
-    await sheetsClient.initializeHeaders(spreadsheetId, sheetName, expectedMappings);
+  // Set this as the default sheet name on the client
+  sheetsClient._sheetName = sheetName;
+
+  // Initialize headers if column mappings were provided
+  if (sheetsClient._columnMappings) {
+    await sheetsClient.initializeHeaders(sheetsClient._columnMappings);
   }
 
   // Return the first sheet name and spreadsheet title
