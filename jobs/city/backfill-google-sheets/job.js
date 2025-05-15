@@ -1,7 +1,6 @@
 import GetOrdersForBackfill from "../../../graphql/GetOrdersForBackfill.js";
 import * as GoogleSheets from "../../../connectors/google-sheets.js";
 import chalk from "chalk";
-import { logToCli, logToWorker } from "../../../utils/log.js";
 import * as CitySheets from "../city-sheets-common.js";
 
 /**
@@ -14,9 +13,6 @@ import * as CitySheets from "../city-sheets-common.js";
  * @param {Object} options.secrets - Secrets loaded from .secrets directory
  */
 export async function process({ shopify, env, jobConfig, secrets }) {
-  // Validate required configuration
-  GoogleSheets.validateSheetCredentials(secrets);
-
   const spreadsheetId = jobConfig.spreadsheet_id;
   if (!spreadsheetId) {
     throw new Error("Missing required spreadsheet_id in job configuration");
@@ -29,6 +25,7 @@ export async function process({ shopify, env, jobConfig, secrets }) {
   }
 
   const ordersPerPage = jobConfig.batch_size || 3;
+  const rowLimit = jobConfig.limit || null; // Get the optional row limit
   const orderQuery = ""; // Fetch all recent orders for SKU matching
 
   // Initialize Google Sheets client with spreadsheet ID and column mappings
@@ -49,6 +46,11 @@ export async function process({ shopify, env, jobConfig, secrets }) {
   const existingRows = await sheetsClient.readRows();
   console.log(`Fetched ${existingRows.length} existing rows from the sheet`);
 
+  // Log if a row limit is in effect
+  if (rowLimit) {
+    console.log(chalk.yellow(`A row limit of ${rowLimit} is set. Backfill will stop after adding this many rows.`));
+  }
+
   // Process orders with pagination
   const stats = await processOrderPages({
     shopify,
@@ -56,12 +58,16 @@ export async function process({ shopify, env, jobConfig, secrets }) {
     existingRows,
     ordersPerPage,
     orderQuery,
-    env
+    env,
+    rowLimit
   });
 
   // Log final results
   console.log(chalk.green(`\nBackfill complete: Processed ${stats.totalProcessedOrders} orders across ${stats.pageCount} pages`));
   console.log(chalk.green(`Added ${stats.totalAddedRows} new line items to the sheet`));
+  if (rowLimit && stats.totalAddedRows >= rowLimit) {
+    console.log(chalk.green(`Reached the configured row limit of ${rowLimit}. Stopping backfill.`));
+  }
 }
 
 /**
@@ -75,7 +81,8 @@ async function processOrderPages({
   existingRows,
   ordersPerPage,
   orderQuery,
-  env
+  env,
+  rowLimit
 }) {
   // Initialize tracking variables
   let hasNextPage = true;
@@ -125,6 +132,12 @@ async function processOrderPages({
     console.log(chalk.yellow(`\nPage ${pageNumber} complete: Processed ${pageStats.processedCount} orders, added ${pageStats.addedCount} rows`));
     console.log(chalk.yellow(`Running total: Processed ${totalProcessedOrders} orders, added ${totalAddedRows} rows`));
 
+    // Check if we've reached the row limit
+    if (rowLimit && totalAddedRows >= rowLimit) {
+      console.log(chalk.yellow(`Reached the configured row limit of ${rowLimit}. Stopping backfill.`));
+      hasNextPage = false;
+    }
+
     // Move to next page
     pageNumber++;
 
@@ -163,6 +176,9 @@ async function processOrderPage({
   for (const edge of orders.edges) {
     const order = edge.node;
     processedCount++;
+
+    // Log the order name/number being processed
+    console.log(`Processing order: ${order.name}`);
 
     // Use the same processing logic from city-sheets-common
     const result = await processOrderForBackfill(order, shopify, sheetsClient, existingRows);
@@ -204,7 +220,7 @@ async function processOrderForBackfill(order, shopify, sheetsClient, existingRow
   }
 
   // Convert order data to row format
-  const newRows = CitySheets.transformOrderDataToRows(orderData, filteredLineItems);
+  const newRows = CitySheets.transformOrderDataToRows(orderData, filteredLineItems, true);
 
   // Check for duplicates by comparing order number and SKU
   const dedupedRows = newRows.filter(newRow => {

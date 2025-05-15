@@ -7,6 +7,7 @@
     "skip_query": true
   },
   "batch_size": 250,
+  "limit": null,
   "spreadsheet_id_test": "1vSOfDFxrv1WlO89ZSrcgeDSmIk-S2dOEEp-97BHgaZw",
   "spreadsheet_id": "1Ksl7UN-b-LnPOfQRxk4OgSVocD8Nfid3rLGNh1vFQrY"
 }

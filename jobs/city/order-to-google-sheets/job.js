@@ -90,7 +90,7 @@ async function processOrderForSheet(order, shopify, sheetsClient) {
   }
 
   // Transform order data into row data
-  const rowData = CitySheets.transformOrderDataToRows(orderData, filteredItems);
+  const rowData = CitySheets.transformOrderDataToRows(orderData, filteredItems, false);
 
   // Use the client's appendRows method to add data to the sheet
   return sheetsClient.appendRows(rowData);

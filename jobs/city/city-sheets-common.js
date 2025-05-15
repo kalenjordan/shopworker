@@ -27,6 +27,7 @@ export const COLUMN_MAPPINGS = [
   { key: "reminderEmail", label: "reminder email" },
   { key: "id", label: "ID" },
   { key: "note", label: "Note" },
+  { key: "backfill", label: "Backfill" },
 ];
 
 /**
@@ -164,13 +165,15 @@ export function createDynamicSheetRows(orderData, lineItems, headers, headerMap 
  * Transform order and line items into row data for sheets
  * @param {Object} orderData - Structured order data
  * @param {Array} lineItems - Array of line items
+ * @param {boolean} isBackfill - Whether this is a backfill operation
  * @returns {Array} Array of data objects ready for the sheet
  */
-export function transformOrderDataToRows(orderData, lineItems) {
+export function transformOrderDataToRows(orderData, lineItems, isBackfill = false) {
   return lineItems.map(item => ({
     ...orderData,
     sku: item.sku || "",
     quantity: item.quantity || "",
+    backfill: isBackfill ? "true" : "false",
   }));
 }
 
