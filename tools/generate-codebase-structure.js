@@ -150,7 +150,7 @@ const INCLUDE_EXTENSIONS = [
 ];
 
 // Structure content
-let content = `# Codebase Structure\nGenerated: ${new Date().toISOString()}\n\n`;
+let content = `# Files Sorted by Line Count\nGenerated: ${new Date().toISOString()}\n\n`;
 
 // Function to check if a path should be excluded
 function shouldExcludePath(relativePath) {
@@ -403,12 +403,19 @@ function extractMethodSignatures(filePath) {
         const functionMatch = afterComment.match(/(?:function|class|const|let|var|export\s+(?:default\s+)?function|export\s+(?:default\s+)?const)\s+([a-zA-Z0-9_$]+)/);
         const methodMatch = afterComment.match(/(\w+)\s*\([^)]*\)\s*{/);
         const asyncMethodMatch = afterComment.match(/async\s+(\w+)\s*\([^)]*\)\s*{/);
+        const objectMethodMatch = afterComment.match(/(\w+)\s*\([^)]*\)\s*{[^}]*},?/);
 
         if (functionMatch) {
           const functionName = functionMatch[1];
           const description = extractJSDocDescription(comment);
           if (description) {
             commentMap[functionName] = description;
+          }
+        } else if (objectMethodMatch) {
+          const methodName = objectMethodMatch[1];
+          const description = extractJSDocDescription(comment);
+          if (description) {
+            commentMap[methodName] = description;
           }
         } else if (methodMatch) {
           const methodName = methodMatch[1];
@@ -774,153 +781,39 @@ function formatSignature(prefix, name, params, returnType, isArrow = false, line
   return signature;
 }
 
-// Function to analyze file and extract information
-function analyzeFile(filePath, relativePath) {
-  const ext = path.extname(filePath);
-
-  if (!INCLUDE_EXTENSIONS.includes(ext)) {
-    return ''; // Skip unsupported file types
-  }
-
-  // Read file content and count lines
-  let fileContent = '';
-  let lineCount = 0;
-  try {
-    fileContent = fs.readFileSync(filePath, 'utf8');
-    lineCount = fileContent.split('\n').length;
-  } catch (error) {
-    return `## ${relativePath} (${lineCount} lines)\n[Error reading file: ${error.message}]\n\n`;
-  }
-
-  let fileInfo = `## ${relativePath} (${lineCount} lines)\n`;
-
-  if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
-    // Special handling for GraphQL files in the graphql/ directory
-    if (relativePath.startsWith('graphql/')) {
-      try {
-        // Look for GraphQL operation type and name
-        const operationMatch = fileContent.match(/(query|mutation|subscription)\s+(\w+)/i);
-        if (operationMatch) {
-          const [, operationType, operationName] = operationMatch;
-          fileInfo += `GraphQL ${operationType}: ${operationName}\n\n`;
-          return fileInfo;
-        }
-      } catch (error) {
-        // Fall back to regular method extraction if this fails
-      }
-    }
-
-    // Extract method signatures and imports for JavaScript files
-    let { signatures, imports } = extractMethodSignatures(filePath);
-
-    // If no signatures were found, try the fallback method
-    if (!signatures || signatures.length === 0 ||
-        signatures.length === 1 && signatures[0].signature.startsWith('[Unable to parse')) {
-      const fallbackSignatures = extractMethodsFromRawContent(fileContent);
-      if (fallbackSignatures) {
-        signatures = fallbackSignatures;
-        console.log(`Used fallback method extraction for ${relativePath}`);
-      }
-    }
-
-    // Add imports if there are any
-    if (imports.length > 0) {
-      fileInfo += 'Imports:\n';
-      imports.forEach(importStatement => {
-        fileInfo += `- ${importStatement}\n`;
-      });
-      fileInfo += '\n';
-    }
-
-    // Add method signatures
-    if (signatures.length > 0) {
-      // De-duplicate functions that are both declared and exported
-      const uniqueSignatures = [];
-      const seenFunctions = new Set();
-
-      // First pass: collect function names and identify duplicates
-      for (const sig of signatures) {
-        const funcNameMatch = sig.signature.match(/(?:function|export function) (\w+)/);
-        if (funcNameMatch) {
-          const funcName = funcNameMatch[1];
-
-          // If we've seen this function before, skip it
-          if (seenFunctions.has(funcName)) {
-            continue;
-          }
-
-          seenFunctions.add(funcName);
-          uniqueSignatures.push(sig);
-        } else {
-          // For non-function or other special cases, keep them
-          uniqueSignatures.push(sig);
-        }
-      }
-
-      fileInfo += 'Methods:\n';
-      uniqueSignatures.forEach(({ signature, description, methodCalls }) => {
-        // Add the base signature
-        fileInfo += `- ${signature}\n`;
-
-        // Add description if present
-        if (description) {
-          fileInfo += `  - Description: ${description}\n`;
-        }
-
-        // Add method calls if present
-        if (methodCalls && methodCalls.length > 0) {
-          fileInfo += `  - Calls: ${methodCalls.join(', ')}\n`;
-        }
-      });
-    } else {
-      fileInfo += '(No methods found)\n';
-    }
-  } else if (ext === '.json') {
-    try {
-      // For JSON files, show file size in addition to line count
-      const stats = fs.statSync(filePath);
-      fileInfo += `(JSON file, ${(stats.size / 1024).toFixed(1)} KB)\n`;
-    } catch (error) {
-      fileInfo += `(Error reading JSON: ${error.message})\n`;
-    }
-  }
-
-  return fileInfo + '\n';
-}
-
 // Function to scan directories
-function scanDirectory(dirPath, level = 0, relativePath = '') {
+function scanDirectory(dirPath, level = 0, relativePath = '', allFiles = []) {
   // Check if we've reached the maximum depth
   if (level > maxDepth) {
-    content += `${'#'.repeat(level + 1)} ${path.basename(dirPath)}/ (max depth reached)\n\n`;
-    return;
+    return allFiles;
   }
 
   // Check if this directory path should be excluded
   if (level > 0 && shouldExcludePath(relativePath)) {
-    // Skip this directory completely - don't add anything to the content
-    return;
+    return allFiles;
   }
 
   const items = fs.readdirSync(dirPath);
 
-  // Add directory to content
-  if (level > 0) {
-    content += `${'#'.repeat(level + 1)} ${path.basename(dirPath)}/\n\n`;
-  }
-
-  // Process all files first
+  // Get all files first
   const files = items
     .filter(item => {
       const itemPath = path.join(dirPath, item);
       return !fs.statSync(itemPath).isDirectory() && !shouldExcludeFile(itemPath);
-    })
-    .sort();
+    });
 
+  // Add files to collection
   for (const file of files) {
     const filePath = path.join(dirPath, file);
     const fileRelativePath = path.join(relativePath, file);
-    content += analyzeFile(filePath, fileRelativePath);
+    let lineCount = 0;
+    try {
+      const fileContent = fs.readFileSync(filePath, 'utf8');
+      lineCount = fileContent.split('\n').length;
+    } catch (error) {
+      console.error(`Error counting lines in ${filePath}: ${error.message}`);
+    }
+    allFiles.push({ filePath, relativePath: fileRelativePath, lineCount });
   }
 
   // Then process directories
@@ -934,8 +827,10 @@ function scanDirectory(dirPath, level = 0, relativePath = '') {
   for (const dir of dirs) {
     const nextDirPath = path.join(dirPath, dir);
     const nextRelativePath = path.join(relativePath, dir);
-    scanDirectory(nextDirPath, level + 1, nextRelativePath);
+    scanDirectory(nextDirPath, level + 1, nextRelativePath, allFiles);
   }
+
+  return allFiles;
 }
 
 // Main execution
@@ -952,31 +847,113 @@ try {
     console.log(`Excluded files: ${EXCLUDE_FILES.join(', ')}`);
   }
 
-  // Add directory name to content if using a custom directory
-  if (isCustomDir) {
-    const dirName = path.basename(customRootDir);
-    content += `## Root Directory: ${dirName}\n\n`;
-  }
+  // Add header to content
+  content = `# Files Sorted by Line Count\nGenerated: ${new Date().toISOString()}\n\n`;
 
-  // Set up EXCLUDE_PATHS to be relative to the custom directory
-  // This way paths like 'docs' will be excluded relative to the custom directory
-  if (isCustomDir && customRootDir !== rootDir) {
-    // If we're using a custom directory, we need to adjust the exclude paths
-    // to be correct for that directory structure
-    console.log(`Note: Using standard exclusion paths for custom directory.`);
-    console.log(`     You may need to adjust EXCLUDE_PATHS in the script if needed.`);
-  }
+  // Collect all files
+  const allFiles = scanDirectory(customRootDir);
 
-  scanDirectory(customRootDir);
+  // Sort all files by line count (descending)
+  allFiles.sort((a, b) => b.lineCount - a.lineCount);
+
+  // Process sorted files
+  for (const { filePath, relativePath, lineCount } of allFiles) {
+    const ext = path.extname(filePath);
+
+    // Skip unsupported file types
+    if (!INCLUDE_EXTENSIONS.includes(ext)) {
+      continue;
+    }
+
+    content += `## ${relativePath} (${lineCount} lines)\n`;
+
+    // Add detailed analysis for JS files
+    if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
+      // Extract method signatures and imports for JavaScript files
+      let { signatures, imports } = extractMethodSignatures(filePath);
+
+      // If no signatures were found, try the fallback method
+      if (!signatures || signatures.length === 0 ||
+          signatures.length === 1 && signatures[0].signature.startsWith('[Unable to parse')) {
+        const fallbackSignatures = extractMethodsFromRawContent(fs.readFileSync(filePath, 'utf8'));
+        if (fallbackSignatures) {
+          signatures = fallbackSignatures;
+        }
+      }
+
+      // Add imports if there are any
+      if (imports.length > 0) {
+        content += 'Imports:\n';
+        imports.forEach(importStatement => {
+          content += `- ${importStatement}\n`;
+        });
+        content += '\n';
+      }
+
+      // Add method signatures
+      if (signatures.length > 0) {
+        // De-duplicate functions that are both declared and exported
+        const uniqueSignatures = [];
+        const seenFunctions = new Set();
+
+        // First pass: collect function names and identify duplicates
+        for (const sig of signatures) {
+          const funcNameMatch = sig.signature.match(/(?:function|export function) (\w+)/);
+          if (funcNameMatch) {
+            const funcName = funcNameMatch[1];
+
+            // If we've seen this function before, skip it
+            if (seenFunctions.has(funcName)) {
+              continue;
+            }
+
+            seenFunctions.add(funcName);
+            uniqueSignatures.push(sig);
+          } else {
+            // For non-function or other special cases, keep them
+            uniqueSignatures.push(sig);
+          }
+        }
+
+        content += 'Methods:\n';
+        uniqueSignatures.forEach(({ signature, description, methodCalls }) => {
+          // Add the base signature
+          content += `- ${signature}\n`;
+
+          // Add description if present
+          if (description) {
+            content += `  - Description: ${description}\n`;
+          }
+
+          // Add method calls if present
+          if (methodCalls && methodCalls.length > 0) {
+            content += `  - Calls: ${methodCalls.join(', ')}\n`;
+          }
+        });
+      } else {
+        content += '(No methods found)\n';
+      }
+    } else if (ext === '.json') {
+      try {
+        // For JSON files, show file size in addition to line count
+        const stats = fs.statSync(filePath);
+        content += `(JSON file, ${(stats.size / 1024).toFixed(1)} KB)\n`;
+      } catch (error) {
+        content += `(Error reading JSON: ${error.message})\n`;
+      }
+    }
+
+    content += '\n';
+  }
 
   // Write output to file
   fs.writeFileSync(outputFile, content, 'utf8');
   console.log(`Structure written to ${outputFile}`);
 
   // Also output to console
-  console.log('\n=== CODEBASE STRUCTURE ===\n');
+  console.log('\n=== FILES SORTED BY LINE COUNT ===\n');
   console.log(content);
-  console.log('=== END OF STRUCTURE ===');
+  console.log('=== END OF LIST ===');
 } catch (error) {
   console.error('Error generating structure:', error);
   process.exit(1);
