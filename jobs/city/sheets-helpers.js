@@ -187,14 +187,14 @@ export async function verifySheetHeaders(sheetsClient, spreadsheetId, sheetName)
 }
 
 /**
- * Filter line items to only include those with SKUs containing "CCS1" or "CC0"
+ * Filter line items to only include those with SKUs containing "CCS1", "CC0", or starting with "QCS"
  * @param {Array} lineItems - Array of line items to filter
  * @returns {Array} Filtered array of line items
  */
 export function filterLineItemsBySku(lineItems) {
   return lineItems.filter((item) => {
     const sku = item.sku || "";
-    return sku.includes("CCS1") || sku.includes("CC0");
+    return sku.includes("CCS1") || sku.includes("CC0") || sku.startsWith("QCS");
   });
 }
 

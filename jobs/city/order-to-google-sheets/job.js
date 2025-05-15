@@ -68,7 +68,7 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
   // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
   const filteredLineItems = SheetsHelpers.filterLineItemsBySku(lineItems);
 
-  console.log(`Filtered from ${lineItems.length} to ${filteredLineItems.length} line items matching SKU criteria (CCS1 or CC0)`);
+  console.log(`Filtered from ${lineItems.length} to ${filteredLineItems.length} line items matching SKU criteria (CCS1, CC0, or starting with QCS)`);
 
   if (filteredLineItems.length === 0) {
     console.log(chalk.yellow(`Order ${orderDetails.orderNumber} has no line items with matching SKUs, skipping`));

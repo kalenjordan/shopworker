@@ -246,7 +246,7 @@ function processOrder({
   const orderData = SheetsHelpers.extractOrderData(order, shopify);
   const lineItems = SheetsHelpers.extractLineItems(order);
 
-  // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
+  // Filter line items to only include those with SKUs containing "CCS1", "CC0", or starting with "QCS"
   const filteredLineItems = SheetsHelpers.filterLineItemsBySku(lineItems);
 
   if (filteredLineItems.length === 0) {
