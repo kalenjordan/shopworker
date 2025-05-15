@@ -2,7 +2,7 @@ import GetOrdersForBackfill from "../../../graphql/GetOrdersForBackfill.js";
 import * as GoogleSheets from "../../../connectors/google-sheets.js";
 import chalk from "chalk";
 import { logToCli, logToWorker } from "../../../utils/log.js";
-import * as SheetsHelpers from "../city-sheets-common.js";
+import * as CitySheets from "../city-sheets-common.js";
 
 /**
  * Process an order backfill job
@@ -31,45 +31,29 @@ export async function process({ shopify, env, jobConfig, secrets }) {
   const ordersPerPage = jobConfig.batch_size || 3;
   const orderQuery = ""; // Fetch all recent orders for SKU matching
 
-  // Initialize Google Sheets setup
-  const sheetsClient = await GoogleSheets.createSheetsClient(sheetsCredentials);
-
-  // Get spreadsheet information and first sheet - using the universal function
-  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(
-    sheetsClient,
+  // Initialize Google Sheets client with spreadsheet ID and column mappings
+  const sheetsClient = await GoogleSheets.createSheetsClient(
+    sheetsCredentials,
     spreadsheetId,
-    SheetsHelpers.COLUMN_MAPPINGS
+    null, // Let getFirstSheet determine the sheet name
+    CitySheets.COLUMN_MAPPINGS
   );
+
+  // Get spreadsheet information
+  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient);
 
   console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
   console.log(`Using sheet: "${sheetName}" from spreadsheet "${spreadsheetTitle}"`);
 
-  // Find the indices of order number and SKU columns for duplicate checking
-  const orderNumberIndex = sheetsClient._headerMap.orderNumber;
-  const skuIndex = sheetsClient._headerMap.sku;
-
-  if (orderNumberIndex === undefined || skuIndex === undefined) {
-    throw new Error("Sheet is missing required Order Number or SKU columns");
-  }
-
   // Fetch existing data to check for duplicates
-  const existingRows = await sheetsClient.readRows(spreadsheetId, sheetName);
+  const existingRows = await sheetsClient.readRows();
   console.log(`Fetched ${existingRows.length} existing rows from the sheet`);
-
-  // Convert object data back to array format for compatibility with existing code
-  const existingData = existingRows.map(row => {
-    return Object.values(row);
-  });
 
   // Process orders with pagination
   const stats = await processOrderPages({
     shopify,
     sheetsClient,
-    spreadsheetId,
-    sheetName,
-    orderNumberIndex,
-    skuIndex,
-    existingData,
+    existingRows,
     ordersPerPage,
     orderQuery,
     env
@@ -88,11 +72,7 @@ export async function process({ shopify, env, jobConfig, secrets }) {
 async function processOrderPages({
   shopify,
   sheetsClient,
-  spreadsheetId,
-  sheetName,
-  orderNumberIndex,
-  skuIndex,
-  existingData,
+  existingRows,
   ordersPerPage,
   orderQuery,
   env
@@ -133,11 +113,7 @@ async function processOrderPages({
       orders,
       shopify,
       sheetsClient,
-      spreadsheetId,
-      sheetName,
-      orderNumberIndex,
-      skuIndex,
-      existingData,
+      existingRows,
       pageNumber,
       env
     });
@@ -175,11 +151,7 @@ async function processOrderPage({
   orders,
   shopify,
   sheetsClient,
-  spreadsheetId,
-  sheetName,
-  orderNumberIndex,
-  skuIndex,
-  existingData,
+  existingRows,
   pageNumber,
   env
 }) {
@@ -192,24 +164,19 @@ async function processOrderPage({
     const order = edge.node;
     processedCount++;
 
-    const orderRows = processOrder({
-      order,
-      shopify,
-      orderNumberIndex,
-      skuIndex,
-      existingData,
-      env
-    });
+    // Use the same processing logic from city-sheets-common
+    const result = await processOrderForBackfill(order, shopify, sheetsClient, existingRows);
 
-    // Track new rows and count
-    rowsToAdd.push(...orderRows);
-    addedCount += orderRows.length;
+    if (result && result.rows) {
+      rowsToAdd.push(...result.rows);
+      addedCount += result.rows.length;
+    }
   }
 
   // Add new rows to the sheet if there are any
   if (rowsToAdd.length > 0) {
     console.log(`Adding ${rowsToAdd.length} new rows to the sheet for this page`);
-    await sheetsClient.appendRows(spreadsheetId, sheetName, rowsToAdd);
+    await sheetsClient.appendRows(rowsToAdd);
     console.log(chalk.green(`Successfully added ${rowsToAdd.length} new rows to the sheet`));
   }
 
@@ -217,31 +184,35 @@ async function processOrderPage({
 }
 
 /**
- * Process a single order and return new rows to add
- * @param {Object} options - Processing options
- * @returns {Array} - New rows to add to the sheet
+ * Process a single order for backfill and check for duplicates
+ * @param {Object} order - Order data
+ * @param {Object} shopify - Shopify API client
+ * @param {Object} sheetsClient - Google Sheets client
+ * @param {Array} existingRows - Existing rows in the sheet
+ * @returns {Object} - New rows to add to the sheet
  */
-function processOrder({
-  order,
-  shopify,
-  orderNumberIndex,
-  skuIndex,
-  existingData,
-  env
-}) {
+async function processOrderForBackfill(order, shopify, sheetsClient, existingRows) {
   // Extract order data
-  const orderData = SheetsHelpers.extractOrderData(order, shopify);
-  const lineItems = SheetsHelpers.extractLineItems(order);
+  const orderData = CitySheets.extractOrderData(order, shopify);
+  const lineItems = CitySheets.extractLineItems(order);
 
-  // Filter line items to only include those with SKUs containing "CCS1", "CC0", or starting with "QCS"
-  const filteredLineItems = SheetsHelpers.filterLineItemsBySku(lineItems);
+  // Filter line items to only include those with SKUs matching the pattern
+  const filteredLineItems = CitySheets.filterLineItemsBySku(lineItems);
 
-  // Convert order data to row format using the helper function
-  return SheetsHelpers.transformOrderDataToRows(orderData, filteredLineItems).filter(row => {
-    // Check if this order line item already exists in the sheet
-    return !existingData.some(existingRow =>
-      existingRow[orderNumberIndex] === row.orderNumber &&
-      existingRow[skuIndex] === row.sku
+  if (filteredLineItems.length === 0) {
+    return { rows: [] };
+  }
+
+  // Convert order data to row format
+  const newRows = CitySheets.transformOrderDataToRows(orderData, filteredLineItems);
+
+  // Check for duplicates by comparing order number and SKU
+  const dedupedRows = newRows.filter(newRow => {
+    return !existingRows.some(existingRow =>
+      existingRow.orderNumber === newRow.orderNumber &&
+      existingRow.sku === newRow.sku
     );
   });
+
+  return { rows: dedupedRows };
 }

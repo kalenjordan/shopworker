@@ -49,7 +49,7 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
   logToCli(env, "Processing Order: " + (order.name || order.id));
 
   // Use the processOrderForSheet function to handle the common logic
-  const result = await CitySheets.processOrderForSheet(order, shopify, sheetsClient);
+  const result = await processOrderForSheet(order, shopify, sheetsClient);
 
   if (result.skipped) {
     console.log(chalk.yellow(`Order processing skipped: ${result.reason}`));
@@ -57,4 +57,41 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
   }
 
   console.log(chalk.green(`Order data added to Google Sheet at range: ${result.updates?.updatedRange || "unknown"}`));
+}
+
+/**
+ * Process an order and add it to the specified Google Sheet
+ * @param {Object} order - Shopify order data
+ * @param {Object} shopify - Shopify client
+ * @param {Object} sheetsClient - Google Sheets client
+ * @returns {Promise<Object>} Result of the append operation
+ */
+async function processOrderForSheet(order, shopify, sheetsClient) {
+  // Extract order data
+  const orderData = CitySheets.extractOrderData(order, shopify);
+
+  // Extract and filter line items
+  const lineItems = CitySheets.extractLineItems(order);
+  const filteredItems = CitySheets.filterLineItemsBySku(lineItems);
+
+  // Log preview information
+  console.log(`Filtered from ${lineItems.length} to ${filteredItems.length} line items matching SKU criteria (CCS1, CC0, or starting with QCS)`);
+
+  // Skip if no matching line items
+  if (filteredItems.length === 0) {
+    console.log(chalk.yellow(`Order ${order.name || order.id} has no line items with matching SKUs, skipping`));
+    return { skipped: true, reason: "No matching line items" };
+  }
+
+  // Preview what will be added
+  console.log(`\nProcessing ${filteredItems.length} line items for order ${order.name || order.id}:`);
+  for (const item of filteredItems) {
+    console.log(`• SKU: ${item.sku}, Qty: ${item.quantity}, Title: ${item.title}`);
+  }
+
+  // Transform order data into row data
+  const rowData = CitySheets.transformOrderDataToRows(orderData, filteredItems);
+
+  // Use the client's appendRows method to add data to the sheet
+  return sheetsClient.appendRows(rowData);
 }
