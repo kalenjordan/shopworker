@@ -35,30 +35,31 @@ export async function process({ shopify, env, jobConfig, secrets }) {
   const sheetsClient = await GoogleSheets.createSheetsClient(sheetsCredentials);
 
   // Get spreadsheet information and first sheet - using the universal function
-  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
+  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(
+    sheetsClient,
+    spreadsheetId,
+    SheetsHelpers.COLUMN_MAPPINGS
+  );
 
   console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
   console.log(`Using sheet: "${sheetName}" from spreadsheet "${spreadsheetTitle}"`);
 
-  // Verify the sheet has headers and get them with positions map
-  const { headers, headerMap } = await GoogleSheets.validateSheetHeaders(
-    sheetsClient,
-    spreadsheetId,
-    sheetName,
-    SheetsHelpers.COLUMN_MAPPINGS
-  );
-
   // Find the indices of order number and SKU columns for duplicate checking
-  const orderNumberIndex = headerMap.orderNumber;
-  const skuIndex = headerMap.sku;
+  const orderNumberIndex = sheetsClient._headerMap.orderNumber;
+  const skuIndex = sheetsClient._headerMap.sku;
 
   if (orderNumberIndex === undefined || skuIndex === undefined) {
     throw new Error("Sheet is missing required Order Number or SKU columns");
   }
 
   // Fetch existing data to check for duplicates
-  const existingData = await GoogleSheets.getSheetData(sheetsClient, spreadsheetId, `${sheetName}!A2:Z`);
-  console.log(`Fetched ${existingData.length} existing rows from the sheet`);
+  const existingRows = await sheetsClient.readRows(spreadsheetId, sheetName);
+  console.log(`Fetched ${existingRows.length} existing rows from the sheet`);
+
+  // Convert object data back to array format for compatibility with existing code
+  const existingData = existingRows.map(row => {
+    return Object.values(row);
+  });
 
   // Process orders with pagination
   const stats = await processOrderPages({
@@ -66,8 +67,6 @@ export async function process({ shopify, env, jobConfig, secrets }) {
     sheetsClient,
     spreadsheetId,
     sheetName,
-    headers,
-    headerMap,
     orderNumberIndex,
     skuIndex,
     existingData,
@@ -91,8 +90,6 @@ async function processOrderPages({
   sheetsClient,
   spreadsheetId,
   sheetName,
-  headers,
-  headerMap,
   orderNumberIndex,
   skuIndex,
   existingData,
@@ -138,8 +135,6 @@ async function processOrderPages({
       sheetsClient,
       spreadsheetId,
       sheetName,
-      headers,
-      headerMap,
       orderNumberIndex,
       skuIndex,
       existingData,
@@ -182,8 +177,6 @@ async function processOrderPage({
   sheetsClient,
   spreadsheetId,
   sheetName,
-  headers,
-  headerMap,
   orderNumberIndex,
   skuIndex,
   existingData,
@@ -192,7 +185,7 @@ async function processOrderPage({
 }) {
   let addedCount = 0;
   let processedCount = 0;
-  const newRows = [];
+  const rowsToAdd = [];
 
   // Process each order in the current page
   for (const edge of orders.edges) {
@@ -202,8 +195,6 @@ async function processOrderPage({
     const orderRows = processOrder({
       order,
       shopify,
-      headers,
-      headerMap,
       orderNumberIndex,
       skuIndex,
       existingData,
@@ -211,15 +202,15 @@ async function processOrderPage({
     });
 
     // Track new rows and count
-    newRows.push(...orderRows);
+    rowsToAdd.push(...orderRows);
     addedCount += orderRows.length;
   }
 
   // Add new rows to the sheet if there are any
-  if (newRows.length > 0) {
-    console.log(`Adding ${newRows.length} new rows to the sheet for this page`);
-    await GoogleSheets.appendSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1`, newRows, "USER_ENTERED");
-    console.log(chalk.green(`Successfully added ${newRows.length} new rows to the sheet`));
+  if (rowsToAdd.length > 0) {
+    console.log(`Adding ${rowsToAdd.length} new rows to the sheet for this page`);
+    await sheetsClient.appendRows(spreadsheetId, sheetName, rowsToAdd);
+    console.log(chalk.green(`Successfully added ${rowsToAdd.length} new rows to the sheet`));
   }
 
   return { processedCount, addedCount };
@@ -233,15 +224,11 @@ async function processOrderPage({
 function processOrder({
   order,
   shopify,
-  headers,
-  headerMap,
   orderNumberIndex,
   skuIndex,
   existingData,
   env
 }) {
-  const newOrderRows = [];
-
   // Extract order data
   const orderData = SheetsHelpers.extractOrderData(order, shopify);
   const lineItems = SheetsHelpers.extractLineItems(order);
@@ -249,29 +236,12 @@ function processOrder({
   // Filter line items to only include those with SKUs containing "CCS1", "CC0", or starting with "QCS"
   const filteredLineItems = SheetsHelpers.filterLineItemsBySku(lineItems);
 
-  if (filteredLineItems.length === 0) {
-    console.log(`Order ${orderData.orderNumber} has no line items with matching SKUs, skipping`);
-    return newOrderRows;
-  }
-
-  logToCli(env, `Processing order ${orderData.orderNumber} with ${filteredLineItems.length} matching line items`);
-
-  // Create rows for each filtered line item using the more efficient headerMap
-  const rows = SheetsHelpers.createDynamicSheetRows(orderData, filteredLineItems, headers, headerMap);
-
-  // Check each row to see if it already exists in the sheet
-  for (const row of rows) {
-    const orderNumber = row[orderNumberIndex];
-    const sku = row[skuIndex];
-
-    if (!SheetsHelpers.orderLineItemExists(existingData, orderNumber, sku, orderNumberIndex, skuIndex)) {
-      // This order line item doesn't exist in the sheet, add it
-      newOrderRows.push(row);
-
-      // Also add to existingData to prevent duplicates within the current run
-      existingData.push(row);
-    }
-  }
-
-  return newOrderRows;
+  // Convert order data to row format using the helper function
+  return SheetsHelpers.transformOrderDataToRows(orderData, filteredLineItems).filter(row => {
+    // Check if this order line item already exists in the sheet
+    return !existingData.some(existingRow =>
+      existingRow[orderNumberIndex] === row.orderNumber &&
+      existingRow[skuIndex] === row.sku
+    );
+  });
 }

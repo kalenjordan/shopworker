@@ -189,12 +189,24 @@ async function updateProductRows(sheetsClient, spreadsheetId, sheetName, newRows
   // Create range based on rows to update
   const range = createRangeString(sheetName, startRow, endRow, columnCount);
 
+  // Convert row arrays to objects based on header mapping
+  const dataObjects = newRows.slice(0, rowsToUpdate).map(row => {
+    const obj = {};
+    sheetsClient._headers.forEach((header, index) => {
+      // Find the key for this header
+      const mapping = COLUMN_MAPPINGS.find(m => m.label === header);
+      if (mapping) {
+        obj[mapping.key] = row[index] || '';
+      }
+    });
+    return obj;
+  });
+
   // Update the rows
-  const updateResult = await GoogleSheets.writeSheetData(
-    sheetsClient,
+  const updateResult = await sheetsClient.writeRows(
     spreadsheetId,
-    range,
-    newRows.slice(0, rowsToUpdate),
+    sheetName,
+    dataObjects,
     "USER_ENTERED"
   );
 
@@ -211,17 +223,25 @@ async function updateProductRows(sheetsClient, spreadsheetId, sheetName, newRows
  * @returns {Promise<Object>} Append result
  */
 async function appendProductRows(sheetsClient, spreadsheetId, sheetName, rows, columnCount) {
-  const range = `${sheetName}!A:${columnIndexToLetter(columnCount - 1)}`;
+  // Convert row arrays to objects based on header mapping
+  const dataObjects = rows.map(row => {
+    const obj = {};
+    sheetsClient._headers.forEach((header, index) => {
+      // Find the key for this header
+      const mapping = COLUMN_MAPPINGS.find(m => m.label === header);
+      if (mapping) {
+        obj[mapping.key] = row[index] || '';
+      }
+    });
+    return obj;
+  });
 
-  const result = await GoogleSheets.appendSheetData(
-    sheetsClient,
+  return await sheetsClient.appendRows(
     spreadsheetId,
-    range,
-    rows,
+    sheetName,
+    dataObjects,
     "USER_ENTERED"
   );
-
-  return result;
 }
 
 // -----------------------------------------------------------------------------
@@ -331,29 +351,42 @@ async function fetchProductData(shopify, productId) {
 }
 
 /**
- * Find existing rows for a product
+ * Find existing product rows in a sheet
  * @param {Object} sheetsClient - Google Sheets client
  * @param {string} spreadsheetId - Spreadsheet ID
  * @param {string} sheetName - Sheet name
  * @param {string} productId - Product ID to find
  * @param {Array} headers - Sheet headers
- * @returns {Promise<Object>} Existing rows information
+ * @returns {Promise<Object>} Object with rowIndices, rows, and idColumnIndex
  */
 async function findExistingProductRows(sheetsClient, spreadsheetId, sheetName, productId, headers) {
-  // Find ID column index
-  const idColumnIndex = headers.findIndex(header => header === "ID");
-  if (idColumnIndex === -1) {
+  // Initialize headers if needed
+  if (!sheetsClient._headers) {
+    await sheetsClient.initializeHeaders(spreadsheetId, sheetName, COLUMN_MAPPINGS);
+  }
+
+  // Find the ID column index in the header row
+  const idColumnIndex = sheetsClient._headerMap.id;
+
+  if (idColumnIndex === undefined) {
     throw new Error("ID column not found in sheet headers");
   }
 
-  // Get all existing data from the sheet
-  const fullRange = createRangeString(sheetName, 1, 1000, headers.length); // Fetch up to 1000 rows
-  const sheetData = await GoogleSheets.getSheetData(sheetsClient, spreadsheetId, fullRange);
+  // Read all rows as objects
+  const rowObjects = await sheetsClient.readRows(spreadsheetId, sheetName);
 
-  // Find rows that match this product ID
-  const { rowIndices, rows: existingRows } = findProductRowsByID(sheetData, productId, idColumnIndex);
+  // Convert objects back to arrays for compatibility with existing code
+  const sheetData = [headers];  // Start with headers as first row
+  rowObjects.forEach(rowObj => {
+    const row = headers.map(header => {
+      const mapping = COLUMN_MAPPINGS.find(m => m.label === header);
+      return mapping ? rowObj[mapping.key] || "" : "";
+    });
+    sheetData.push(row);
+  });
 
-  return { existingRows, rowIndices, idColumnIndex };
+  // Find rows with matching product ID
+  return { ...findProductRowsByID(sheetData, productId, idColumnIndex), idColumnIndex };
 }
 
 /**

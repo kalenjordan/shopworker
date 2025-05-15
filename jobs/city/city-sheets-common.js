@@ -2,6 +2,7 @@
  * City client-specific Google Sheets helper functions
  */
 import * as GoogleSheets from "../../connectors/google-sheets.js";
+import { format, parseISO } from "date-fns";
 
 // Define column mappings specific to City's spreadsheet
 export const COLUMN_MAPPINGS = [
@@ -26,16 +27,6 @@ export const COLUMN_MAPPINGS = [
   { key: "id", label: "ID" },
   { key: "note", label: "Note" },
 ];
-
-/**
- * Format date as YYYY-MM-DD
- * @param {string} isoDate - ISO format date
- * @returns {string} Formatted date
- */
-export function formatDate(isoDate) {
-  const date = new Date(isoDate);
-  return date.toISOString().split("T")[0]; // Returns YYYY-MM-DD
-}
 
 /**
  * Extract and prepare order data for the Google Sheet
@@ -68,7 +59,7 @@ export function extractOrderData(order, shopify) {
 
   // Return structured order data
   return {
-    date: formatDate(order.createdAt || new Date()),
+    date: format(parseISO(order.createdAt), 'yyyy-MM-dd'),
     orderNumber,
     tags,
     firstName: shippingAddress.firstName || customer.firstName || "",
@@ -119,37 +110,43 @@ export function extractLineItems(order) {
  * @param {Array} headers - Actual headers from the Google Sheet
  * @param {Object} headerMap - Optional map of keys to column indices
  * @returns {Array} Array of rows for the sheet (one per line item)
+ * @deprecated Use transformOrderDataToRows with sheetsClient.appendRows instead
  */
 export function createDynamicSheetRows(orderData, lineItems, headers, headerMap = null) {
-  // Create a mapping from header labels to data keys
-  const headerToKeyMap = {};
-  COLUMN_MAPPINGS.forEach((mapping) => {
-    headerToKeyMap[mapping.label] = mapping.key;
-  });
+  console.warn('createDynamicSheetRows is deprecated. Use transformOrderDataToRows with sheetsClient.appendRows instead.');
 
-  return lineItems.map((item) => {
-    // Create a merged data object with order data and line item data
-    const rowData = {
-      ...orderData,
-      sku: item.sku || "",
-      quantity: item.quantity || "",
-    };
+  if (headerMap) {
+    // Convert items into row format
+    const rowDataObjects = transformOrderDataToRows(orderData, lineItems);
 
-    // If we have a headerMap, use it for more efficient lookups
-    if (headerMap) {
-      // Create a row with empty values for all columns
+    // Format them for the sheet
+    return rowDataObjects.map(dataObject => {
       const row = new Array(headers.length).fill("");
 
-      // Fill in the values we have based on the headerMap
       for (const key in headerMap) {
         const columnIndex = headerMap[key];
-        const value = rowData[key] || "";
+        const value = dataObject[key] || "";
         row[columnIndex] = value;
       }
 
       return row;
-    } else {
-      // Legacy approach: map based on header labels
+    });
+  } else {
+    // Legacy approach: map based on header labels
+    // Create a mapping from header labels to data keys
+    const headerToKeyMap = {};
+    COLUMN_MAPPINGS.forEach((mapping) => {
+      headerToKeyMap[mapping.label] = mapping.key;
+    });
+
+    return lineItems.map((item) => {
+      // Create a merged data object with order data and line item data
+      const rowData = {
+        ...orderData,
+        sku: item.sku || "",
+        quantity: item.quantity || "",
+      };
+
       return headers.map((header) => {
         const dataKey = headerToKeyMap[header];
         if (!dataKey) {
@@ -158,32 +155,22 @@ export function createDynamicSheetRows(orderData, lineItems, headers, headerMap 
         const value = rowData[dataKey] || "";
         return value;
       });
-    }
-  });
+    });
+  }
 }
 
 /**
- * Verify the sheet has headers and validate against City's expected columns
- * @param {Object} sheetsClient - Google Sheets client
- * @param {string} spreadsheetId - Google Sheets spreadsheet ID
- * @param {string} sheetName - Google Sheets sheet name
- * @returns {Array} Array of headers
+ * Transform order and line items into row data for sheets
+ * @param {Object} orderData - Structured order data
+ * @param {Array} lineItems - Array of line items
+ * @returns {Array} Array of data objects ready for the sheet
  */
-export async function verifySheetHeaders(sheetsClient, spreadsheetId, sheetName) {
-  const headers = await GoogleSheets.getSheetHeaders(sheetsClient, spreadsheetId, sheetName);
-
-  // Optionally validate that the headers match our expected column mappings
-  const expectedHeaders = COLUMN_MAPPINGS.map((column) => column.label);
-
-  // Instead of requiring exact matches, we just log a warning if columns don't match
-  if (headers.length !== expectedHeaders.length) {
-    console.error(`\nWarning: Sheet has ${headers.length} columns, but we expected ${expectedHeaders.length}.`);
-    console.error(`Sheet headers: ${headers.join(", ")}`);
-    console.error(`Expected headers: ${expectedHeaders.join(", ")}`);
-    throw new Error(`Sheet has ${headers.length} columns, but we expected ${expectedHeaders.length}.`);
-  }
-
-  return headers;
+export function transformOrderDataToRows(orderData, lineItems) {
+  return lineItems.map(item => ({
+    ...orderData,
+    sku: item.sku || "",
+    quantity: item.quantity || "",
+  }));
 }
 
 /**
@@ -212,4 +199,61 @@ export function orderLineItemExists(sheetData, orderNumber, sku, orderNumberInde
     row[orderNumberIndex] === orderNumber &&
     row[skuIndex] === sku
   );
+}
+
+/**
+ * Process an order and add it to the specified Google Sheet
+ * @param {Object} order - Shopify order data
+ * @param {Object} shopify - Shopify client
+ * @param {Object} sheetsClient - Google Sheets client
+ * @param {string} spreadsheetId - Google Sheets spreadsheet ID
+ * @param {string} sheetName - Google Sheets sheet name
+ * @returns {Promise<Object>} Result of the append operation
+ *
+ * @example
+ * // Example usage in a job file:
+ * import * as CitySheets from '../../jobs/city/city-sheets-common.js';
+ * import * as GoogleSheets from '../../connectors/google-sheets.js';
+ *
+ * export async function process(shopify, data) {
+ *   const { order } = data;
+ *
+ *   // Get credentials from secrets
+ *   const sheetsClient = await GoogleSheets.createSheetsClient(
+ *     JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS)
+ *   );
+ *
+ *   // Process the order and add it to the sheet
+ *   return CitySheets.processOrderForSheet(
+ *     order,
+ *     shopify,
+ *     sheetsClient,
+ *     process.env.SPREADSHEET_ID,
+ *     process.env.SHEET_NAME
+ *   );
+ * }
+ */
+export async function processOrderForSheet(order, shopify, sheetsClient, spreadsheetId, sheetName) {
+  // Initialize headers if not already done
+  if (!sheetsClient._headers) {
+    await sheetsClient.initializeHeaders(spreadsheetId, sheetName, COLUMN_MAPPINGS);
+  }
+
+  // Extract order data
+  const orderData = extractOrderData(order, shopify);
+
+  // Extract and filter line items
+  const lineItems = extractLineItems(order);
+  const filteredItems = filterLineItemsBySku(lineItems);
+
+  // Skip if no matching line items
+  if (filteredItems.length === 0) {
+    return { skipped: true, reason: "No matching line items" };
+  }
+
+  // Transform order data into row data
+  const rowData = transformOrderDataToRows(orderData, filteredItems);
+
+  // Use the client's appendRows method to add data to the sheet
+  return sheetsClient.appendRows(spreadsheetId, sheetName, rowData);
 }

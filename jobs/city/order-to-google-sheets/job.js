@@ -2,7 +2,7 @@ import GetOrderById from "../../../graphql/GetOrderById.js";
 import * as GoogleSheets from "../../../connectors/google-sheets.js";
 import chalk from "chalk";
 import { logToCli, logToWorker } from "../../../utils/log.js";
-import * as SheetsHelpers from "../sheets-helpers.js";
+import * as CitySheets from "../city-sheets-common.js";
 
 /**
  * Process a Shopify order and add it to Google Sheets
@@ -29,9 +29,15 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
     throw new Error("No spreadsheet ID provided in job config.json");
   }
 
-  // Get spreadsheet information and first sheet - using our new universal function
+  // Initialize Google Sheets client
   const sheetsClient = await GoogleSheets.createSheetsClient(secrets.GOOGLE_SHEETS_CREDENTIALS);
-  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
+
+  // Get spreadsheet information and first sheet, and initialize headers
+  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(
+    sheetsClient,
+    spreadsheetId,
+    CitySheets.COLUMN_MAPPINGS
+  );
 
   console.log(chalk.blue(`Spreadsheet title: "${spreadsheetTitle}"`));
   console.log(`Using sheet: "${sheetName}" from spreadsheet "${spreadsheetTitle}"`);
@@ -40,17 +46,9 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
   const orderId = shopify.toGid(orderData.id, "Order");
   const { order } = await shopify.graphql(GetOrderById, { id: orderId });
 
-  // Verify the sheet has headers and get them with positions map
-  const { headers, headerMap } = await GoogleSheets.validateSheetHeaders(
-    sheetsClient,
-    spreadsheetId,
-    sheetName,
-    SheetsHelpers.COLUMN_MAPPINGS
-  );
-
   // Extract data from the order
-  const orderDetails = SheetsHelpers.extractOrderData(order, shopify);
-  const lineItems = SheetsHelpers.extractLineItems(order);
+  const orderDetails = CitySheets.extractOrderData(order, shopify);
+  const lineItems = CitySheets.extractLineItems(order);
 
   // Validate we have line items
   if (lineItems.length === 0) {
@@ -66,7 +64,7 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
   logToCli(env, "Order: " + orderDetails.orderNumber);
 
   // Filter line items to only include those with SKUs containing "CCS1" or "CC0"
-  const filteredLineItems = SheetsHelpers.filterLineItemsBySku(lineItems);
+  const filteredLineItems = CitySheets.filterLineItemsBySku(lineItems);
 
   console.log(`Filtered from ${lineItems.length} to ${filteredLineItems.length} line items matching SKU criteria (CCS1, CC0, or starting with QCS)`);
 
@@ -75,17 +73,21 @@ export async function process({ record: orderData, shopify, env, jobConfig, secr
     return;
   }
 
-  // Format data for Google Sheets using dynamic headers and header map for efficient lookups
-  const rows = SheetsHelpers.createDynamicSheetRows(orderDetails, filteredLineItems, headers, headerMap);
+  // Transform order data into row data objects
+  const rowData = CitySheets.transformOrderDataToRows(orderDetails, filteredLineItems);
 
   // Log rows being added
-  console.log(`\nAdding ${rows.length} rows to sheet for order ${order.name || order.id}:`);
-  for (const row of rows) {
-    logToCli(env, `• ${row.join(' | ')}`);
+  console.log(`\nAdding ${rowData.length} rows to sheet for order ${order.name || order.id}:`);
+  for (const row of rowData) {
+    logToCli(env, `• SKU: ${row.sku}, Qty: ${row.quantity}, Customer: ${row.firstName} ${row.lastName}`);
   }
 
-  // Append to Google Sheet
-  const appendResult = await GoogleSheets.appendSheetData(sheetsClient, spreadsheetId, `${sheetName}!A1`, rows, "USER_ENTERED");
+  // Append rows directly using the client
+  const appendResult = await sheetsClient.appendRows(
+    spreadsheetId,
+    sheetName,
+    rowData
+  );
 
   console.log(chalk.green(`Order data added to Google Sheet at range: ${appendResult.updates?.updatedRange || "unknown"}`));
 }
