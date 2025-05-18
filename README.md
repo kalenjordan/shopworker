@@ -190,5 +190,4 @@ CLOUDFLARE_WORKER_URL=https://your-worker-url.workers.dev
 
 ## TODOS:
 
-- Webhook signature validation!!
 - Implement cloudflare job queue
