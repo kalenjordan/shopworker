@@ -261,71 +261,66 @@ export async function process({ record: productData, shopify, env, jobConfig, se
   console.log("Product webhook payload received");
   logToWorker(env, "Webhook payload: " + JSON.stringify(productData));
 
-  try {
-    // Validate required data and configuration
-    GoogleSheets.validateSheetCredentials(secrets);
+  // Validate required data and configuration
+  GoogleSheets.validateSheetCredentials(secrets);
 
-    if (!productData.id) {
-      throw new Error("No product ID provided in webhook data");
-    }
-
-    // Get spreadsheet ID from job config
-    const spreadsheetId = jobConfig.spreadsheet_id;
-    if (!spreadsheetId) {
-      throw new Error("No spreadsheet ID provided in job config.json");
-    }
-
-    // Create Google Sheets client
-    const sheetsClient = await GoogleSheets.createSheetsClient(secrets.GOOGLE_SHEETS_CREDENTIALS);
-
-    // Get spreadsheet and sheet information using the standardized function
-    const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
-
-    console.log(chalk.blue(`Accessing spreadsheet: "${spreadsheetTitle}"`));
-    console.log(`Using sheet: "${sheetName}"`);
-
-    // Fetch complete product data from Shopify
-    const product = await fetchProductData(shopify, productData.id);
-
-    // Verify sheet headers and get header map
-    const { headers, headerMap } = await GoogleSheets.validateSheetHeaders(
-      sheetsClient,
-      spreadsheetId,
-      sheetName,
-      COLUMN_MAPPINGS
-    );
-
-    // Extract and transform product data
-    const productDetails = extractProductData(product);
-    const newRows = createSheetRows(productDetails, headers);
-
-    // Find any existing rows for this product
-    const { existingRows, rowIndices, idColumnIndex } = await findExistingProductRows(
-      sheetsClient,
-      spreadsheetId,
-      sheetName,
-      productDetails.id,
-      headers
-    );
-
-    // Update or append product data as appropriate
-    await updateProductInSheet(
-      sheetsClient,
-      spreadsheetId,
-      sheetName,
-      null, // No longer using sheetId
-      newRows,
-      rowIndices,
-      existingRows,
-      headers.length,
-      productDetails.id
-    );
-
-    logToCli(env, `Product ${productDetails.title} (ID: ${productDetails.id}) successfully processed`);
-  } catch (error) {
-    console.error(`Error processing product data: ${error.message}`);
-    throw error;
+  if (!productData.id) {
+    throw new Error("No product ID provided in webhook data");
   }
+
+  // Get spreadsheet ID from job config
+  const spreadsheetId = jobConfig.spreadsheet_id;
+  if (!spreadsheetId) {
+    throw new Error("No spreadsheet ID provided in job config.json");
+  }
+
+  // Create Google Sheets client
+  const sheetsClient = await GoogleSheets.createSheetsClient(secrets.GOOGLE_SHEETS_CREDENTIALS);
+
+  // Get spreadsheet and sheet information using the standardized function
+  const { sheetName, spreadsheetTitle } = await GoogleSheets.getFirstSheet(sheetsClient, spreadsheetId);
+
+  console.log(chalk.blue(`Accessing spreadsheet: "${spreadsheetTitle}"`));
+  console.log(`Using sheet: "${sheetName}"`);
+
+  // Fetch complete product data from Shopify
+  const product = await fetchProductData(shopify, productData.id);
+
+  // Verify sheet headers and get header map
+  const { headers, headerMap } = await GoogleSheets.validateSheetHeaders(
+    sheetsClient,
+    spreadsheetId,
+    sheetName,
+    COLUMN_MAPPINGS
+  );
+
+  // Extract and transform product data
+  const productDetails = extractProductData(product);
+  const newRows = createSheetRows(productDetails, headers);
+
+  // Find any existing rows for this product
+  const { existingRows, rowIndices, idColumnIndex } = await findExistingProductRows(
+    sheetsClient,
+    spreadsheetId,
+    sheetName,
+    productDetails.id,
+    headers
+  );
+
+  // Update or append product data as appropriate
+  await updateProductInSheet(
+    sheetsClient,
+    spreadsheetId,
+    sheetName,
+    null, // No longer using sheetId
+    newRows,
+    rowIndices,
+    existingRows,
+    headers.length,
+    productDetails.id
+  );
+
+  logToCli(env, `Product ${productDetails.title} (ID: ${productDetails.id}) successfully processed`);
 }
 
 // -----------------------------------------------------------------------------
