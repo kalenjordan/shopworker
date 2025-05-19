@@ -173,7 +173,7 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
 
   const shopify = initShopify(cliDirname, jobPath, shopParam);
 
-  if (triggerConfig.test && triggerConfig.test.skipQuery) {
+  if (jobConfig.trigger === 'manual') {
     return {
       record: {},
       recordName: 'manual-trigger',

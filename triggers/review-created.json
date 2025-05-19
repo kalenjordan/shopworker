@@ -1,0 +1,9 @@
+{
+  "name": "Review Created",
+  "webhook": {
+    "topic": "reviews/create"
+  },
+  "test": {
+    "query": "GetRecentOrders"
+  }
+}
