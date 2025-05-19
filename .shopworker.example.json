@@ -1,5 +1,5 @@
 {
-  "last_deployed_commit": "f089461dad4ba5c052d5ea9ecfc65c744ecb2387",
+  "lastDeployedCommit": "f089461dad4ba5c052d5ea9ecfc65c744ecb2387",
   "cloudflare_worker_url": "https://shopworker.your0cloudflare-subdomain.workers.dev",
   "shops": [
     {
