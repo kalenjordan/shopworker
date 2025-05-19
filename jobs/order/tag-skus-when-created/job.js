@@ -58,25 +58,18 @@ export async function process({ record: order, shopify }) {
 
   console.log(`Updating order ${order.name || order.id} with tags: ${newTags.join(", ")}`);
 
-  try {
-    // Use destructured 'shopify' client
-    const response = await shopify.graphql(OrderUpdate, variables);
-    const result = response.orderUpdate;
+  // Use destructured 'shopify' client
+  const response = await shopify.graphql(OrderUpdate, variables);
+  const result = response.orderUpdate;
 
-    if (result?.userErrors?.length > 0) {
-      const errors = result.userErrors.map(err => `${err.field}: ${err.message}`).join(", ");
-      console.error(`Error updating order tags for ${order.id}: ${errors}`);
-      throw new Error(`Failed to update order tags: ${errors}`);
-    }
-
-    if (!result?.order) {
-       console.error("Unexpected response structure from orderUpdate mutation:", response);
-       throw new Error("Failed to get order details from update response.");
-    }
-
-    console.log(`Successfully updated order tags for ${result.order.name || result.order.id}: ${result.order.tags.join(", ")}`);
-  } catch (error) {
-     console.error(`Failed to update tags for order ${order.id}:`, error);
-     throw error; // Re-throw after logging
+  if (result?.userErrors?.length > 0) {
+    const errors = result.userErrors.map(err => `${err.field}: ${err.message}`).join(", ");
+    throw new Error(`Failed to update order tags for order ${order.id}: ${errors}`);
   }
+
+  if (!result?.order) {
+    throw new Error(`Failed to get order details from update response for order ${order.id}. Response: ${JSON.stringify(response)}`);
+  }
+
+  console.log(`Successfully updated order tags for ${result.order.name || result.order.id}: ${result.order.tags.join(", ")}`);
 }
