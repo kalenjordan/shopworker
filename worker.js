@@ -61,7 +61,7 @@ async function loadJobHandler(jobPath) {
 async function loadJobConfig(jobPath) {
   try {
     // Import the config.json file from the job directory
-    const configModule = await import(`./jobs/${jobPath}/config.json`, { assert: { type: 'json' } });
+    const configModule = await import(`./jobs/${jobPath}/config.json`);
     return configModule.default;
   } catch (error) {
     console.error(`Failed to load job config for ${jobPath}:`, error.message);
