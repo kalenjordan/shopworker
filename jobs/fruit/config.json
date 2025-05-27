@@ -1,0 +1,7 @@
+{
+  "name": "Fruit Orders Email Report",
+  "shop": "kalen-test-store",
+  "description": "Fetches orders and sends an email attachment with a .xls file summarizing the orders",
+  "version": "1.0.0",
+  "trigger": "manual"
+}
