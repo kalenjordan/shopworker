@@ -17,6 +17,8 @@ When implementing new features or modifying existing ones, always follow the pat
 
 4. **GraphQL organization** - All GraphQL operations must be defined in separate files in the `graphql/` directory, never inline in job files or other components
 
+5. **Date handling** - Always use date-fns for date formatting and manipulation instead of creating custom date functions. The project includes date-fns as a dependency.
+
 ## Examples of Pattern Matching
 
 When working with specific functionality, look at these example implementations:
@@ -26,5 +28,17 @@ When working with specific functionality, look at these example implementations:
 - For **webhook handling**, follow patterns in [utils/webhook-handlers.js](mdc:utils/webhook-handlers.js)
 
 - For **GraphQL operations**, observe how queries and mutations are defined in separate files in the [graphql](mdc:graphql) directory and imported where needed
+
+- For **date formatting**, follow the pattern in [jobs/city/city-sheets-common.js](mdc:jobs/city/city-sheets-common.js) which uses `format` and `parseISO` from date-fns
+
+## Date Handling Best Practices
+
+When working with dates in this project:
+
+- **Use date-fns functions** instead of custom date formatting
+- **Import specific functions** like `import { format, parseISO } from "date-fns"`
+- **Parse ISO dates** using `parseISO()` before formatting
+- **Format consistently** using `format()` with appropriate format strings
+- **Example pattern**: `format(parseISO(order.createdAt), 'yyyy-MM-dd HH:mm')`
 
 Remember to preserve the existing style, casing, and structure when adding new code to maintain consistency throughout the codebase.
