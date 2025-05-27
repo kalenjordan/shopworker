@@ -11,7 +11,6 @@ import {
   ensureAndResolveJobName,
   getWorkerUrl,
   runJobTest,
-  findSampleRecordForJob,
   runJobRemoteTest,
   handleCloudflareDeployment
 } from './utils/cli-helpers.js';

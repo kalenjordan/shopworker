@@ -165,8 +165,6 @@ async function processOrderPage({
   shopify,
   sheetsClient,
   existingRows,
-  pageNumber,
-  env
 }) {
   let addedCount = 0;
   let processedCount = 0;

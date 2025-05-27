@@ -9,7 +9,7 @@ import OrderCreate from "../../../graphql/OrderCreate.js";
  * @param {Object} params.shopify - Shopify API client
  * @param {Object} [params.env] - Environment variables (not used by this job)
  */
-export async function process({ data, shopify, env }) {
+export async function process({ shopify }) {
   // Log the start of the job
   console.log("Starting order creation job");
 

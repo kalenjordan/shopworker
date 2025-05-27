@@ -68,32 +68,27 @@ export async function process({ shopify }) {
     }
   };
 
-  try {
-    // Execute the product creation mutation
-    const response = await shopify.graphql(productCreateMutation, variables);
+  // Execute the product creation mutation
+  const response = await shopify.graphql(productCreateMutation, variables);
 
-    // Check for user errors
-    if (response?.productCreate?.userErrors &&
-        response.productCreate.userErrors.length > 0) {
-      const errors = response.productCreate.userErrors
-        .map(err => `${err.field}: ${err.message}`)
-        .join(', ');
+  // Check for user errors
+  if (response?.productCreate?.userErrors &&
+      response.productCreate.userErrors.length > 0) {
+    const errors = response.productCreate.userErrors
+      .map(err => `${err.field}: ${err.message}`)
+      .join(', ');
 
-      console.error(`Failed to create product: ${errors}`);
-      return;
-    }
-
-    // Get the created product
-    const product = response.productCreate.product;
-
-    console.log(`Successfully created product!`);
-    console.log(`ID: ${product.id}`);
-    console.log(`Title: ${product.title}`);
-    console.log(`Handle: ${product.handle}`);
-    console.log(`Status: ${product.status}`);
-    console.log(`Created at: ${product.createdAt}`);
-
-  } catch (error) {
-    console.error('Error creating product:', error.message);
+    console.error(`Failed to create product: ${errors}`);
+    return;
   }
+
+  // Get the created product
+  const product = response.productCreate.product;
+
+  console.log(`Successfully created product!`);
+  console.log(`ID: ${product.id}`);
+  console.log(`Title: ${product.title}`);
+  console.log(`Handle: ${product.handle}`);
+  console.log(`Status: ${product.status}`);
+  console.log(`Created at: ${product.createdAt}`);
 }

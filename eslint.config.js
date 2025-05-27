@@ -5,7 +5,8 @@ export default [
     ignores: ['node_modules/**'],
     plugins: { custom: customPlugin },
     rules: {
-      'custom/no-try-catch-in-job': 'warn'
+      'custom/no-try-catch-in-job': 'warn',
+      'no-unused-vars': 'warn'
     }
   }
 ];

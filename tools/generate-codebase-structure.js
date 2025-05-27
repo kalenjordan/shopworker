@@ -127,6 +127,7 @@ const EXCLUDE_PATHS = [
   'graphql',
   'docs',
   'tools',
+  '.gadget',
   // Add more paths to exclude as needed:
   // 'jobs/deprecated',
 ];
@@ -526,7 +527,17 @@ function extractMethodSignatures(filePath) {
       walk(ast, {
         FunctionDeclaration(node) {
           const name = node.id.name;
-          const params = extractParams(node.params, fileContent, node);
+          let params = extractParams(node.params, fileContent, node);
+
+          // Check if we have object destructuring from JSDoc
+          const jsDocParams = extractJSDocParams(fileContent, node);
+          if (jsDocParams) {
+            // If it's a single parameter that's an object destructuring, replace it
+            if (params.startsWith('{') || params === '') {
+              params = jsDocParams;
+            }
+          }
+
           const returnType = extractReturnType(fileContent, node);
           const lineCount = countMethodLines(fileContent, node);
           const methodCalls = extractMethodCalls(fileContent, node, definedMethods, imports);
@@ -534,12 +545,22 @@ function extractMethodSignatures(filePath) {
           const signature = formatSignature("function", name, params, returnType, false, lineCount);
           const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
-          signatures.push({ signature, description, methodCalls });
+          signatures.push({ signature, description, methodCalls, jsDocParams });
         },
         MethodDefinition(node) {
           const methodName = node.key.name || node.key.value;
           const isAsync = node.value && node.value.async;
-          const params = extractParams(node.value.params, fileContent, node.value);
+          let params = extractParams(node.value.params, fileContent, node.value);
+
+          // Check if we have object destructuring from JSDoc
+          const jsDocParams = extractJSDocParams(fileContent, node.value);
+          if (jsDocParams) {
+            // If it's a single parameter that's an object destructuring, replace it
+            if (params.startsWith('{') || params === '') {
+              params = jsDocParams;
+            }
+          }
+
           const returnType = extractReturnType(fileContent, node.value);
           const lineCount = countMethodLines(fileContent, node.value);
           const methodCalls = extractMethodCalls(fileContent, node.value, definedMethods, imports);
@@ -548,7 +569,7 @@ function extractMethodSignatures(filePath) {
           const signature = formatSignature(kind, methodName, params, returnType, false, lineCount);
           const description = includeJsDoc && commentMap[methodName] ? commentMap[methodName] : '';
 
-          signatures.push({ signature, description, methodCalls });
+          signatures.push({ signature, description, methodCalls, jsDocParams });
         },
         // Add support for class properties that are arrow functions
         ClassProperty(node) {
@@ -557,7 +578,17 @@ function extractMethodSignatures(filePath) {
 
             const name = node.key.name || node.key.value;
             const isAsync = node.value.async;
-            const params = extractParams(node.value.params, fileContent, node.value);
+            let params = extractParams(node.value.params, fileContent, node.value);
+
+            // Check if we have object destructuring from JSDoc
+            const jsDocParams = extractJSDocParams(fileContent, node.value);
+            if (jsDocParams) {
+              // If it's a single parameter that's an object destructuring, replace it
+              if (params.startsWith('{') || params === '') {
+                params = jsDocParams;
+              }
+            }
+
             const returnType = extractReturnType(fileContent, node.value);
             const lineCount = countMethodLines(fileContent, node.value);
             const methodCalls = extractMethodCalls(fileContent, node.value, definedMethods, imports);
@@ -566,7 +597,7 @@ function extractMethodSignatures(filePath) {
             const signature = formatSignature(kind, name, params, returnType, true, lineCount);
             const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
-            signatures.push({ signature, description, methodCalls });
+            signatures.push({ signature, description, methodCalls, jsDocParams });
           }
         },
         VariableDeclarator(node) {
@@ -574,7 +605,17 @@ function extractMethodSignatures(filePath) {
              (node.init.type === 'ArrowFunctionExpression' || node.init.type === 'FunctionExpression')) {
             const name = node.id.name;
             const isAsync = node.init.async;
-            const params = extractParams(node.init.params, fileContent, node.init);
+            let params = extractParams(node.init.params, fileContent, node.init);
+
+            // Check if we have object destructuring from JSDoc
+            const jsDocParams = extractJSDocParams(fileContent, node.init);
+            if (jsDocParams) {
+              // If it's a single parameter that's an object destructuring, replace it
+              if (params.startsWith('{') || params === '') {
+                params = jsDocParams;
+              }
+            }
+
             const returnType = extractReturnType(fileContent, node.init);
             const lineCount = countMethodLines(fileContent, node.init);
             const methodCalls = extractMethodCalls(fileContent, node.init, definedMethods, imports);
@@ -583,7 +624,7 @@ function extractMethodSignatures(filePath) {
             const signature = formatSignature(kind, name, params, returnType, true, lineCount);
             const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
-            signatures.push({ signature, description, methodCalls });
+            signatures.push({ signature, description, methodCalls, jsDocParams });
           }
         },
         ExportNamedDeclaration(node) {
@@ -591,7 +632,17 @@ function extractMethodSignatures(filePath) {
             if (node.declaration.type === 'FunctionDeclaration') {
               const name = node.declaration.id.name;
               const isAsync = node.declaration.async;
-              const params = extractParams(node.declaration.params, fileContent, node.declaration);
+              let params = extractParams(node.declaration.params, fileContent, node.declaration);
+
+              // Check if we have object destructuring from JSDoc
+              const jsDocParams = extractJSDocParams(fileContent, node.declaration);
+              if (jsDocParams) {
+                // If it's a single parameter that's an object destructuring, replace it
+                if (params.startsWith('{') || params === '') {
+                  params = jsDocParams;
+                }
+              }
+
               const returnType = extractReturnType(fileContent, node.declaration);
               const lineCount = countMethodLines(fileContent, node.declaration);
               const methodCalls = extractMethodCalls(fileContent, node.declaration, definedMethods, imports);
@@ -600,7 +651,7 @@ function extractMethodSignatures(filePath) {
               const signature = formatSignature(prefix, name, params, returnType, false, lineCount);
               const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
-              signatures.push({ signature, description, methodCalls });
+              signatures.push({ signature, description, methodCalls, jsDocParams });
             }
           }
         },
@@ -608,7 +659,17 @@ function extractMethodSignatures(filePath) {
           if (node.declaration.type === 'FunctionDeclaration') {
             const name = node.declaration.id ? node.declaration.id.name : 'default';
             const isAsync = node.declaration.async;
-            const params = extractParams(node.declaration.params, fileContent, node.declaration);
+            let params = extractParams(node.declaration.params, fileContent, node.declaration);
+
+            // Check if we have object destructuring from JSDoc
+            const jsDocParams = extractJSDocParams(fileContent, node.declaration);
+            if (jsDocParams) {
+              // If it's a single parameter that's an object destructuring, replace it
+              if (params.startsWith('{') || params === '') {
+                params = jsDocParams;
+              }
+            }
+
             const returnType = extractReturnType(fileContent, node.declaration);
             const lineCount = countMethodLines(fileContent, node.declaration);
             const methodCalls = extractMethodCalls(fileContent, node.declaration, definedMethods, imports);
@@ -617,21 +678,31 @@ function extractMethodSignatures(filePath) {
             const signature = formatSignature(prefix, name, params, returnType, false, lineCount);
             const description = includeJsDoc && commentMap[name] ? commentMap[name] : '';
 
-            signatures.push({ signature, description, methodCalls });
+            signatures.push({ signature, description, methodCalls, jsDocParams });
           } else if (node.declaration.type === 'ArrowFunctionExpression') {
             const isAsync = node.declaration.async;
-            const params = extractParams(node.declaration.params, fileContent, node.declaration);
+            let params = extractParams(node.declaration.params, fileContent, node.declaration);
+
+            // Check if we have object destructuring from JSDoc
+            const jsDocParams = extractJSDocParams(fileContent, node.declaration);
+            if (jsDocParams) {
+              // If it's a single parameter that's an object destructuring, replace it
+              if (params.startsWith('{') || params === '') {
+                params = jsDocParams;
+              }
+            }
+
             const returnType = extractReturnType(fileContent, node.declaration);
             const lineCount = countMethodLines(fileContent, node.declaration);
             const methodCalls = extractMethodCalls(fileContent, node.declaration, definedMethods, imports);
 
             const prefix = isAsync ? 'export default async' : 'export default';
             const signature = formatSignature(prefix, "", params, returnType, true, lineCount);
-            signatures.push({ signature, description: '', methodCalls });
+            signatures.push({ signature, description: '', methodCalls, jsDocParams });
           } else if (node.declaration.type === 'Identifier') {
-            signatures.push({ signature: `export default ${node.declaration.name}`, description: '', methodCalls: [] });
+            signatures.push({ signature: `export default ${node.declaration.name}`, description: '', methodCalls: [], jsDocParams: null });
           } else {
-            signatures.push({ signature: `export default ${node.declaration.type}`, description: '', methodCalls: [] });
+            signatures.push({ signature: `export default ${node.declaration.type}`, description: '', methodCalls: [], jsDocParams: null });
           }
         }
       });
@@ -639,13 +710,13 @@ function extractMethodSignatures(filePath) {
       return { signatures, imports };
     } catch (parseError) {
       return {
-        signatures: [{ signature: `[Unable to parse JavaScript: ${parseError.message}]`, description: '', methodCalls: [] }],
+        signatures: [{ signature: `[Unable to parse JavaScript: ${parseError.message}]`, description: '', methodCalls: [], jsDocParams: null }],
         imports: []
       };
     }
   } catch (error) {
     return {
-      signatures: [{ signature: `[Error reading file: ${error.message}]`, description: '', methodCalls: [] }],
+      signatures: [{ signature: `[Error reading file: ${error.message}]`, description: '', methodCalls: [], jsDocParams: null }],
       imports: []
     };
   }
@@ -704,7 +775,19 @@ function extractParams(params, fileContent, node) {
       if (p.type === 'Identifier') return p.name;
       if (p.type === 'AssignmentPattern') return `${p.left.name} = ...`;
       if (p.type === 'RestElement') return `...${p.argument.name}`;
-      if (p.type === 'ObjectPattern') return '{...}';
+      if (p.type === 'ObjectPattern') {
+        // Enhance to extract all properties from the object pattern
+        if (p.properties && p.properties.length > 0) {
+          const props = p.properties.map(prop => {
+            if (prop.key && prop.key.name) {
+              return prop.key.name;
+            }
+            return '?';
+          });
+          return `{${props.join(', ')}}`;
+        }
+        return '{...}';
+      }
       if (p.type === 'ArrayPattern') return '[...]';
       return '?';
     }).join(', ');
@@ -916,19 +999,90 @@ try {
         }
 
         content += 'Methods:\n';
-        uniqueSignatures.forEach(({ signature, description, methodCalls }) => {
-          // Add the base signature
-          content += `- ${signature}\n`;
+        uniqueSignatures.forEach(({ signature, description, methodCalls, jsDocParams }) => {
+          // Extract function name
+          let functionName = '';
+          const nameMatch = signature.match(/(?:function|async function|const|async const|export function|export default function|export default async function|method|async method|export default|export default async)\s+(\w+)/);
 
-          // Add description if present
+          if (nameMatch && nameMatch[1]) {
+            functionName = nameMatch[1];
+          } else if (signature.includes(' = (')) {
+            // Handle arrow functions: "const name = (...) => {...}"
+            const arrowNameMatch = signature.match(/(?:const|async const|export const|async export const)\s+(\w+)\s+=\s+\(/);
+            if (arrowNameMatch && arrowNameMatch[1]) {
+              functionName = arrowNameMatch[1];
+            }
+          }
+
+          // Extract parameters, preferring JSDoc params if available
+          let params = '';
+          if (jsDocParams) {
+            params = jsDocParams;
+          } else {
+            const paramsRegex = /\(([^)]*)\)/;
+            const paramsMatch = signature.match(paramsRegex);
+
+            if (paramsMatch && paramsMatch[1]) {
+              // Regular parameters processing
+              params = paramsMatch[1].split(',')
+                .map(param => {
+                  param = param.trim();
+
+                  // Handle object destructuring patterns like {a, b, c}
+                  if (param.startsWith('{') && param.includes('}')) {
+                    // Extract the content inside the braces
+                    const match = param.match(/{([^}]*)}/);
+                    if (match && match[1]) {
+                      // Process the destructured parameters inside the object
+                      const innerParams = match[1].split(',')
+                        .map(p => p.trim().split(/[\s=:]/)[0].trim())
+                        .filter(p => p)
+                        .join(', ');
+                      return `{${innerParams}}`;
+                    }
+                    return '{...}'; // Fallback if parsing fails
+                  }
+
+                  // Handle array destructuring or empty params
+                  if (param === '[...]' || param === '?' || param === '') {
+                    return param;
+                  }
+
+                  // Handle rest parameters (...args)
+                  if (param.startsWith('...')) {
+                    return param.split(/[\s=:]/)[0];
+                  }
+
+                  // Standard parameter
+                  return param.split(/[\s=:]/)[0];
+                })
+                .join(', ');
+            }
+          }
+
+          // Extract line count
+          const lineCountMatch = signature.match(/\[(\d+) lines\]/);
+          const lineCount = lineCountMatch ? lineCountMatch[1] : '';
+
+          // Format for display
+          let displaySignature = '';
+
+          // Always use single line format for parameters
+          displaySignature = `\`${functionName}(${params})\``;
+
+          // Add description and line count
           if (description) {
-            content += `  - Description: ${description}\n`;
+            displaySignature += ` ${description}`;
+          } else if (lineCount) {
+            displaySignature += ` No description`;
           }
 
-          // Add method calls if present
-          if (methodCalls && methodCalls.length > 0) {
-            content += `  - Calls: ${methodCalls.join(', ')}\n`;
+          if (lineCount) {
+            displaySignature += ` [${lineCount} lines]`;
           }
+
+          // Output the line
+          content += `- ${displaySignature}\n`;
         });
       } else {
         content += '(No methods found)\n';
@@ -988,4 +1142,39 @@ function extractMethodsFromRawContent(fileContent) {
   }
 
   return methodSignatures.length > 0 ? methodSignatures : null;
+}
+
+// Function to extract JSDoc comments and parameters for a function
+function extractJSDocParams(fileContent, node) {
+  if (!node || !includeJsDoc) return null;
+
+  try {
+    // Find JSDoc comment that precedes the function
+    const startPos = node.start;
+    const precedingCode = fileContent.substring(0, startPos);
+    const commentBlocks = precedingCode.match(/\/\*\*[\s\S]*?\*\//g) || [];
+
+    if (commentBlocks.length === 0) return null;
+
+    // Get the last comment block before the function
+    const commentBlock = commentBlocks[commentBlocks.length - 1];
+
+    // Check if this has object destructuring pattern with @param options.X format
+    const optionsParams = [];
+    // Updated regex to better match the JSDoc pattern in the example
+    const optionsParamRegex = /@param\s+\{[^}]*\}\s+options\.(\w+)/g;
+    let match;
+
+    while ((match = optionsParamRegex.exec(commentBlock)) !== null) {
+      optionsParams.push(match[1]);
+    }
+
+    if (optionsParams.length > 0) {
+      return `{${optionsParams.join(', ')}}`;
+    }
+
+    return null;
+  } catch (error) {
+    return null;
+  }
 }

@@ -1,9 +1,7 @@
 /**
  * City client-specific Google Sheets helper functions
  */
-import * as GoogleSheets from "../../connectors/google-sheets.js";
 import { format, parseISO } from "date-fns";
-import chalk from "chalk";
 
 // Define column mappings specific to City's spreadsheet
 export const COLUMN_MAPPINGS = [
