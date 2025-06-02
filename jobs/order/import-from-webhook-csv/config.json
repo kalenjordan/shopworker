@@ -1,0 +1,9 @@
+{
+  "name": "Import from Webhook CSV",
+  "trigger": "webhook",
+  "shop": "kalen-test-store",
+  "test": {
+    "limit": 3,
+    "webhookPayload": "fixtures/order-import-webhook-payload.json"
+  }
+}

@@ -183,6 +183,46 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
     };
   }
 
+  // Check if this is a webhook job and validate required test configuration
+  if (jobConfig.trigger === 'webhook') {
+    if (!jobConfig.test) {
+      throw new Error(`Job ${jobPath} has trigger 'webhook' but is missing 'test' configuration in config.json`);
+    }
+    if (!jobConfig.test.webhookPayload || typeof jobConfig.test.webhookPayload !== 'string') {
+      throw new Error(`Job ${jobPath} has trigger 'webhook' but is missing 'test.webhookPayload' file path in config.json`);
+    }
+  }
+
+  // Check if this is a webhook payload test
+  if (jobConfig.trigger === 'webhook' && jobConfig.test && jobConfig.test.webhookPayload) {
+    console.log("Loading webhook payload from fixtures...");
+
+    // Use the path specified in jobConfig.test.webhookPayload
+    const payloadPath = path.resolve(cliDirname, jobConfig.test.webhookPayload);
+
+    if (!fs.existsSync(payloadPath)) {
+      throw new Error(`Webhook payload file not found: ${payloadPath}. Please ensure the file exists at the path specified in config.json.`);
+    }
+
+    console.log(`Using webhook payload from: ${jobConfig.test.webhookPayload}`);
+
+    try {
+      const payloadContent = fs.readFileSync(payloadPath, 'utf8');
+      const record = JSON.parse(payloadContent);
+      const recordName = `webhook-payload-${path.basename(payloadPath)}`;
+
+      return {
+        record,
+        recordName,
+        shopify,
+        triggerConfig,
+        jobConfig: configToUse
+      };
+    } catch (error) {
+      throw new Error(`Failed to load webhook payload from ${payloadPath}: ${error.message}`);
+    }
+  }
+
   if (!triggerConfig.test || !triggerConfig.test.query) {
     throw new Error(`Trigger ${jobConfig.trigger} doesn't have a test query defined`);
   }

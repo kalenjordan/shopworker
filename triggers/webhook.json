@@ -1,0 +1,4 @@
+{
+  "name": "Webhook",
+  "description": "A trigger for running a job when a webhook into Shopworker is received."
+}
