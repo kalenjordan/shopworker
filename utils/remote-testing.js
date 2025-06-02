@@ -1,4 +1,6 @@
 import chalk from 'chalk';
+import fs from 'fs';
+import path from 'path';
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { hmacSha256 } from './crypto.js';
 import { getShopConfigWithSecret, getShopDomain } from './config-helpers.js';
@@ -20,7 +22,7 @@ export function validateWorkerUrl(workerUrlOption) {
 /**
  * Loads job and trigger configurations for remote testing
  * @param {string} jobPath - The job path relative to jobs/
- * @returns {Object} Object containing job config, trigger config, and webhook topic
+ * @returns {Object} Object containing job config, trigger config, and Shopify webhook topic
  * @throws {Error} If job config cannot be loaded
  */
 export function loadJobConfigsForRemoteTest(jobPath) {
@@ -30,9 +32,38 @@ export function loadJobConfigsForRemoteTest(jobPath) {
   }
 
   const triggerConfig = jobConfig.trigger ? loadTriggerConfig(jobConfig.trigger) : null;
-  const webhookTopic = triggerConfig?.webhook?.topic || 'products/create'; // Default if not found
+  const shopifyWebhookTopic = triggerConfig?.webhook?.topic || 'products/create'; // Default if not found
 
-  return { jobConfig, triggerConfig, webhookTopic };
+  return { jobConfig, triggerConfig, shopifyWebhookTopic };
+}
+
+/**
+ * Loads Shopworker webhook fixture data for webhook triggers
+ * @param {string} cliDirname - The directory where cli.js is located
+ * @param {string} jobPath - The job path relative to jobs/
+ * @param {Object} jobConfig - The job configuration
+ * @returns {Promise<Object>} The Shopworker webhook payload from fixture
+ * @throws {Error} If fixture cannot be loaded
+ */
+export async function loadShopworkerWebhookFixture(cliDirname, jobPath, jobConfig) {
+  if (!jobConfig.test || !jobConfig.test.webhookPayload) {
+    throw new Error(`Job ${jobPath} has trigger 'webhook' but is missing 'test.webhookPayload' file path in config.json`);
+  }
+
+  const payloadPath = path.resolve(cliDirname, jobConfig.test.webhookPayload);
+
+  if (!fs.existsSync(payloadPath)) {
+    throw new Error(`Shopworker webhook payload file not found: ${payloadPath}. Please ensure the file exists at the path specified in config.json.`);
+  }
+
+  console.log(`Loading Shopworker webhook fixture from: ${jobConfig.test.webhookPayload}`);
+
+  try {
+    const payloadContent = fs.readFileSync(payloadPath, 'utf8');
+    return JSON.parse(payloadContent);
+  } catch (error) {
+    throw new Error(`Failed to load Shopworker webhook payload from ${payloadPath}: ${error.message}`);
+  }
 }
 
 /**
@@ -58,43 +89,44 @@ export async function getTestRecordId(cliDirname, jobPath, options) {
 }
 
 /**
- * Prepares the webhook payload and URL for testing
+ * Prepares the Shopify webhook payload and URL for testing
  * @param {string} workerUrl - The worker URL
  * @param {string} jobPath - The job path relative to jobs/
- * @param {string} recordId - The record ID to use
+ * @param {Object} payload - The payload to send (either minimal with ID or full Shopworker webhook fixture)
  * @param {string} shopDomain - The shop domain
- * @returns {Object} Object containing webhook URL and payload
+ * @returns {Object} Object containing Shopify webhook URL and payload
  */
-export function prepareWebhookRequest(workerUrl, jobPath, recordId, shopDomain) {
-  // Format webhook URL
+export function prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain) {
+  // Format Shopify webhook URL
   const webhookUrl = new URL(workerUrl);
   webhookUrl.searchParams.set('job', jobPath);
-  const webhookAddress = webhookUrl.toString();
+  const shopifyWebhookAddress = webhookUrl.toString();
 
-  // Prepare webhook payload
-  const payload = {
-    id: recordId,
-    admin_graphql_api_id: recordId,
+  // Ensure payload has shop_domain for Shopify webhook format
+  const shopifyWebhookPayload = {
+    ...payload,
     shop_domain: shopDomain
   };
 
-  return { webhookAddress, payload };
+  return { shopifyWebhookAddress, shopifyWebhookPayload };
 }
 
 /**
- * Sends the test webhook to the worker
- * @param {string} webhookAddress - The webhook URL
- * @param {Object} payload - The webhook payload
+ * Sends the test webhook to the worker (either Shopify or Shopworker webhook)
+ * @param {string} shopifyWebhookAddress - The webhook URL
+ * @param {Object} shopifyWebhookPayload - The webhook payload
  * @param {string} apiSecret - The API secret for HMAC signing
- * @param {string} webhookTopic - The webhook topic
+ * @param {string} shopifyWebhookTopic - The Shopify webhook topic
  * @param {string} shopDomain - The shop domain
+ * @param {boolean} isShopworkerWebhook - Whether this is a Shopworker webhook trigger
  * @returns {Promise<void>}
  */
-export async function sendTestWebhook(webhookAddress, payload, apiSecret, webhookTopic, shopDomain) {
+export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, apiSecret, shopifyWebhookTopic, shopDomain, isShopworkerWebhook = false) {
   // Convert payload to string
-  const payloadString = JSON.stringify(payload);
+  const payloadString = JSON.stringify(shopifyWebhookPayload);
 
-  console.log(chalk.blue(`Sending test webhook to: ${webhookAddress}`));
+  const webhookType = isShopworkerWebhook ? "Shopworker webhook" : "Shopify webhook";
+  console.log(chalk.blue(`Sending test ${webhookType} to: ${shopifyWebhookAddress}`));
   console.log(chalk.dim(`Payload: ${payloadString.substring(0, 100)}${payloadString.length > 100 ? '...' : ''}`));
 
   // Import fetch for Node.js environment
@@ -104,11 +136,11 @@ export async function sendTestWebhook(webhookAddress, payload, apiSecret, webhoo
     // Generate a proper HMAC signature for the worker to verify
     const hmacSignature = await hmacSha256(apiSecret, payloadString);
 
-    const response = await fetch(webhookAddress, {
+    const response = await fetch(shopifyWebhookAddress, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Shopify-Topic': webhookTopic,
+        'X-Shopify-Topic': shopifyWebhookTopic,
         'X-Shopify-Hmac-Sha256': hmacSignature,
         'X-Shopify-Shop-Domain': shopDomain,
         'X-Shopify-Test': 'true'
@@ -117,18 +149,18 @@ export async function sendTestWebhook(webhookAddress, payload, apiSecret, webhoo
     });
 
     if (response.ok) {
-      console.log(chalk.green(`Successfully sent test webhook and received response ${response.status}`));
+      console.log(chalk.green(`Successfully sent test ${webhookType} and received response ${response.status}`));
       const responseText = await response.text();
       if (responseText) {
         console.log(chalk.dim(`Response: ${responseText}`));
       }
     } else {
-      console.error(chalk.red(`Failed to send test webhook. Status: ${response.status}`));
+      console.error(chalk.red(`Failed to send test ${webhookType}. Status: ${response.status}`));
       const responseText = await response.text();
       console.error(chalk.red(`Response: ${responseText}`));
     }
   } catch (error) {
-    console.error(chalk.red(`Error sending test webhook: ${error.message}`));
+    console.error(chalk.red(`Error sending test ${webhookType}: ${error.message}`));
     if (error.stack) {
       console.error(chalk.dim(error.stack));
     }
@@ -147,17 +179,33 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   const workerUrl = validateWorkerUrl(options.worker);
 
   // Load job and trigger configs
-  const { jobConfig, webhookTopic } = loadJobConfigsForRemoteTest(jobPath);
+  const { jobConfig, shopifyWebhookTopic } = loadJobConfigsForRemoteTest(jobPath);
 
   // Get shop configuration and API secret
   const { apiSecret, shopDomain } = getShopConfigWithSecret(cliDirname, jobConfig.shop, options.shop);
 
-  // Get record ID or find sample record
-  const recordId = await getTestRecordId(cliDirname, jobPath, options);
+  let payload;
+  let isShopworkerWebhook = false;
 
-  // Prepare webhook payload and URL
-  const { webhookAddress, payload } = prepareWebhookRequest(workerUrl, jobPath, recordId, shopDomain);
+  // Check if this is a Shopworker webhook trigger
+  if (jobConfig.trigger === 'webhook') {
+    // For Shopworker webhook triggers, load the fixture data
+    payload = await loadShopworkerWebhookFixture(cliDirname, jobPath, jobConfig);
+    isShopworkerWebhook = true;
+    console.log(chalk.yellow("Using Shopworker webhook fixture data for remote test"));
+  } else {
+    // For other triggers (Shopify webhook triggers), get record ID and create minimal payload
+    const recordId = await getTestRecordId(cliDirname, jobPath, options);
+    payload = {
+      id: recordId,
+      admin_graphql_api_id: recordId
+    };
+    console.log(chalk.yellow("Using minimal payload with record ID for remote test"));
+  }
+
+  // Prepare Shopify webhook payload and URL
+  const { shopifyWebhookAddress, shopifyWebhookPayload } = prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain);
 
   // Send test webhook
-  await sendTestWebhook(webhookAddress, payload, apiSecret, webhookTopic, shopDomain);
+  await sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, apiSecret, shopifyWebhookTopic, shopDomain, isShopworkerWebhook);
 }

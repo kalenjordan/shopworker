@@ -22,8 +22,8 @@ export {
   validateWorkerUrl,
   loadJobConfigsForRemoteTest,
   getTestRecordId,
-  prepareWebhookRequest,
-  sendTestWebhook,
+  prepareShopifyWebhookRequest,
+  sendTestShopifyWebhook,
   runJobRemoteTest
 } from './remote-testing.js';
 
