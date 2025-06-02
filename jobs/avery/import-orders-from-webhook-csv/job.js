@@ -6,6 +6,7 @@
  */
 
 import { parseCSV } from "../../../connectors/csv.js";
+import chalk from "chalk";
 
 export async function process({ record, shopify, jobConfig }) {
   let limit = jobConfig.test.limit;
@@ -25,6 +26,7 @@ export async function process({ record, shopify, jobConfig }) {
   const parsedData = parseCSV(decodedContent, {
     hasHeaders: true,
   });
+  console.log(parsedData);
 
   if (parsedData.rows.length === 0) {
     console.log("No data rows found");
@@ -164,53 +166,85 @@ export async function process({ record, shopify, jobConfig }) {
     const customerName = csOrdersInGroup[0].customer_name;
     const csOrderCount = csOrdersInGroup.length;
 
+    // Merge all CS orders into consolidated Shopify order data
+    const allLineItems = [];
+    const allDiscounts = [];
+    const allShipping = [];
+    const allTransactions = [];
+    const csOrderIds = [];
+
+    for (const csOrder of csOrdersInGroup) {
+      csOrderIds.push(csOrder.csOrderId);
+      allLineItems.push(...csOrder.lines);
+
+      if (csOrder.discount) {
+        allDiscounts.push(csOrder.discount);
+      }
+      if (csOrder.shipping) {
+        allShipping.push(csOrder.shipping);
+      }
+      if (csOrder.transaction) {
+        allTransactions.push(csOrder.transaction);
+      }
+    }
+
     const shopifyOrderData = {
       name: csOrdersInGroup[0].lines[0]['Shipping: Name'],
       email: csOrdersInGroup[0].lines[0]['Customer: Email'],
       shopifyOrderNumber: shopifyOrderNumber,
       csCustomerId: csOrdersInGroup[0].csCustomerId,
+      csOrderIds: csOrderIds,
       csOrderCount: csOrderCount,
-      csOrders: csOrdersInGroup
+      lineItems: allLineItems,
+      discounts: allDiscounts,
+      shipping: allShipping,
+      transactions: allTransactions
     };
 
     if (dryRun) {
-      console.log(`\n=== DRY RUN CREATE SHOPIFY ORDER ===`);
+      console.log(chalk.yellow(`\n=== DRY RUN CREATE SHOPIFY ORDER ===`));
       console.log(`Shopify Order Key: ${shopifyOrderKey}`);
-      console.log(`Customer: ${shopifyOrderData.name} (${shopifyOrderData.email})`);
-      console.log(`CS Customer ID: ${shopifyOrderData.csCustomerId}`);
-      console.log(`CS Order Count: ${shopifyOrderData.csOrderCount}`);
+      console.log(`Customer: ${shopifyOrderData.name} (${shopifyOrderData.email}) (CS Customer ID: ${shopifyOrderData.csCustomerId})`);
+      console.log(`CS Order IDs: ${shopifyOrderData.csOrderIds.join(', ')}`);
 
-      // Log key details for each CS order in the Shopify order
-      shopifyOrderData.csOrders.forEach((csOrder, csOrderIdx) => {
-        console.log(`\n  CS Order ${csOrderIdx + 1} - CS Order ID: ${csOrder.csOrderId}`);
+      // Log all merged line items
+      if (shopifyOrderData.lineItems.length > 0) {
+        console.log(`\n  Merged Line Items:`);
+        shopifyOrderData.lineItems.forEach((line, lineIdx) => {
+          const sku = line['Line: SKU'] || 'MISSING SKU';
+          const price = line['Line: Price'] || 'No Price';
+          console.log(`    ${lineIdx + 1}. ${line['Line: Title']} (${line['Line: Variant Title'] || 'N/A'}) - ${chalk.gray(sku)} - ${chalk.green('$' + price)}`);
+        });
+      }
 
-        // Log line items
-        if (csOrder.lines && csOrder.lines.length > 0) {
-          console.log(`    Line Items (${csOrder.lines.length}):`);
-          csOrder.lines.forEach((line, lineIdx) => {
-            console.log(`      ${lineIdx + 1}. ${line['Line: Title']} (${line['Line: Variant Title'] || 'N/A'})`);
-          });
-        }
+      // Log all discounts
+      if (shopifyOrderData.discounts.length > 0) {
+        console.log(`\n  Discounts (${shopifyOrderData.discounts.length}):`);
+        shopifyOrderData.discounts.forEach((discount, discountIdx) => {
+          console.log(`    ${discountIdx + 1}. ${discount['Line: Discount']} - ${discount['Line: Title']}`);
+        });
+      }
 
-        // Log discount if present
-        if (csOrder.discount) {
-          console.log(`    Discount: ${csOrder.discount['Line: Discount']} - ${csOrder.discount['Line: Title']}`);
-        }
+      // Log all shipping
+      if (shopifyOrderData.shipping.length > 0) {
+        console.log(`\n  Shipping (${shopifyOrderData.shipping.length}):`);
+        shopifyOrderData.shipping.forEach((shipping, shippingIdx) => {
+          console.log(`    ${shippingIdx + 1}. ${shipping['Line: Title']} - ${shipping['Line: Price']}`);
+        });
+      }
 
-        // Log shipping if present
-        if (csOrder.shipping) {
-          console.log(`    Shipping: ${csOrder.shipping['Line: Title']} - ${csOrder.shipping['Line: Price']}`);
-        }
-
-        // Log transaction if present
-        if (csOrder.transaction) {
-          console.log(`    Transaction: ${csOrder.transaction['Line: Title']} - ${csOrder.transaction['Line: Price']}`);
-        }
-      });
+      // Log all transactions
+      if (shopifyOrderData.transactions.length > 0) {
+        console.log(`\n  Transactions (${shopifyOrderData.transactions.length}):`);
+        shopifyOrderData.transactions.forEach((transaction, transactionIdx) => {
+          console.log(`    ${transactionIdx + 1}. ${transaction['Line: Title']} - ${transaction['Line: Price']}`);
+        });
+      }
     } else {
       console.log(`\n=== CREATE SHOPIFY ORDER ${shopifyOrderNumber} ===`);
       console.log(`Customer: ${shopifyOrderData.name} (${shopifyOrderData.email})`);
-      console.log(`CS Orders: ${csOrderCount}`);
+      console.log(`CS Order IDs: ${shopifyOrderData.csOrderIds.join(', ')}`);
+      console.log(`Total Line Items: ${shopifyOrderData.lineItems.length}`);
       console.log(`CS Customer ID: ${shopifyOrderData.csCustomerId}`);
 
       // TODO: Implement actual Shopify order creation logic here
