@@ -4,6 +4,162 @@
  */
 
 /**
+ * Parse CSV content into structured data
+ * @param {string} csvContent - Raw CSV content string
+ * @param {Object} options - Parsing options
+ * @param {string} [options.delimiter] - Field delimiter (default: ',')
+ * @param {boolean} [options.hasHeaders] - Whether first row contains headers (default: true)
+ * @param {number} [options.limit] - Maximum number of rows to process (default: no limit)
+ * @returns {Object} Parsed CSV data with headers and rows
+ */
+export function parseCSV(csvContent, options = {}) {
+  const {
+    delimiter = ',',
+    hasHeaders = true,
+    limit = null
+  } = options;
+
+  if (typeof csvContent !== 'string') {
+    throw new Error('CSV content must be a string');
+  }
+
+  // Split into rows and filter out empty ones
+  const allRows = csvContent.split('\n').filter(row => row.trim() !== '');
+
+  if (allRows.length === 0) {
+    return { headers: [], rows: [], columnIndices: {} };
+  }
+
+  // Apply limit if specified
+  const rows = limit ? allRows.slice(0, limit) : allRows;
+
+  let headers = [];
+  let dataRows = rows;
+  let columnIndices = {};
+
+  if (hasHeaders && rows.length > 0) {
+    headers = parseCSVRow(rows[0], delimiter);
+    dataRows = rows.slice(1);
+
+    // Create column indices map for easy lookup
+    columnIndices = headers.reduce((acc, header, index) => {
+      acc[header] = index;
+      return acc;
+    }, {});
+  }
+
+  // Parse data rows
+  const parsedRows = dataRows.map((row, index) => {
+    const columns = parseCSVRow(row, delimiter);
+    const rowObject = {
+      _rowNumber: hasHeaders ? index + 2 : index + 1 // Account for header row
+    };
+
+    // If we have headers, create an object with header keys
+    if (headers.length > 0) {
+      headers.forEach((header, headerIndex) => {
+        rowObject[header] = columns[headerIndex] || '';
+      });
+    } else {
+      // If no headers, use column indices as keys
+      columns.forEach((value, columnIndex) => {
+        rowObject[columnIndex] = value;
+      });
+    }
+
+    return rowObject;
+  });
+
+  return {
+    headers,
+    rows: parsedRows,
+    columnIndices
+  };
+}
+
+/**
+ * Parse a single CSV row, handling quoted fields properly
+ * @param {string} row - Single CSV row string
+ * @param {string} delimiter - Field delimiter
+ * @returns {Array} Array of field values
+ */
+export function parseCSVRow(row, delimiter = ',') {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < row.length) {
+    const char = row[i];
+
+    if (char === '"') {
+      if (inQuotes && row[i + 1] === '"') {
+        // Handle escaped quotes
+        current += '"';
+        i += 2;
+      } else {
+        // Toggle quote state
+        inQuotes = !inQuotes;
+        i++;
+      }
+    } else if (char === delimiter && !inQuotes) {
+      // End of field
+      result.push(current.trim());
+      current = '';
+      i++;
+    } else {
+      current += char;
+      i++;
+    }
+  }
+
+  // Add the last field
+  result.push(current.trim());
+
+  return result;
+}
+
+/**
+ * Group parsed CSV rows by a specific column
+ * @param {Array} rows - Array of parsed row objects from parseCSV
+ * @param {string} columnName - Name of the column to group by
+ * @returns {Object} Object with column values as keys and arrays of rows as values
+ */
+export function groupRowsByColumn(rows, columnName) {
+  const grouped = {};
+
+  rows.forEach(row => {
+    const groupKey = row[columnName];
+
+    if (!groupKey) {
+      console.log(`Warning: Row ${row._rowNumber} has empty or missing value for column "${columnName}"`);
+      return;
+    }
+
+    if (!grouped[groupKey]) {
+      grouped[groupKey] = [];
+    }
+
+    grouped[groupKey].push(row);
+  });
+
+  return grouped;
+}
+
+/**
+ * Find column index by name (case-insensitive)
+ * @param {Array} headers - Array of header names
+ * @param {string} columnName - Name of column to find
+ * @returns {number} Index of column, or -1 if not found
+ */
+export function findColumnIndex(headers, columnName) {
+  const lowerColumnName = columnName.toLowerCase();
+  return headers.findIndex(header =>
+    header.toLowerCase() === lowerColumnName
+  );
+}
+
+/**
  * Generate CSV content from data array
  * @param {Array} data - Array of objects or arrays representing rows
  * @param {Object} options - CSV generation options

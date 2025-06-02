@@ -3,7 +3,8 @@
   "trigger": "webhook",
   "shop": "kalen-test-store",
   "test": {
-    "limit": 3,
-    "webhookPayload": "fixtures/order-import-webhook-payload.json"
+    "limit": 10000,
+    "filterEmail": "susan.jurik@yahoo.com",
+    "webhookPayload": "fixtures/may-31-orders.json"
   }
 }
