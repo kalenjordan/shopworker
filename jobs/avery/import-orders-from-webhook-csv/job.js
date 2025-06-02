@@ -5,7 +5,7 @@
  * Currently logs the webhook payload for testing purposes.
  */
 
-export async function process({ record, shopify, jobConfig, secrets }) {
+export async function process({ record, shopify, jobConfig }) {
   let limit = jobConfig.test.limit;
 
   // Decode base64 content from first attachment if available
