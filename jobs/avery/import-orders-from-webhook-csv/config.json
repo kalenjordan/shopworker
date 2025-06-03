@@ -1,7 +1,7 @@
 {
   "name": "Import from Webhook CSV",
   "trigger": "webhook",
-  "shop": "avery",
+  "shop": "kalen-test-store",
   "test": {
     "limit": 1,
     "dryRun": true,

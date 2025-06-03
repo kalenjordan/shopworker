@@ -114,7 +114,8 @@ function buildCsOrdersFromRows(filteredRows, totalRowsCount) {
     categorizeRowIntoOrder(csOrders[csOrderIndex], row, lineType);
   }
 
-  console.log(`\nBuilt ${csOrders.length} CS orders from ${totalRowsCount} rows`);
+  console.log("\n");
+  console.log(`Built ${csOrders.length} CS orders from ${totalRowsCount} rows`);
   return csOrders;
 }
 
