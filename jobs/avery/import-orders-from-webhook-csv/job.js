@@ -7,10 +7,25 @@
 
 import { parseCSV } from "../../../connectors/csv.js";
 import chalk from "chalk";
+import { format, parseISO, addHours } from "date-fns";
 
-export async function process({ record, shopify, jobConfig }) {
-  let limit = jobConfig.test.limit;
-  const dryRun = jobConfig.test.dryRun || false;
+// GraphQL imports
+import FindOrdersByTag from "../../../graphql/FindOrdersByTag.js";
+import FindVariantBySku from "../../../graphql/FindVariantBySku.js";
+import FindCustomerByEmail from "../../../graphql/FindCustomerByEmail.js";
+import FindCustomerByTag from "../../../graphql/FindCustomerByTag.js";
+import FindCustomerByPhone from "../../../graphql/FindCustomerByPhone.js";
+import CreateOrder from "../../../graphql/CreateOrder.js";
+import AddCustomerTags from "../../../graphql/AddCustomerTags.js";
+
+// Module-level variables to avoid passing around
+let shopify;
+let jobConfig;
+
+export async function process({ record, shopify: shopifyClient, jobConfig: config }) {
+  // Set module-level variables
+  shopify = shopifyClient;
+  jobConfig = config;
 
   const decodedContent = validateAndDecodeAttachment(record);
   const parsedData = parseCSVContent(decodedContent);
@@ -20,12 +35,27 @@ export async function process({ record, shopify, jobConfig }) {
     return;
   }
 
-  const filteredRows = applyEmailFilter(parsedData.rows, jobConfig.test.filterEmail);
+  const filteredRows = applyEmailFilter(parsedData.rows);
   const csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
   const customerGroups = groupOrdersByCustomer(csOrders);
-  const shopifyOrderGroups = createShopifyOrderGroups(customerGroups, limit);
+  const shopifyOrderGroups = createShopifyOrderGroups(customerGroups);
 
-  await processShopifyOrders(shopifyOrderGroups, dryRun);
+  await processShopifyOrders(shopifyOrderGroups);
+}
+
+// Helper function to check if we're in dry run mode
+function isDryRun() {
+  return jobConfig.test.dryRun || false;
+}
+
+// Helper function to get the limit from job config
+function getLimit() {
+  return jobConfig.test.limit || 0;
+}
+
+// Helper function to get the filter email from job config
+function getFilterEmail() {
+  return jobConfig.test.filterEmail;
 }
 
 function validateAndDecodeAttachment(record) {
@@ -46,7 +76,9 @@ function parseCSVContent(decodedContent) {
   return parsedData;
 }
 
-function applyEmailFilter(rows, filterEmail) {
+function applyEmailFilter(rows) {
+  const filterEmail = getFilterEmail();
+
   if (!filterEmail) {
     return rows;
   }
@@ -125,9 +157,10 @@ function groupOrdersByCustomer(csOrders) {
   return customerGroups;
 }
 
-function createShopifyOrderGroups(customerGroups, limit) {
+function createShopifyOrderGroups(customerGroups) {
   const shopifyOrderGroups = {};
   let processedCustomerGroups = 0;
+  const limit = getLimit();
 
   if (limit > 0) {
     console.log(`Limiting processing to ${limit} customer groups`);
@@ -182,7 +215,7 @@ function addOrderToGroup(csOrder, lines, shopifyOrderKey, orderType, shopifyOrde
   shopifyOrderGroups[shopifyOrderKey].push(modifiedCsOrder);
 }
 
-async function processShopifyOrders(shopifyOrderGroups, dryRun) {
+async function processShopifyOrders(shopifyOrderGroups) {
   let shopifyOrderNumber = 0;
   const shopifyOrderEntries = Object.entries(shopifyOrderGroups);
 
@@ -190,11 +223,8 @@ async function processShopifyOrders(shopifyOrderGroups, dryRun) {
     shopifyOrderNumber++;
     const shopifyOrderData = buildShopifyOrderData(csOrdersInGroup, shopifyOrderNumber);
 
-    if (dryRun) {
-      logDryRunOrder(shopifyOrderKey, shopifyOrderData);
-    } else {
-      await createShopifyOrder(shopifyOrderData, shopifyOrderNumber);
-    }
+    logOrder(shopifyOrderKey, shopifyOrderData);
+    await createShopifyOrder(shopifyOrderData, shopifyOrderNumber);
   }
 
   console.log(`\nProcessed ${shopifyOrderNumber} Shopify orders`);
@@ -230,7 +260,7 @@ function buildShopifyOrderData(csOrdersInGroup, shopifyOrderNumber) {
   };
 }
 
-function logDryRunOrder(shopifyOrderKey, shopifyOrderData) {
+function logOrder(shopifyOrderKey, shopifyOrderData) {
   console.log(chalk.yellow(`\n=== DRY RUN CREATE SHOPIFY ORDER ===`));
   console.log(`Shopify Order Key: ${shopifyOrderKey}`);
   console.log(`Customer: ${shopifyOrderData.name} (${shopifyOrderData.email}) (CS Customer ID: ${shopifyOrderData.csCustomerId})`);
@@ -289,6 +319,321 @@ async function createShopifyOrder(shopifyOrderData, shopifyOrderNumber) {
   console.log(`Total Line Items: ${shopifyOrderData.lineItems.length}`);
   console.log(`CS Customer ID: ${shopifyOrderData.csCustomerId}`);
 
-  // TODO: Implement actual Shopify order creation logic here
-  // This would replace the Liquid "action event" with actual Shopify API calls
+  const { csCustomerId, csOrderIds, lineItems } = shopifyOrderData;
+
+  // Check if orders already exist
+  for (const csOrderId of csOrderIds) {
+    const existingOrder = await checkExistingOrder(csOrderId);
+    if (existingOrder) {
+      console.log(`Order already exists: ${csOrderId}`);
+      return;
+    }
+  }
+
+  // Check if order is too old (more than 1 month)
+  const firstLine = lineItems[0];
+  const oneMonthAgo = new Date();
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  const processedAt = parseISO(firstLine['Processed At']);
+
+  if (processedAt < oneMonthAgo) {
+    const errorMessage = `Skipping order because it was created before: ${format(oneMonthAgo, 'yyyy-MM-dd')}`;
+    throw new Error(errorMessage);
+  }
+
+  // Build line items and calculate totals
+  const { shopifyLineItems, totals } = await buildOrderLineItems(lineItems);
+
+  // Find or create customer
+  const customerId = await findOrCreateCustomer(shopifyOrderData);
+
+  // Build order payload
+  const orderPayload = buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerId);
+
+  // Create the order
+  await createOrder(orderPayload);
+
+  // Add customer tags if customer exists
+  if (customerId) {
+    await addCustomerTags(customerId, csCustomerId);
+  }
+}
+
+async function checkExistingOrder(csOrderId) {
+  const query = `tag:'${csOrderId}'`;
+  const { orders } = await shopify.graphql(FindOrdersByTag, { tag: query });
+  return orders.nodes[0];
+}
+
+async function buildOrderLineItems(lineItems) {
+  const shopifyLineItems = [];
+  let lineItemTotals = 0;
+  let totalWeight = 0;
+
+  for (const line of lineItems) {
+    const sku = line['Line: SKU'];
+    const variant = await findVariantBySku(sku);
+
+    if (!variant) {
+      throw new Error(`Couldn't find variant from sku: ${sku}`);
+    }
+
+    const shopifyLine = {
+      title: line['Line: Title'],
+      price: line['Line: Price'],
+      requires_shipping: true,
+      quantity: parseInt(line['Line: Quantity']),
+      taxable: true,
+      product_id: parseInt(variant.product.id),
+      variant_id: parseInt(variant.id),
+      grams: parseInt(line['Line: Grams'] || 0)
+    };
+
+    shopifyLineItems.push(shopifyLine);
+    lineItemTotals += parseFloat(line['Line: Price']);
+    totalWeight += parseInt(line['Line: Grams'] || 0);
+  }
+
+  return {
+    shopifyLineItems,
+    totals: {
+      lineItemTotals,
+      totalWeight
+    }
+  };
+}
+
+async function findVariantBySku(sku) {
+  const query = `sku:"${sku}"`;
+  const { productVariants } = await shopify.graphql(FindVariantBySku, { sku: query });
+  return productVariants.nodes[0];
+}
+
+async function findOrCreateCustomer(shopifyOrderData) {
+  const { email, csCustomerId } = shopifyOrderData;
+
+  // Try to find by email first
+  let customerId = await findCustomerByEmail(email);
+
+  // If not found by email, try by CS customer tag
+  if (!customerId) {
+    const tag = `CS-${csCustomerId}`;
+    customerId = await findCustomerByTag(tag);
+  }
+
+  // Try by phone number
+  const phone = formatPhoneNumber(shopifyOrderData.lineItems[0]['Customer: Phone']);
+  if (phone) {
+    const customerIdFromPhone = await findCustomerByPhone(phone);
+    if (customerIdFromPhone) {
+      if (!customerId) {
+        console.log("Using customer ID from phone number");
+        customerId = customerIdFromPhone;
+      } else if (customerId !== customerIdFromPhone) {
+        console.log("Phone number conflict, will skip phone in order");
+        // Handle phone conflict by not using phone in order
+      }
+    }
+  }
+
+  return customerId;
+}
+
+async function findCustomerByEmail(email) {
+  const query = `email:'${email}'`;
+  const { customers } = await shopify.graphql(FindCustomerByEmail, { email: query });
+  return customers.nodes[0]?.id;
+}
+
+async function findCustomerByTag(tag) {
+  const query = `'${tag}'`;
+  const { customers } = await shopify.graphql(FindCustomerByTag, { tag: query });
+  return customers.nodes[0]?.id;
+}
+
+async function findCustomerByPhone(phone) {
+  const query = `phone:'${phone}'`;
+  const { customers } = await shopify.graphql(FindCustomerByPhone, { phone: query });
+  return customers.nodes[0]?.id;
+}
+
+function formatPhoneNumber(phone) {
+  if (!phone) return null;
+  // Basic E.164 formatting for US numbers
+  const cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length === 10) {
+    return `+1${cleaned}`;
+  }
+  if (cleaned.length === 11 && cleaned.startsWith('1')) {
+    return `+${cleaned}`;
+  }
+  return null;
+}
+
+function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerId) {
+  const { lineItems, csCustomerId, csOrderIds, shipping, discounts, transactions } = shopifyOrderData;
+  const firstLine = lineItems[0];
+
+  // Parse name
+  const nameParts = (firstLine['Shipping: Name'] || '').split(' ');
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.slice(1).join(' ') || '(Empty)';
+
+  // Calculate totals from order data
+  const taxLine1Total = parseFloat(firstLine['Tax 1: Price'] || 0);
+  const taxLine2Total = parseFloat(firstLine['Tax 2: Price'] || 0);
+  const taxLine3Total = parseFloat(firstLine['Tax 3: Price'] || 0);
+  const taxLine4Total = parseFloat(firstLine['Tax 4: Price'] || 0);
+
+  // Calculate shipping total from shipping array
+  const totalShipping = shipping.reduce((sum, shippingItem) => {
+    return sum + parseFloat(shippingItem['Line: Price'] || 0);
+  }, 0);
+
+  // Calculate discount total from discounts array
+  const totalDiscount = discounts.reduce((sum, discount) => {
+    return sum + parseFloat(discount['Line: Discount'] || 0);
+  }, 0);
+
+  // Calculate transaction total
+  const totalTransactionAmount = transactions.reduce((sum, transaction) => {
+    return sum + parseFloat(transaction['Transaction: Amount'] || 0);
+  }, 0);
+
+  // Build tags
+  const tags = [...csOrderIds];
+  const rawTags = firstLine['Tags'] ? firstLine['Tags'].replace('First Order', 'First_Order').split(',') : [];
+  tags.push(...rawTags);
+
+  // Add special tags
+  const titleBeginning = lineItems[0]['Line: Title']?.slice(0, 9);
+  if (titleBeginning === 'PRE-ORDER') {
+    tags.push('_Pre-Order');
+  }
+
+  if (tags.some(tag => tag.includes('CS-LOCAL'))) {
+    tags.push('_Local Pickup');
+  }
+
+  // Format processed date (add 5 hours as in Liquid template)
+  const processedAt = format(addHours(parseISO(firstLine['Processed At']), 5), "yyyy-MM-dd'T'HH:mm:ss");
+
+  const phone = formatPhoneNumber(firstLine['Customer: Phone']);
+
+  const payload = {
+    processed_at: processedAt,
+    email: shopifyOrderData.email,
+    send_receipt: false,
+    financial_status: "authorized",
+    currency: "USD",
+    buyer_accepts_marketing: false, // Would need to check TBD field from CSV
+    customer: {
+      first_name: firstName,
+      last_name: lastName,
+      tags: `CS-DIRECT, CS-${csCustomerId}`
+    },
+    tags: tags.join(', '),
+    shipping_address: {
+      first_name: firstName,
+      last_name: lastName,
+      address1: firstLine['Shipping: Address 1'] || '',
+      address2: firstLine['Shipping: Address 2'] || '',
+      city: firstLine['Shipping: City'] || '',
+      province: firstLine['Shipping: Province Code'] || '',
+      zip: firstLine['Shipping: Zip'] || '',
+      country: firstLine['Shipping: Country'] || 'US'
+    },
+    shipping_lines: [{
+      title: "CommentSold Shipping",
+      code: "CommentSold Shipping",
+      source: "CommentSold",
+      price: totalShipping.toString()
+    }],
+    tax_lines: [
+      {
+        price: taxLine1Total,
+        rate: parseFloat(firstLine['Tax 1: Rate'] || 0),
+        title: firstLine['Tax 1: Title'] || ''
+      },
+      {
+        price: taxLine2Total,
+        rate: parseFloat(firstLine['Tax 2: Rate'] || 0),
+        title: firstLine['Tax 2: Title'] || ''
+      },
+      {
+        price: taxLine3Total,
+        rate: parseFloat(firstLine['Tax 3: Rate'] || 0),
+        title: firstLine['Tax 3: Title'] || ''
+      },
+      {
+        price: taxLine4Total,
+        rate: parseFloat(firstLine['Tax 4: Rate'] || 0),
+        title: firstLine['Tax 4: Title'] || ''
+      }
+    ],
+    total_weight: totals.totalWeight,
+    line_items: shopifyLineItems
+  };
+
+  // Add optional fields
+  if (customerId) {
+    payload.customer.id = parseInt(customerId);
+  }
+
+  if (phone) {
+    payload.phone = phone;
+    payload.customer.phone = phone;
+  }
+
+  if (totalDiscount > 0) {
+    payload.total_discounts = totalDiscount;
+  }
+
+  // Add transactions if there are any
+  if (totalTransactionAmount > 0) {
+    payload.transactions = [{
+      kind: "sale",
+      status: "success",
+      amount: totalTransactionAmount.toString()
+    }];
+  }
+
+  return payload;
+}
+
+async function createOrder(orderPayload) {
+  if (isDryRun()) {
+    console.log(chalk.yellow("DRY RUN - Would create order with payload:"));
+    console.log(JSON.stringify(orderPayload, null, 2));
+    return { order: { name: "DRY-RUN-ORDER", legacyResourceId: "123456" } };
+  }
+
+  const { orderCreate } = await shopify.graphql(CreateOrder, { input: orderPayload });
+
+  if (orderCreate.userErrors.length > 0) {
+    const errors = orderCreate.userErrors.map(err => err.message).join(', ');
+    throw new Error(`Order creation failed: ${errors}`);
+  }
+
+  console.log(`Successfully created order: ${orderCreate.order.name} (ID: ${orderCreate.order.legacyResourceId})`);
+  return orderCreate.order;
+}
+
+async function addCustomerTags(customerId, csCustomerId) {
+  if (isDryRun()) {
+    console.log(chalk.yellow(`DRY RUN - Would add tag CS-${csCustomerId} to customer ${customerId}`));
+    return;
+  }
+
+  const tag = `CS-${csCustomerId}`;
+  const customerGid = `gid://shopify/Customer/${customerId}`;
+
+  const { tagsAdd } = await shopify.graphql(AddCustomerTags, {
+    customerId: customerGid,
+    tags: [tag]
+  });
+
+  if (tagsAdd.userErrors.length > 0) {
+    console.log(`Warning: Could not add customer tags: ${tagsAdd.userErrors.map(err => err.message).join(', ')}`);
+  }
 }
