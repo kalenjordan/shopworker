@@ -5,7 +5,6 @@
   "test": {
     "limit": 2,
     "dryRun": true,
-    "filterEmail": "susan.jurik@yahoo.com",
     "webhookPayload": "fixtures/may-31-orders.json"
   }
 }

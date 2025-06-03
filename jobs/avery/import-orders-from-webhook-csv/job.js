@@ -26,7 +26,6 @@ export async function process({ record, shopify, jobConfig }) {
   const parsedData = parseCSV(decodedContent, {
     hasHeaders: true,
   });
-  console.log(parsedData);
 
   if (parsedData.rows.length === 0) {
     console.log("No data rows found");
@@ -100,9 +99,23 @@ export async function process({ record, shopify, jobConfig }) {
   const customerGroupsCount = Object.keys(customerGroups).length;
   console.log(`Total customer groups count: ${customerGroupsCount}`);
 
+  if (limit > 0) {
+    console.log(`Limiting processing to ${limit} customer groups`);
+  }
+
   // Further group by pre-order status to create Shopify orders (split line items)
   const shopifyOrderGroups = {};
+  let processedCustomerGroups = 0;
+
   for (const [csCustomerId, customerCsOrders] of Object.entries(customerGroups)) {
+    processedCustomerGroups++;
+
+    // Apply customer limit
+    if (limit > 0 && processedCustomerGroups > limit) {
+      console.log(`\nReached customer group limit of ${limit}, stopping processing`);
+      break;
+    }
+
     for (const csOrder of customerCsOrders) {
       // Split line items by pre-order status
       const preOrderLines = csOrder.lines.filter(line =>
@@ -150,18 +163,8 @@ export async function process({ record, shopify, jobConfig }) {
   let shopifyOrderNumber = 0;
   const shopifyOrderEntries = Object.entries(shopifyOrderGroups);
 
-  if (limit > 0) {
-    console.log(`Limiting processing to ${limit} Shopify orders`);
-  }
-
   for (const [shopifyOrderKey, csOrdersInGroup] of shopifyOrderEntries) {
     shopifyOrderNumber++;
-
-    // Apply customer limit
-    if (limit > 0 && shopifyOrderNumber > limit) {
-      console.log(`\nReached Shopify order limit of ${limit}, stopping processing`);
-      break;
-    }
 
     const customerName = csOrdersInGroup[0].customer_name;
     const csOrderCount = csOrdersInGroup.length;
