@@ -3,7 +3,7 @@
   "trigger": "webhook",
   "shop": "kalen-test-store",
   "test": {
-    "limit": 2,
+    "limit": 3,
     "dryRun": true,
     "webhookPayload": "fixtures/may-31-orders.json"
   }

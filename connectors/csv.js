@@ -8,64 +8,43 @@
  * @param {string} csvContent - Raw CSV content string
  * @param {Object} options - Parsing options
  * @param {string} [options.delimiter] - Field delimiter (default: ',')
- * @param {boolean} [options.hasHeaders] - Whether first row contains headers (default: true)
- * @param {number} [options.limit] - Maximum number of rows to process (default: no limit)
  * @returns {Object} Parsed CSV data with headers and rows
  */
 export function parseCSV(csvContent, options = {}) {
-  const {
-    delimiter = ',',
-    hasHeaders = true,
-    limit = null
-  } = options;
+  const { delimiter = ',' } = options;
 
   if (typeof csvContent !== 'string') {
     throw new Error('CSV content must be a string');
   }
 
   // Split into rows and filter out empty ones
-  const allRows = csvContent.split('\n').filter(row => row.trim() !== '');
+  const rows = csvContent.split('\n').filter(row => row.trim() !== '');
 
-  if (allRows.length === 0) {
+  if (rows.length === 0) {
     return { headers: [], rows: [], columnIndices: {} };
   }
 
-  // Apply limit if specified
-  const rows = limit ? allRows.slice(0, limit) : allRows;
+  // Parse headers from first row
+  const headers = parseCSVRow(rows[0], delimiter);
+  const dataRows = rows.slice(1);
 
-  let headers = [];
-  let dataRows = rows;
-  let columnIndices = {};
-
-  if (hasHeaders && rows.length > 0) {
-    headers = parseCSVRow(rows[0], delimiter);
-    dataRows = rows.slice(1);
-
-    // Create column indices map for easy lookup
-    columnIndices = headers.reduce((acc, header, index) => {
-      acc[header] = index;
-      return acc;
-    }, {});
-  }
+  // Create column indices map for easy lookup
+  const columnIndices = headers.reduce((acc, header, index) => {
+    acc[header] = index;
+    return acc;
+  }, {});
 
   // Parse data rows
   const parsedRows = dataRows.map((row, index) => {
     const columns = parseCSVRow(row, delimiter);
     const rowObject = {
-      _rowNumber: hasHeaders ? index + 2 : index + 1 // Account for header row
+      _rowNumber: index + 2 // Account for header row
     };
 
-    // If we have headers, create an object with header keys
-    if (headers.length > 0) {
-      headers.forEach((header, headerIndex) => {
-        rowObject[header] = columns[headerIndex] || '';
-      });
-    } else {
-      // If no headers, use column indices as keys
-      columns.forEach((value, columnIndex) => {
-        rowObject[columnIndex] = value;
-      });
-    }
+    // Create an object with header keys
+    headers.forEach((header, headerIndex) => {
+      rowObject[header] = columns[headerIndex] || '';
+    });
 
     return rowObject;
   });
