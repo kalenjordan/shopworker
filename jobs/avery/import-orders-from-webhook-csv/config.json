@@ -4,7 +4,7 @@
   "shop": "kalen-test-store",
   "test": {
     "limit": 1,
-    "dryRun": true,
+    "dryRun": false,
     "webhookPayload": "fixtures/may-31-orders.json"
   }
 }

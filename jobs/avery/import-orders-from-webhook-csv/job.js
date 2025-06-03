@@ -225,7 +225,11 @@ async function processShopifyOrders(shopifyOrderGroups) {
     const shopifyOrderData = buildShopifyOrderData(csOrdersInGroup, shopifyOrderNumber);
 
     logOrder(shopifyOrderKey, shopifyOrderData);
-    await createShopifyOrder(shopifyOrderData, shopifyOrderNumber);
+    try {
+      await createShopifyOrder(shopifyOrderData, shopifyOrderNumber);
+    } catch (error) {
+      console.error(chalk.red(`  Error creating Shopify order: ${error.message}`));
+    }
   }
 
   console.log(`\nProcessed ${shopifyOrderNumber} Shopify orders`);
@@ -262,7 +266,7 @@ function buildShopifyOrderData(csOrdersInGroup, shopifyOrderNumber) {
 }
 
 function logOrder(shopifyOrderKey, shopifyOrderData) {
-  console.log(chalk.yellow(`\n=== DRY RUN CREATE SHOPIFY ORDER ===`));
+  console.log(chalk.yellow(`\n=== SHOPIFY ORDER ${shopifyOrderData.shopifyOrderNumber} ===`));
   console.log(`Shopify Order Key: ${shopifyOrderKey}`);
   console.log(`Customer: ${shopifyOrderData.name} (${shopifyOrderData.email}) (CS Customer ID: ${shopifyOrderData.csCustomerId})`);
   console.log(`CS Order IDs: ${shopifyOrderData.csOrderIds.join(", ")}`);
@@ -314,11 +318,11 @@ function logOrderTransactions(transactions) {
 }
 
 async function createShopifyOrder(shopifyOrderData, shopifyOrderNumber) {
-  console.log(`\n=== CREATE SHOPIFY ORDER ${shopifyOrderNumber} ===`);
-  console.log(`Customer: ${shopifyOrderData.name} (${shopifyOrderData.email})`);
-  console.log(`CS Order IDs: ${shopifyOrderData.csOrderIds.join(", ")}`);
-  console.log(`Total Line Items: ${shopifyOrderData.lineItems.length}`);
-  console.log(`CS Customer ID: ${shopifyOrderData.csCustomerId}`);
+  console.log(chalk.green(`\n  Creating Shopify Order ${shopifyOrderNumber}`));
+  console.log(`  Customer: ${shopifyOrderData.name} (${shopifyOrderData.email})`);
+  console.log(`  CS Order IDs: ${shopifyOrderData.csOrderIds.join(", ")}`);
+  console.log(`  Total Line Items: ${shopifyOrderData.lineItems.length}`);
+  console.log(`  CS Customer ID: ${shopifyOrderData.csCustomerId}`);
 
   const { csCustomerId, csOrderIds, lineItems } = shopifyOrderData;
 
@@ -326,7 +330,7 @@ async function createShopifyOrder(shopifyOrderData, shopifyOrderNumber) {
   for (const csOrderId of csOrderIds) {
     const existingOrder = await checkExistingOrder(csOrderId);
     if (existingOrder) {
-      console.log(`Order already exists: ${csOrderId}`);
+      console.log(`  Order already exists: ${csOrderId}`);
       return;
     }
   }
@@ -428,10 +432,10 @@ async function findOrCreateCustomer(shopifyOrderData) {
     const customerIdFromPhone = await findCustomerByPhone(phone);
     if (customerIdFromPhone) {
       if (!customerId) {
-        console.log("Using customer ID from phone number");
+        console.log("  Using customer ID from phone number");
         customerId = customerIdFromPhone;
       } else if (customerId !== customerIdFromPhone) {
-        console.log("Phone number conflict, will skip phone in order");
+        console.log("  Phone number conflict, will skip phone in order");
         // Handle phone conflict by not using phone in order
       }
     }
@@ -521,22 +525,94 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
 
   const phone = formatPhoneNumber(firstLine['Customer: Phone']);
 
+  // Build line items with correct structure
+  const orderLineItems = shopifyLineItems.map(item => ({
+    quantity: item.quantity,
+    variantId: item.variant_id,
+    priceSet: {
+      shopMoney: {
+        amount: item.price,
+        currencyCode: "USD"
+      }
+    }
+  }));
+
+  // Build tax lines with correct structure
+  const taxLines = [];
+  if (taxLine1Total > 0) {
+    taxLines.push({
+      title: firstLine['Tax 1: Title'] || '',
+      rate: parseFloat(firstLine['Tax 1: Rate'] || 0),
+      priceSet: {
+        shopMoney: {
+          amount: taxLine1Total.toString(),
+          currencyCode: "USD"
+        }
+      }
+    });
+  }
+  if (taxLine2Total > 0) {
+    taxLines.push({
+      title: firstLine['Tax 2: Title'] || '',
+      rate: parseFloat(firstLine['Tax 2: Rate'] || 0),
+      priceSet: {
+        shopMoney: {
+          amount: taxLine2Total.toString(),
+          currencyCode: "USD"
+        }
+      }
+    });
+  }
+  if (taxLine3Total > 0) {
+    taxLines.push({
+      title: firstLine['Tax 3: Title'] || '',
+      rate: parseFloat(firstLine['Tax 3: Rate'] || 0),
+      priceSet: {
+        shopMoney: {
+          amount: taxLine3Total.toString(),
+          currencyCode: "USD"
+        }
+      }
+    });
+  }
+  if (taxLine4Total > 0) {
+    taxLines.push({
+      title: firstLine['Tax 4: Title'] || '',
+      rate: parseFloat(firstLine['Tax 4: Rate'] || 0),
+      priceSet: {
+        shopMoney: {
+          amount: taxLine4Total.toString(),
+          currencyCode: "USD"
+        }
+      }
+    });
+  }
+
+  // Build shipping lines with correct structure
+  const shippingLines = [];
+  if (totalShipping > 0) {
+    shippingLines.push({
+      title: "CommentSold Shipping",
+      code: "CommentSold Shipping",
+      priceSet: {
+        shopMoney: {
+          amount: totalShipping.toString(),
+          currencyCode: "USD"
+        }
+      }
+    });
+  }
+
   const payload = {
-    processed_at: processedAt,
+    processedAt: processedAt,
     email: shopifyOrderData.email,
-    send_receipt: false,
-    financial_status: "authorized",
     currency: "USD",
-    buyer_accepts_marketing: false, // Would need to check TBD field from CSV
-    customer: {
-      first_name: firstName,
-      last_name: lastName,
-      tags: `CS-DIRECT, CS-${csCustomerId}`
-    },
-    tags: tags.join(', '),
-    shipping_address: {
-      first_name: firstName,
-      last_name: lastName,
+    buyerAcceptsMarketing: false,
+    financialStatus: "PAID", // Use enum value instead of string
+    tags: tags,
+    shippingAddress: {
+      firstName: firstName,
+      lastName: lastName,
       address1: firstLine['Shipping: Address 1'] || '',
       address2: firstLine['Shipping: Address 2'] || '',
       city: firstLine['Shipping: City'] || '',
@@ -544,58 +620,48 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
       zip: firstLine['Shipping: Zip'] || '',
       country: firstLine['Shipping: Country'] || 'US'
     },
-    shipping_lines: [{
-      title: "CommentSold Shipping",
-      code: "CommentSold Shipping",
-      source: "CommentSold",
-      price: totalShipping.toString()
-    }],
-    tax_lines: [
-      {
-        price: taxLine1Total,
-        rate: parseFloat(firstLine['Tax 1: Rate'] || 0),
-        title: firstLine['Tax 1: Title'] || ''
-      },
-      {
-        price: taxLine2Total,
-        rate: parseFloat(firstLine['Tax 2: Rate'] || 0),
-        title: firstLine['Tax 2: Title'] || ''
-      },
-      {
-        price: taxLine3Total,
-        rate: parseFloat(firstLine['Tax 3: Rate'] || 0),
-        title: firstLine['Tax 3: Title'] || ''
-      },
-      {
-        price: taxLine4Total,
-        rate: parseFloat(firstLine['Tax 4: Rate'] || 0),
-        title: firstLine['Tax 4: Title'] || ''
-      }
-    ],
-    total_weight: totals.totalWeight,
-    line_items: shopifyLineItems
+    lineItems: orderLineItems,
+    taxLines: taxLines,
+    shippingLines: shippingLines
   };
 
-  // Add optional fields
+  // Add customer information
   if (customerId) {
-    payload.customer.id = parseInt(customerId);
+    payload.customer = {
+      toAssociate: {
+        id: customerId
+      }
+    };
+  } else {
+    payload.customer = {
+      toUpsert: {
+        firstName: firstName,
+        lastName: lastName,
+        email: shopifyOrderData.email,
+        tags: [`CS-DIRECT`, `CS-${csCustomerId}`]
+      }
+    };
   }
 
+  // Add phone if available
   if (phone) {
     payload.phone = phone;
-    payload.customer.phone = phone;
-  }
-
-  if (totalDiscount > 0) {
-    payload.total_discounts = totalDiscount;
+    if (payload.customer.toUpsert) {
+      payload.customer.toUpsert.phone = phone;
+    }
   }
 
   // Add transactions if there are any
   if (totalTransactionAmount > 0) {
     payload.transactions = [{
-      kind: "sale",
-      status: "success",
-      amount: totalTransactionAmount.toString()
+      kind: "SALE", // Use enum value
+      status: "SUCCESS", // Use enum value
+      amountSet: {
+        shopMoney: {
+          amount: totalTransactionAmount.toString(),
+          currencyCode: "USD"
+        }
+      }
     }];
   }
 
@@ -604,7 +670,7 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
 
 async function createOrder(orderPayload) {
   if (isDryRun()) {
-    console.log(chalk.yellow("DRY RUN - Would create order with payload:"));
+    console.log(chalk.yellow("  DRY RUN - Would create order with payload:"));
     console.log(JSON.stringify(orderPayload, null, 2));
     return { order: { name: "DRY-RUN-ORDER", legacyResourceId: "123456" } };
   }
@@ -616,13 +682,13 @@ async function createOrder(orderPayload) {
     throw new Error(`Order creation failed: ${errors}`);
   }
 
-  console.log(`Successfully created order: ${orderCreate.order.name} (ID: ${orderCreate.order.legacyResourceId})`);
+  console.log(`  Successfully created order: ${orderCreate.order.name} (ID: ${orderCreate.order.legacyResourceId})`);
   return orderCreate.order;
 }
 
 async function addCustomerTags(customerId, csCustomerId) {
   if (isDryRun()) {
-    console.log(chalk.yellow(`DRY RUN - Would add tag CS-${csCustomerId} to customer ${customerId}`));
+    console.log(chalk.yellow(`  DRY RUN - Would add tag CS-${csCustomerId} to customer ${customerId}`));
     return;
   }
 
@@ -635,6 +701,6 @@ async function addCustomerTags(customerId, csCustomerId) {
   });
 
   if (tagsAdd.userErrors.length > 0) {
-    console.log(`Warning: Could not add customer tags: ${tagsAdd.userErrors.map(err => err.message).join(', ')}`);
+    console.log(`  Warning: Could not add customer tags: ${tagsAdd.userErrors.map(err => err.message).join(', ')}`);
   }
 }

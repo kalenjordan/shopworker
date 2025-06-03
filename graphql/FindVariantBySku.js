@@ -2,11 +2,11 @@ export default `#graphql
   query FindVariantBySku($sku: String!) {
     productVariants(first: 1, query: $sku) {
       nodes {
-        id: legacyResourceId
+        id
         sku
         price
         product {
-          id: legacyResourceId
+          id
         }
         selectedOptions {
           name
