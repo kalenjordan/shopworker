@@ -8,6 +8,7 @@
 import { parseCSV } from "../../../connectors/csv.js";
 import chalk from "chalk";
 import { format, parseISO, addHours } from "date-fns";
+// import fs from "fs";
 
 // GraphQL imports
 import FindOrdersByTag from "../../../graphql/FindOrdersByTag.js";
@@ -64,7 +65,20 @@ function validateAndDecodeAttachment(record) {
   }
 
   console.log("\n=== Decoding Base64 Attachment Content ===");
-  return atob(record.attachments[0].content);
+  const decodedContent = atob(record.attachments[0].content);
+
+  // For testing - save decoded CSV content to file
+  // const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
+  // const filename = `decoded-csv-${timestamp}.csv`;
+
+  // try {
+  //   fs.writeFileSync(filename, decodedContent, 'utf8');
+  //   console.log(`CSV content saved to: ${filename}`);
+  // } catch (error) {
+  //   console.warn(`Warning: Could not save CSV file: ${error.message}`);
+  // }
+
+  return decodedContent;
 }
 
 function parseCSVContent(decodedContent) {
@@ -275,6 +289,7 @@ function logOrder(shopifyOrderKey, shopifyOrderData) {
   logOrderDiscounts(shopifyOrderData.discounts);
   logOrderShipping(shopifyOrderData.shipping);
   logOrderTransactions(shopifyOrderData.transactions);
+  logOrderTotals(shopifyOrderData);
 }
 
 function logOrderLineItems(lineItems) {
@@ -283,8 +298,9 @@ function logOrderLineItems(lineItems) {
     lineItems.forEach((line, lineIdx) => {
       const sku = line["Line: SKU"] || "MISSING SKU";
       const price = line["Line: Price"] || "No Price";
+      const tax = line["Tax: Total"] || "No Tax";
       console.log(
-        `    ${lineIdx + 1}. ${line["Line: Title"]} (${line["Line: Variant Title"] || "N/A"}) - ${chalk.gray(sku)} - ${chalk.green("$" + price)}`
+        `    ${lineIdx + 1}. ${line["Line: Title"]} (${line["Line: Variant Title"] || "N/A"}) - ${chalk.gray(sku)} - ${chalk.green("$" + price)} - ${chalk.cyan("$" + tax)}`
       );
     });
   }
@@ -312,8 +328,60 @@ function logOrderTransactions(transactions) {
   if (transactions.length > 0) {
     console.log(`\n  Transactions (${transactions.length}):`);
     transactions.forEach((transaction, transactionIdx) => {
-      console.log(`    ${transactionIdx + 1}. ${transaction["Line: Title"]} - ${transaction["Line: Price"]}`);
+      const amount = transaction['Transaction: Amount'] ? `$${parseFloat(transaction['Transaction: Amount']).toFixed(2)}` : 'No Amount';
+      console.log(`    ${transactionIdx + 1}. ${transaction["Line: Title"]} - ${transaction["Line: Price"]} - ${chalk.blue(amount)}`);
     });
+  }
+}
+
+function logOrderTotals(shopifyOrderData) {
+  const { lineItems, shipping, discounts, transactions } = shopifyOrderData;
+
+  // Calculate line items total
+  const lineItemsTotal = lineItems.reduce((sum, line) => {
+    return sum + (parseFloat(line['Line: Price'] || 0) * parseInt(line['Line: Quantity'] || 1));
+  }, 0);
+
+  // Calculate shipping total
+  const shippingTotal = shipping.reduce((sum, shippingItem) => {
+    return sum + parseFloat(shippingItem['Line: Price'] || 0);
+  }, 0);
+
+  // Calculate discount total
+  const discountTotal = discounts.reduce((sum, discount) => {
+    return sum + parseFloat(discount['Line: Discount'] || 0);
+  }, 0);
+
+  // Calculate transaction total
+  const transactionTotal = transactions.reduce((sum, transaction) => {
+    return sum + parseFloat(transaction['Transaction: Amount'] || 0);
+  }, 0);
+
+  // Calculate tax totals
+  const taxTotal = lineItems.reduce((sum, line) => {
+    return sum + parseFloat(line['Tax: Total'] || 0);
+  }, 0);
+
+  // Calculate order total (line items + shipping + tax - discounts)
+  const orderTotal = lineItemsTotal + shippingTotal + taxTotal - discountTotal;
+
+  console.log(`\n  Order Totals:`);
+  console.log(`    Line Items: ${chalk.green("$" + lineItemsTotal.toFixed(2))}`);
+  console.log(`    Shipping: ${chalk.green("$" + shippingTotal.toFixed(2))}`);
+  console.log(`    Tax: ${chalk.cyan("$" + taxTotal.toFixed(2))}`);
+  if (discountTotal > 0) {
+    console.log(`    Discounts: ${chalk.red("-$" + discountTotal.toFixed(2))}`);
+  }
+  console.log(`    ${chalk.bold.green("Order Total: $" + orderTotal.toFixed(2))}`);
+
+  if (transactionTotal > 0) {
+    console.log(`    Transaction Amount: ${chalk.blue("$" + transactionTotal.toFixed(2))}`);
+
+    // Show difference if transaction doesn't match order total
+    const difference = Math.abs(orderTotal - transactionTotal);
+    if (difference > 0.01) { // Allow for small rounding differences
+      console.log(`    ${chalk.yellow("⚠️  Difference: $" + difference.toFixed(2))}`);
+    }
   }
 }
 
