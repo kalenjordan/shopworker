@@ -240,7 +240,13 @@ async function handleRequest(request, env, ctx) {
     }
 
     // Verify the webhook signature (skip verification for shopworker/webhook topic)
-    if (topic !== 'shopworker/webhook') {
+    if (topic === 'shopworker/webhook') {
+      const shopworkerWebhookSecret = request.headers.get('X-Shopworker-Webhook-Secret');
+      if (shopworkerWebhookSecret !== shopConfig.shopworker_webhook_secret) {
+        return createErrorResponse('Invalid shopworker webhook secret', 401);
+      }
+    } else {
+      console.log("Verifying webhook signature for topic: " + topic);
       if (!await verifyShopifyWebhook(request, bodyText, env, shopConfig)) {
         return createErrorResponse('Invalid webhook signature', 401);
       }

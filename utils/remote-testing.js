@@ -115,13 +115,13 @@ export function prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDo
  * Sends the test webhook to the worker (either Shopify or Shopworker webhook)
  * @param {string} shopifyWebhookAddress - The webhook URL
  * @param {Object} shopifyWebhookPayload - The webhook payload
- * @param {string} apiSecret - The API secret for HMAC signing
+ * @param {Object} shopConfig - The shop configuration containing secrets
  * @param {string} shopifyWebhookTopic - The Shopify webhook topic
  * @param {string} shopDomain - The shop domain
  * @param {boolean} isShopworkerWebhook - Whether this is a Shopworker webhook trigger
  * @returns {Promise<void>}
  */
-export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, apiSecret, shopifyWebhookTopic, shopDomain, isShopworkerWebhook = false) {
+export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, shopConfig, shopifyWebhookTopic, shopDomain, isShopworkerWebhook = false) {
   // Convert payload to string
   const payloadString = JSON.stringify(shopifyWebhookPayload);
 
@@ -135,18 +135,31 @@ export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebho
   const fetch = (await import('node-fetch')).default;
 
   try {
-    // Generate a proper HMAC signature for the worker to verify
-    const hmacSignature = await hmacSha256(apiSecret, payloadString);
+    let headers = {
+      'Content-Type': 'application/json',
+      'X-Shopify-Topic': topic,
+      'X-Shopify-Shop-Domain': shopDomain,
+      'X-Shopify-Test': 'true'
+    };
+
+    if (isShopworkerWebhook) {
+      // For Shopworker webhooks, use the shopworker webhook secret as a header
+      if (!shopConfig.shopworker_webhook_secret) {
+        throw new Error(`Shopworker webhook secret not found in shop config. Make sure shopworker_webhook_secret is defined in .shopworker.json.`);
+      }
+      headers['X-Shopworker-Webhook-Secret'] = shopConfig.shopworker_webhook_secret;
+    } else {
+      // For Shopify webhooks, generate HMAC signature using API secret
+      if (!shopConfig.shopify_api_secret_key) {
+        throw new Error(`Shopify API secret not found in shop config. Make sure shopify_api_secret_key is defined in .shopworker.json.`);
+      }
+      const hmacSignature = await hmacSha256(shopConfig.shopify_api_secret_key, payloadString);
+      headers['X-Shopify-Hmac-Sha256'] = hmacSignature;
+    }
 
     const response = await fetch(shopifyWebhookAddress, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Topic': topic,
-        'X-Shopify-Hmac-Sha256': hmacSignature,
-        'X-Shopify-Shop-Domain': shopDomain,
-        'X-Shopify-Test': 'true'
-      },
+      headers,
       body: payloadString
     });
 
@@ -184,7 +197,7 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   const { jobConfig, shopifyWebhookTopic } = loadJobConfigsForRemoteTest(jobPath);
 
   // Get shop configuration and API secret
-  const { apiSecret, shopDomain } = getShopConfigWithSecret(cliDirname, jobConfig.shop, options.shop);
+  const { shopConfig, shopDomain } = getShopConfigWithSecret(cliDirname, jobConfig.shop, options.shop);
 
   let payload;
   let isShopworkerWebhook = false;
@@ -209,5 +222,5 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   const { shopifyWebhookAddress, shopifyWebhookPayload } = prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain);
 
   // Send test webhook
-  await sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, apiSecret, shopifyWebhookTopic, shopDomain, isShopworkerWebhook);
+  await sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, shopConfig, shopifyWebhookTopic, shopDomain, isShopworkerWebhook);
 }
