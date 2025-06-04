@@ -125,8 +125,10 @@ export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebho
   // Convert payload to string
   const payloadString = JSON.stringify(shopifyWebhookPayload);
 
+  const topic = isShopworkerWebhook ? 'shopworker/webhook' : shopifyWebhookTopic;
   const webhookType = isShopworkerWebhook ? "Shopworker webhook" : "Shopify webhook";
   console.log(chalk.blue(`Sending test ${webhookType} to: ${shopifyWebhookAddress}`));
+  console.log(chalk.blue(`Topic: ${topic}`));
   console.log(chalk.dim(`Payload: ${payloadString.substring(0, 100)}${payloadString.length > 100 ? '...' : ''}`));
 
   // Import fetch for Node.js environment
@@ -140,7 +142,7 @@ export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebho
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Shopify-Topic': shopifyWebhookTopic,
+        'X-Shopify-Topic': topic,
         'X-Shopify-Hmac-Sha256': hmacSignature,
         'X-Shopify-Shop-Domain': shopDomain,
         'X-Shopify-Test': 'true'

@@ -190,6 +190,7 @@ function createSuccessResponse() {
  * Create an error response
  */
 function createErrorResponse(message, status = 500) {
+  console.log("Error response: " + message);
   return new Response(JSON.stringify({
     success: false,
     error: message
@@ -232,16 +233,17 @@ async function handleRequest(request, env, ctx) {
     const shopworkerConfig = parseShopworkerConfig(env);
     const shopConfig = findShopConfig(shopworkerConfig, shopDomain);
 
-    // Verify the webhook signature
-    if (!await verifyShopifyWebhook(request, bodyText, env, shopConfig)) {
-      console.log("Invalid webhook signature");
-      return createErrorResponse('Invalid webhook signature', 401);
-    }
-
     // Get the webhook topic from the headers
     const topic = request.headers.get('X-Shopify-Topic');
     if (!topic) {
       return createErrorResponse('Missing X-Shopify-Topic header', 400);
+    }
+
+    // Verify the webhook signature (skip verification for shopworker/webhook topic)
+    if (topic !== 'shopworker/webhook') {
+      if (!await verifyShopifyWebhook(request, bodyText, env, shopConfig)) {
+        return createErrorResponse('Invalid webhook signature', 401);
+      }
     }
 
     // Get job path from URL parameter
