@@ -205,8 +205,9 @@ function createErrorResponse(message, status = 500) {
  * Handle incoming webhook requests
  */
 async function handleRequest(request, env, ctx) {
-  // Only accept POST requests
+  console.log("Handling request in worker.js");
   if (request.method !== 'POST') {
+    console.log("Method not allowed: " + request.method);
     return new Response('Method not allowed', { status: 405 });
   }
 
@@ -233,6 +234,7 @@ async function handleRequest(request, env, ctx) {
 
     // Verify the webhook signature
     if (!await verifyShopifyWebhook(request, bodyText, env, shopConfig)) {
+      console.log("Invalid webhook signature");
       return createErrorResponse('Invalid webhook signature', 401);
     }
 
