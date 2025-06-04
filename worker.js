@@ -232,7 +232,7 @@ async function handleRequest(request, env, ctx) {
     // Parse the configuration and find shop config
     const shopworkerConfig = parseShopworkerConfig(env);
     const shopConfig = findShopConfig(shopworkerConfig, shopDomain);
-    console.log("Shop config: " + JSON.stringify(shopConfig));
+    console.log("Shop config loaded for shop: " + shopConfig.name);
 
     // Get the webhook topic from the headers
     const topic = request.headers.get('X-Shopify-Topic');
