@@ -232,6 +232,7 @@ async function handleRequest(request, env, ctx) {
     // Parse the configuration and find shop config
     const shopworkerConfig = parseShopworkerConfig(env);
     const shopConfig = findShopConfig(shopworkerConfig, shopDomain);
+    console.log("Shop config: " + JSON.stringify(shopConfig));
 
     // Get the webhook topic from the headers
     const topic = request.headers.get('X-Shopify-Topic');
@@ -242,8 +243,10 @@ async function handleRequest(request, env, ctx) {
     // Verify the webhook signature (skip verification for shopworker/webhook topic)
     if (topic === 'shopworker/webhook') {
       const shopworkerWebhookSecret = request.headers.get('X-Shopworker-Webhook-Secret');
-      if (shopworkerWebhookSecret !== shopConfig.shopworker_webhook_secret) {
-        return createErrorResponse('Invalid shopworker webhook secret', 401);
+      if (shopworkerWebhookSecret != shopConfig.shopworker_webhook_secret) {
+        console.log("Invalid shopworker webhook secret: " + shopworkerWebhookSecret);
+        console.log("Expected shopworker webhook secret: " + shopConfig.shopworker_webhook_secret);
+        return createErrorResponse('Invalid shopworker webhook secret: ' + shopworkerWebhookSecret, 401);
       }
     } else {
       console.log("Verifying webhook signature for topic: " + topic);

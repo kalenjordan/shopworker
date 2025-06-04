@@ -157,6 +157,7 @@ export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebho
       headers['X-Shopify-Hmac-Sha256'] = hmacSignature;
     }
 
+    console.log(chalk.gray(`Headers: ${JSON.stringify(headers)}`));
     const response = await fetch(shopifyWebhookAddress, {
       method: 'POST',
       headers,
