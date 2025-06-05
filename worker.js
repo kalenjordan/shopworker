@@ -278,7 +278,7 @@ async function handleRequest(request, env, ctx) {
       topic
     });
 
-    console.log(`Job ${jobId} queued for shop ${shopDomain}, path ${jobPath}`);
+    console.log(`Durable ObjectJob ${jobId} queued for shop ${shopDomain}, path ${jobPath}`);
 
     // Return immediately with job ID
     return new Response(JSON.stringify({
