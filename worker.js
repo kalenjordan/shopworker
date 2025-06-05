@@ -5,6 +5,7 @@
 import { createShopifyClient } from './utils/shopify.js';
 import { logToWorker } from './utils/log.js';
 import { hmacSha256 } from './utils/crypto.js';
+import { JobQueue } from './job-queue.js';
 
 /**
  * Verify that a webhook request is authentic and from Shopify
@@ -207,6 +208,12 @@ function createErrorResponse(message, status = 500) {
  */
 async function handleRequest(request, env, ctx) {
   console.log("Handling request in worker.js");
+
+  // Handle GET requests for job status/stats
+  if (request.method === 'GET') {
+    return await handleGetRequest(request, env);
+  }
+
   if (request.method !== 'POST') {
     console.log("Method not allowed: " + request.method);
     return new Response('Method not allowed', { status: 405 });
@@ -258,22 +265,94 @@ async function handleRequest(request, env, ctx) {
     // Get job path from URL parameter
     const jobPath = getJobPathFromUrl(request);
 
-    // Dynamically load the job handler
-    const jobModule = await loadJobHandler(jobPath);
-    if (!jobModule) {
-      return createErrorResponse(`Job handler not found for: ${jobPath}`, 404);
+    // Get the Job Queue Durable Object for this shop
+    const jobQueueId = env.JOB_QUEUE.idFromName(`shop:${shopDomain}`);
+    const jobQueue = env.JOB_QUEUE.get(jobQueueId);
+
+    // Enqueue the job instead of processing immediately
+    const jobId = await jobQueue.enqueue({
+      shopDomain,
+      jobPath,
+      bodyData,
+      shopConfig,
+      topic
+    });
+
+    console.log(`Job ${jobId} queued for shop ${shopDomain}, path ${jobPath}`);
+
+    // Return immediately with job ID
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'Job queued successfully',
+      jobId
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('Error processing webhook:', error.message, error.stack);
+    return createErrorResponse(error.message);
+  }
+}
+
+/**
+ * Handle GET requests for job status and queue stats
+ */
+async function handleGetRequest(request, env) {
+  try {
+    const url = new URL(request.url);
+    const shopDomain = url.searchParams.get('shop');
+    const jobId = url.searchParams.get('jobId');
+    const action = url.searchParams.get('action') || 'status';
+
+    if (!shopDomain) {
+      return createErrorResponse('Missing shop parameter', 400);
     }
 
-    // Create a Shopify client
-    const shopify = createAuthenticatedShopifyClient(shopDomain, shopConfig, env);
+    const jobQueueId = env.JOB_QUEUE.idFromName(`shop:${shopDomain}`);
+    const jobQueue = env.JOB_QUEUE.get(jobQueueId);
 
-    // Process the webhook data
-    await processWebhook(jobModule, bodyData, shopify, env, shopConfig, jobPath);
+    switch (action) {
+      case 'status':
+        if (!jobId) {
+          return createErrorResponse('Missing jobId parameter for status request', 400);
+        }
+        const jobStatus = await jobQueue.getJobStatus(jobId);
+        return new Response(JSON.stringify({
+          success: true,
+          job: jobStatus
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
 
-    return createSuccessResponse();
+      case 'stats':
+        const stats = await jobQueue.getStats();
+        return new Response(JSON.stringify({
+          success: true,
+          stats
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+      case 'jobs':
+        const limit = parseInt(url.searchParams.get('limit') || '10');
+        const jobs = await jobQueue.listJobs(limit);
+        return new Response(JSON.stringify({
+          success: true,
+          jobs
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+      default:
+        return createErrorResponse('Unknown action. Valid actions: status, stats, jobs', 400);
+    }
   } catch (error) {
-    // Log the error
-    console.error('Error processing webhook:', error.message, error.stack);
+    console.error('Error handling GET request:', error.message);
     return createErrorResponse(error.message);
   }
 }
@@ -286,3 +365,6 @@ export default {
     return await handleRequest(request, env, ctx);
   }
 };
+
+// Export the JobQueue Durable Object class
+export { JobQueue };
