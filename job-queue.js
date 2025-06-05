@@ -128,16 +128,6 @@ export class JobQueue extends DurableObject {
           const updatedJob = { ...job, status: 'completed', updatedAt: new Date().toISOString() };
           await this.ctx.storage.put(`job:${job.id}:meta`, updatedJob);
 
-          // Clean up R2 data after successful processing
-          if (job.isLargePayload) {
-            try {
-              await this.env.R2_BUCKET.delete(job.r2Key);
-              console.log(`🗑️ R2 cleaned: ${job.r2Key}`);
-            } catch (error) {
-              console.error(`❌ R2 cleanup failed: ${job.r2Key}`, error);
-            }
-          }
-
           console.log(`✅ Job ${job.id} completed`);
         } catch (error) {
           console.error(`❌ Job ${job.id} failed:`, error);
