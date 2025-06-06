@@ -5,10 +5,11 @@
  * Converts CSV data into structured orders where each CS order creates a single Shopify order.
  */
 
-import { parseCSV } from "../../../connectors/csv.js";
+import { parseCSV, saveFile } from "../../../connectors/csv.js";
 import chalk from "chalk";
 import { runSubJob } from "../../../utils/env.js";
-// import fs from "fs";
+import { format } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 
 // Module-level variables to avoid passing around
 let shopify;
@@ -24,6 +25,10 @@ export async function process({ record, shopify: shopifyClient, jobConfig: confi
   shopConfig = shop;
 
   const decodedContent = validateAndDecodeAttachment(record);
+
+  // Save the decoded CSV file
+  await saveDecodedCSV(decodedContent, record);
+
   const parsedData = parseCSVContent(decodedContent);
 
   if (parsedData.rows.length === 0) {
@@ -46,6 +51,26 @@ function validateAndDecodeAttachment(record) {
   const decodedContent = atob(record.attachments[0].content);
 
   return decodedContent;
+}
+
+async function saveDecodedCSV(decodedContent, record) {
+  const timestamp = formatInTimeZone(new Date(), 'America/Chicago', 'yyyy-MM-dd-HH-mm-ss');
+  const filename = `avery-orders-${timestamp}.csv`;
+
+  console.log("\nSaving decoded CSV file");
+
+  try {
+    await saveFile(decodedContent, {
+      filename,
+      contentType: 'text/csv',
+      metadata: {
+        source: 'avery-webhook-import',
+        originalFilename: record.attachments?.[0]?.filename || 'unknown'
+      }
+    }, env);
+  } catch (error) {
+    console.error(chalk.red(`Failed to save CSV file: ${error.message}`));
+  }
 }
 
 function parseCSVContent(decodedContent) {
@@ -141,7 +166,7 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
 
     orderCounter++;
 
-    console.log(chalk.cyan(`\nProcessing order ${orderCounter}/${csOrders.length}: ${csOrder.csOrderId}`));
+    console.log(chalk.cyan(`\n${orderCounter}/${csOrders.length} Processing order ${csOrder.csOrderId}`));
 
     try {
       // Use the unified runSubJob interface - handles environment detection automatically
