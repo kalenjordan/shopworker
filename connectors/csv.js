@@ -278,10 +278,11 @@ export async function saveFile(content, options, env) {
   const isWorkerEnv = !isCliEnvironment(env);
 
   if (isWorkerEnv) {
-    // Worker environment - save to R2
-    console.log(`Saving file to R2 bucket: ${filename}`);
+    // Worker environment - save to R2 in csv-imports directory
+    const r2Path = `csv-imports/${filename}`;
+    console.log(`Saving file to R2 bucket: ${r2Path}`);
     try {
-      await env.R2_BUCKET.put(filename, content, {
+      await env.R2_BUCKET.put(r2Path, content, {
         httpMetadata: {
           contentType,
         },
