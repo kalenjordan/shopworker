@@ -10,6 +10,7 @@ import chalk from "chalk";
 import { runJob } from "../../../utils/env.js";
 import { format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
+import { executeGitPush } from "../../../utils/deployment.js";
 
 // Module-level variables to avoid passing around
 let shopify;
@@ -27,6 +28,10 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   const decodedContent = validateAndDecodeAttachment(payload);
   await saveDecodedCSV(decodedContent, payload);
   const parsedData = parseCSVContent(decodedContent);
+  if (typeof parsedData.rows[0]['Password'] !== "undefined") {
+    console.log("This is the customer csv not the orders csv - skipping");
+    return;
+  }
 
   if (parsedData.rows.length === 0) {
     console.log("No data rows found");
@@ -44,7 +49,7 @@ function validateAndDecodeAttachment(record) {
     throw new Error("No attachments found or attachment content is empty");
   }
 
-  console.log("\nDecoding Base64 Attachment Content");
+  console.log("Decoding Base64 Attachment Content");
   const decodedContent = atob(record.attachments[0].content);
 
   return decodedContent;
@@ -54,7 +59,7 @@ async function saveDecodedCSV(decodedContent, record) {
   const timestamp = formatInTimeZone(new Date(), 'America/Chicago', 'yyyy-MM-dd-HH-mm-ss');
   const filename = `avery-orders-${timestamp}.csv`;
 
-  console.log("\nSaving decoded CSV file");
+  console.log("Saving decoded CSV file");
 
   try {
     await saveFile(decodedContent, {
@@ -71,11 +76,8 @@ async function saveDecodedCSV(decodedContent, record) {
 }
 
 function parseCSVContent(decodedContent) {
-  console.log(`Processing entire CSV content`);
-
   const parsedData = parseCSV(decodedContent, { hasHeaders: true });
-
-  console.log(`Processed ${parsedData.rows.length} data rows`);
+  console.log(`Parsed ${parsedData.rows.length} data rows`);
   return parsedData;
 }
 
