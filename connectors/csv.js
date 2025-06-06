@@ -3,6 +3,8 @@
  * Compatible with Cloudflare Workers environment
  */
 
+import { isCliEnvironment } from '../utils/env.js';
+
 /**
  * Parse CSV content into structured data
  * @param {string} csvContent - Raw CSV content string
@@ -266,20 +268,20 @@ export function joinArray(value, separator = ', ') {
  * @param {string} options.filename - Filename to save as
  * @param {string} [options.contentType] - MIME type for R2 storage
  * @param {Object} [options.metadata] - Custom metadata for R2 storage
- * @param {Object} env - Environment object (should contain CSV_BUCKET for worker env)
+ * @param {Object} env - Environment object (should contain R2_BUCKET for worker env)
  * @returns {Promise<void>}
  */
 export async function saveFile(content, options, env) {
   const { filename, contentType = 'text/plain', metadata = {} } = options;
 
-  // Check if we're in worker environment by looking for R2 bindings
-  const isWorkerEnv = typeof env?.CSV_BUCKET !== 'undefined';
+  // Use environment detection utility to determine if we're in worker environment
+  const isWorkerEnv = !isCliEnvironment(env);
 
   if (isWorkerEnv) {
     // Worker environment - save to R2
     console.log(`Saving file to R2 bucket: ${filename}`);
     try {
-      await env.CSV_BUCKET.put(filename, content, {
+      await env.R2_BUCKET.put(filename, content, {
         httpMetadata: {
           contentType,
         },
