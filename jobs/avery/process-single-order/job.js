@@ -172,16 +172,14 @@ function logOrderTotals(shopifyOrderData) {
   if (discountTotal > 0) {
     console.log(`    Discounts: ${chalk.red("-$" + discountTotal.toFixed(2))}`);
   }
+
+  console.log(`    Transaction Amount: ${chalk.blue("$" + transactionTotal.toFixed(2))}`);
   console.log(`    ${chalk.bold.green("Order Total: $" + orderTotal.toFixed(2))}`);
 
-  if (transactionTotal > 0) {
-    console.log(`    Transaction Amount: ${chalk.blue("$" + transactionTotal.toFixed(2))}`);
-
-    // Show difference if transaction doesn't match order total
-    const difference = Math.abs(orderTotal - transactionTotal);
-    if (difference > 0.01) { // Allow for small rounding differences
-      console.log(`    ${chalk.yellow("⚠️  Difference: $" + difference.toFixed(2))}`);
-    }
+  // Show difference if transaction doesn't match order total
+  const difference = Math.abs(orderTotal - transactionTotal);
+  if (difference > 0.01) { // Allow for small rounding differences
+    console.log(`    ${chalk.yellow("Difference: $" + difference.toFixed(2))}`);
   }
 }
 

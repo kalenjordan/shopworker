@@ -151,8 +151,6 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
   let orderCounter = 0;
   const limit = getLimit();
 
-  console.log(`Processing ${csOrders.length} Shopify orders via sub-jobs`);
-
   if (limit > 0) {
     console.log(`Limiting processing to ${limit} orders`);
   }
