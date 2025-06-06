@@ -3,7 +3,7 @@
  */
 
 import { createShopifyClient } from './utils/shopify.js';
-import { logToWorker } from './utils/log.js';
+import { logToWorker } from './utils/env.js';
 import { hmacSha256 } from './utils/crypto.js';
 import { JobQueue } from './job-queue.js';
 

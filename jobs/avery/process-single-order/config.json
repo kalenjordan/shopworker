@@ -1,0 +1,11 @@
+{
+  "name": "Process Single Order",
+  "shop": "kalen-test-store",
+  "description": "Processes a single Shopify order from CSV data",
+  "version": "1.0.0",
+  "trigger": "webhook",
+  "test": {
+    "skip_query": true,
+    "webhookPayload": "fixtures/single-order-test.json"
+  }
+}

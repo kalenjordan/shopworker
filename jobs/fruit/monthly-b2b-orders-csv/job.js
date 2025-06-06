@@ -1,7 +1,7 @@
 import GetRecentOrders from "../../../graphql/GetRecentOrders.js";
 import { sendEmail, validateCredentials } from "../../../connectors/resend.js";
 import { generateCSV, createAttachment, joinArray } from "../../../connectors/csv.js";
-import { logToCli, logToWorker } from "../../../utils/log.js";
+import { logToCli, logToWorker } from "../../../utils/env.js";
 import { format, parseISO } from "date-fns";
 
 /**

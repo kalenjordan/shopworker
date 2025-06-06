@@ -5,6 +5,6 @@
   "test": {
     "limit": 3,
     "dryRun": false,
-    "webhookPayload": "fixtures/may-31-orders.json"
+    "webhookPayload": "fixtures/avery-june-2-orders.json"
   }
 }

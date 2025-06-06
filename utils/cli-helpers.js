@@ -37,5 +37,5 @@ export {
   handleCloudflareDeployment
 } from './deployment.js';
 
-// Re-export logToCli to maintain compatibility
-export { logToCli } from './log.js';
+// Re-export environment utilities
+export { logToCli, runSubJob } from './env.js';
