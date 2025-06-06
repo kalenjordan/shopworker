@@ -251,13 +251,13 @@ async function appendProductRows(sheetsClient, spreadsheetId, sheetName, rows, c
 /**
  * Process a product update and save/update it in Google Sheets
  * @param {Object} options - Options object
- * @param {Object} options.record - Shopify product data from webhook
+ * @param {Object} options.payload - Shopify product data from webhook
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.env - Environment variables
  * @param {Object} options.shopConfig - Shop-specific configuration
  * @param {Object} options.jobConfig - Job-specific configuration from config.json
  */
-export async function process({ record: productData, shopify, env, jobConfig, secrets }) {
+export async function process({ payload: productData, shopify, env, jobConfig, secrets }) {
   console.log("Product webhook payload received");
   logToWorker(env, "Webhook payload: " + JSON.stringify(productData));
 

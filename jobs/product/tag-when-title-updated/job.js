@@ -23,10 +23,10 @@ function getFormattedDate() {
 /**
  * Process a product update and add a last-modified tag
  * @param {Object} options - Options object
- * @param {Object} options.record - Shopify product data
+ * @param {Object} options.payload - Shopify product data
  * @param {Object} options.shopify - Shopify API client
  */
-export async function process({ record: productData, shopify }) {
+export async function process({ payload: productData, shopify }) {
   console.log("====== Processing product update to add last-modified tag ======", productData);
 
   const productId = shopify.toGid(productData.id, "Product");

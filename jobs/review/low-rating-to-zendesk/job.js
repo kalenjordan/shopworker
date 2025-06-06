@@ -3,11 +3,11 @@ import { createZendeskTicket } from '../../../connectors/zendesk.js';
 /**
  * Create a Zendesk ticket when a low-rated review is received
  * @param {Object} options - Job options
- * @param {Object} options.record - Review data
+ * @param {Object} options.payload - Review data
  * @param {Object} options.env - Environment variables
  * @param {Object} options.secrets - Secrets with Zendesk credentials
  */
-export async function process({ record: review, env, secrets }) {
+export async function process({ payload: review, env, secrets }) {
   const rating = review.rating ?? review.stars ?? review.starRating;
   if (rating === undefined || rating > 2) {
     return;

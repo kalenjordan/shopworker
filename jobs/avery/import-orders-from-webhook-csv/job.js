@@ -16,14 +16,14 @@ let jobConfig;
 let env;
 let shopConfig;
 
-export async function process({ record, shopify: shopifyClient, jobConfig: config, env: environment, shopConfig: shop }) {
+export async function process({ payload, shopify: shopifyClient, jobConfig: config, env: environment, shopConfig: shop }) {
   // Set module-level variables
   shopify = shopifyClient;
   jobConfig = config;
   env = environment;
   shopConfig = shop;
 
-  const decodedContent = validateAndDecodeAttachment(record);
+  const decodedContent = validateAndDecodeAttachment(payload);
   const parsedData = parseCSVContent(decodedContent);
 
   if (parsedData.rows.length === 0) {

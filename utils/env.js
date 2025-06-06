@@ -29,7 +29,7 @@ export function isCliEnvironment(env) {
 export async function runSubJob({ jobPath, record, shopify, jobConfig, env, shopConfig }) {
   if (isCliEnvironment(env)) {
     console.log(chalk.green(`  ✓ Processing subjob#${record.subJobIndex} directly in CLI`));
-    await runSubJobDirectly({ jobPath, record, shopify, jobConfig });
+    await runSubJobDirectly({ jobPath, payload: record, shopify, jobConfig });
   } else {
     // Cloudflare Workers Environment: Queue the job via durable object
     if (!shopConfig || !shopConfig.shopify_domain) {
@@ -45,11 +45,11 @@ export async function runSubJob({ jobPath, record, shopify, jobConfig, env, shop
  * Run a sub-job directly by importing and calling it (CLI environment)
  * @param {Object} options - Options for running the sub-job
  * @param {string} options.jobPath - Path to the job
- * @param {Object} options.record - Record data to pass to the sub-job
+ * @param {Object} options.payload - Payload data to pass to the sub-job
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.jobConfig - Job configuration
  */
-async function runSubJobDirectly({ jobPath, record, shopify, jobConfig }) {
+async function runSubJobDirectly({ jobPath, payload, shopify, jobConfig }) {
   // Dynamically import the job module
   const jobModule = await import(`../jobs/${jobPath}/job.js`);
 
@@ -59,7 +59,7 @@ async function runSubJobDirectly({ jobPath, record, shopify, jobConfig }) {
 
   // Call the job's process function directly
   await jobModule.process({
-    record,
+    payload,
     shopify,
     jobConfig
   });
