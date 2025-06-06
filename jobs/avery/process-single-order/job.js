@@ -22,13 +22,13 @@ import AddCustomerTags from "../../../graphql/AddCustomerTags.js";
 let shopify;
 let jobConfig;
 
-export async function process({ record, shopify: shopifyClient, jobConfig: config }) {
+export async function process({ payload, shopify: shopifyClient, jobConfig: config }) {
   // Set module-level variables
   shopify = shopifyClient;
   jobConfig = config;
 
   // Extract order data from the record (passed from parent job)
-  const { csOrder, orderCounter } = record;
+  const { csOrder, orderCounter } = payload;
 
   const shopifyOrderData = buildShopifyOrderData(csOrder, orderCounter);
 

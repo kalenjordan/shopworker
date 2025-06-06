@@ -6,9 +6,9 @@ import GetOrderById from "../../../graphql/GetOrderById.js";
  * @param {Object} params.shopify - Shopify API client
  * @param {Object} [params.env] - Environment variables (not used by this job)
  */
-export async function process({ record, shopify }) {
+export async function process({ payload, shopify }) {
   // Convert ID to GID format and fetch full order
-  const orderId = shopify.toGid(record.id, "Order");
+  const orderId = shopify.toGid(payload.id, "Order");
   const { order } = await shopify.graphql(GetOrderById, { id: orderId });
 
   console.log(order);

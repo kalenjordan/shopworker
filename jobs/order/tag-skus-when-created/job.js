@@ -7,7 +7,7 @@ import OrderUpdate from "../../../graphql/OrderUpdate.js";
  * @param {Object} params.shopify - Shopify API client
  * @param {Object} [params.env] - Environment variables (not used by this job)
  */
-export async function process({ record: order, shopify }) {
+export async function process({ payload: order, shopify }) {
   // Extract SKUs from line items
   const skus = [];
 

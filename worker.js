@@ -161,7 +161,7 @@ async function processWebhook(jobModule, bodyData, shopify, env, shopConfig, job
   const secrets = loadSecretsFromEnv(env);
 
   await jobModule.process({
-    record: bodyData,
+    payload: bodyData,
     shopify,
     env,
     shopConfig,

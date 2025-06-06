@@ -172,7 +172,7 @@ export class JobQueue extends DurableObject {
 
       // Process the job with complete data
       await jobModule.process({
-        record: bodyData,
+        payload: bodyData,
         shopify,
         env: this.env,
         shopConfig,

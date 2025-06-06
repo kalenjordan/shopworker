@@ -7,7 +7,7 @@ import { format, parseISO } from "date-fns";
 /**
  * Process orders and send email with CSV attachment
  * @param {Object} params - Parameters for the job
- * @param {Object} params.record - The record object (empty for manual jobs)
+ * @param {Object} params.payload - The payload object (empty for manual jobs)
  * @param {Object} params.shopify - Shopify API client
  * @param {Object} params.env - Environment variables
  * @param {Object} params.secrets - Secrets loaded from files or environment

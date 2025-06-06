@@ -7,14 +7,14 @@ import * as CitySheets from "../city-sheets-common.js";
 /**
  * Process a Shopify order and add it to Google Sheets
  * @param {Object} options - Options object
- * @param {Object} options.record - Shopify order data
+ * @param {Object} options.payload - Shopify order data
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.env - Environment variables
  * @param {Object} options.shopConfig - Shop-specific configuration
  * @param {Object} options.jobConfig - Job-specific configuration from config.json
  * @param {Object} options.secrets - Secrets loaded from files or environment
  */
-export async function process({ record: orderData, shopify, env, jobConfig, secrets }) {
+export async function process({ payload: orderData, shopify, env, jobConfig, secrets }) {
   logToWorker(env, "Webhook payload: " + JSON.stringify(orderData));
 
   if (!orderData.id) {

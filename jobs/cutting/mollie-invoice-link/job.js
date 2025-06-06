@@ -94,7 +94,7 @@ async function sendShopifyInvoiceWithLink(orderId, paymentLink, shopify) {
  * @param {Object} params.shopify - Shopify API client
  * @param {Object} params.env - Environment variables specific to the job's execution context
  */
-export async function process({ record: order, shopify, env }) {
+export async function process({ payload: order, shopify, env }) {
   validateEnvironment(env);
 
   const orderDetails = await getAugmentedOrderDetails(order, shopify);

@@ -299,7 +299,7 @@ export async function runJobTest(cliDirname, jobPath, queryParam, shopParam, lim
 
   // Pass process.env as env, shopConfig as shopConfig, and secrets for consistency with worker environment
   await jobModule.process({
-    record,
+    payload: record,
     shopify: shopify,
     env: process.env,   // Pass Node.js process.env as env
     shopConfig: shopConfig,  // Pass shopConfig separately
