@@ -170,7 +170,7 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
       console.log(chalk.green(`  ✓ Running ${orderCounter}`));
       await runSubJob({
         jobPath: 'avery/process-single-order',
-        record: {
+        payload: {
           csOrder,
           subJobIndex: orderCounter,
           orderCounter
