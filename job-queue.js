@@ -162,7 +162,20 @@ export class JobQueue extends DurableObject {
 
       // Load job config
       const jobConfigModule = await import(`./jobs/${jobPath}/config.json`);
-      const jobConfig = jobConfigModule.default;
+      let jobConfig = jobConfigModule.default;
+
+      // Check for config overrides in the payload
+      if (bodyData._configOverrides) {
+        jobConfig = {
+          ...jobConfig,
+          test: {
+            ...jobConfig.test,
+            ...bodyData._configOverrides
+          }
+        };
+
+        console.log('  Updated jobConfig.test:', JSON.stringify(jobConfig.test));
+      }
 
       // Create Shopify client
       const shopify = this.createShopifyClient(shopDomain, shopConfig);

@@ -94,9 +94,10 @@ export async function getTestRecordId(cliDirname, jobPath, options) {
  * @param {string} jobPath - The job path relative to jobs/
  * @param {Object} payload - The payload to send (either minimal with ID or full Shopworker webhook fixture)
  * @param {string} shopDomain - The shop domain
+ * @param {Object} configOverrides - Optional job config overrides (like limit)
  * @returns {Object} Object containing Shopify webhook URL and payload
  */
-export function prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain) {
+export function prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain, configOverrides = null) {
   // Format Shopify webhook URL
   const webhookUrl = new URL(workerUrl);
   webhookUrl.searchParams.set('job', jobPath);
@@ -107,6 +108,11 @@ export function prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDo
     ...payload,
     shop_domain: shopDomain
   };
+
+  // Add config overrides if provided
+  if (configOverrides) {
+    shopifyWebhookPayload._configOverrides = configOverrides;
+  }
 
   return { shopifyWebhookAddress, shopifyWebhookPayload };
 }
@@ -187,7 +193,7 @@ export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebho
  * Run a remote test against the worker for a specific job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} jobPath - The job path relative to jobs/
- * @param {Object} options - Command options including workerUrl, recordId, and queryParam
+ * @param {Object} options - Command options including workerUrl, recordId, queryParam, and limit
  * @returns {Promise<void>}
  */
 export async function runJobRemoteTest(cliDirname, jobPath, options) {
@@ -197,16 +203,29 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   // Load job and trigger configs
   const { jobConfig, shopifyWebhookTopic } = loadJobConfigsForRemoteTest(jobPath);
 
+  // Override the limit in job config if limitParam is provided
+  let configToUse = jobConfig;
+  if (options.limit && options.limit !== 1) {
+    configToUse = {
+      ...jobConfig,
+      test: {
+        ...jobConfig.test,
+        limit: options.limit
+      }
+    };
+    console.log(chalk.yellow(`Overriding job config limit with: ${options.limit}`));
+  }
+
   // Get shop configuration and API secret
-  const { shopConfig, shopDomain } = getShopConfigWithSecret(cliDirname, jobConfig.shop, options.shop);
+  const { shopConfig, shopDomain } = getShopConfigWithSecret(cliDirname, configToUse.shop, options.shop);
 
   let payload;
   let isShopworkerWebhook = false;
 
   // Check if this is a Shopworker webhook trigger
-  if (jobConfig.trigger === 'webhook') {
+  if (configToUse.trigger === 'webhook') {
     // For Shopworker webhook triggers, load the fixture data
-    payload = await loadShopworkerWebhookFixture(cliDirname, jobPath, jobConfig);
+    payload = await loadShopworkerWebhookFixture(cliDirname, jobPath, configToUse);
     isShopworkerWebhook = true;
     console.log(chalk.yellow("Using Shopworker webhook fixture data for remote test"));
   } else {
@@ -220,7 +239,8 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   }
 
   // Prepare Shopify webhook payload and URL
-  const { shopifyWebhookAddress, shopifyWebhookPayload } = prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain);
+  const configOverrides = (options.limit && options.limit !== 1) ? { limit: options.limit } : null;
+  const { shopifyWebhookAddress, shopifyWebhookPayload } = prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain, configOverrides);
 
   // Send test webhook
   await sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, shopConfig, shopifyWebhookTopic, shopDomain, isShopworkerWebhook);

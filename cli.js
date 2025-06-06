@@ -269,6 +269,7 @@ program
   .option('-q, --query <queryString>', 'Query string to filter results when automatically finding a record')
   .option('-w, --worker <workerUrl>', 'Cloudflare worker URL (overrides .shopworker.json)')
   .option('-j, --shop <shopDomain>', 'Override the shop domain in the job config')
+  .option('-l, --limit <number>', 'Override the limit for the number of records to fetch (default: 1)', parseInt)
   .action(async (jobNameArg, options) => {
     try {
       const jobName = await ensureAndResolveJobName(__dirname, jobNameArg, options.dir, true);
