@@ -26,17 +26,17 @@ export function isCliEnvironment(env) {
  * @param {Object} [options.shopConfig] - Shop configuration (required for Cloudflare environment)
  * @returns {Promise<void>}
  */
-export async function runSubJob({ jobPath, record, shopify, jobConfig, env, shopConfig }) {
+export async function runSubJob({ jobPath, payload, shopify, jobConfig, env, shopConfig }) {
   if (isCliEnvironment(env)) {
-    console.log(chalk.green(`  ✓ Processing subjob#${record.subJobIndex} directly in CLI`));
-    await runSubJobDirectly({ jobPath, payload: record, shopify, jobConfig });
+    console.log(`  ✓ Processing subjob#${payload.subJobIndex} directly in CLI`);
+    await runSubJobDirectly({ jobPath, payload, shopify, jobConfig });
   } else {
     // Cloudflare Workers Environment: Queue the job via durable object
     if (!shopConfig || !shopConfig.shopify_domain) {
       throw new Error('Shop configuration with shopify_domain is required for sub-job queuing in Cloudflare Workers environment');
     }
 
-    console.log(chalk.green(`  ✓ Enqueueing subjob #${record.subJobIndex} in Durable Object`));
+    console.log(`  ✓ Enqueueing subjob #${record.subJobIndex} in Durable Object`);
     await queueSubJobInWorkerEnvironment({ jobPath, record, shopConfig, env });
   }
 }

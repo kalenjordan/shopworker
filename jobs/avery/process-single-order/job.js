@@ -69,9 +69,7 @@ function buildShopifyOrderData(csOrder, orderCounter) {
 }
 
 function logOrder(shopifyOrderData) {
-  console.log(chalk.yellow(`\n=== SHOPIFY ORDER ${shopifyOrderData.orderCounter} ===`));
-  console.log(`Customer: ${shopifyOrderData.name} (${shopifyOrderData.email}) (CS Customer ID: ${shopifyOrderData.csCustomerId})`);
-  console.log(`CS Order IDs: ${shopifyOrderData.csOrderIds.join(", ")}`);
+  console.log(`  Customer: ${shopifyOrderData.name} (${shopifyOrderData.email}) (CS Customer ID: ${shopifyOrderData.csCustomerId})`);
 
   logOrderLineItems(shopifyOrderData.lineItems);
   logOrderDiscounts(shopifyOrderData.discounts);
@@ -86,7 +84,15 @@ function logOrderLineItems(lineItems) {
     lineItems.forEach((line, lineIdx) => {
       const sku = line["Line: SKU"] || "MISSING SKU";
       const price = line["Line: Price"] || "No Price";
-      const tax = line["Tax: Total"] || "No Tax";
+
+      // Calculate total tax by summing individual tax fields
+      const tax1 = parseFloat(line["Tax 1: Price"] || 0);
+      const tax2 = parseFloat(line["Tax 2: Price"] || 0);
+      const tax3 = parseFloat(line["Tax 3: Price"] || 0);
+      const tax4 = parseFloat(line["Tax 4: Price"] || 0);
+      const totalTax = tax1 + tax2 + tax3 + tax4;
+      const tax = totalTax > 0 ? totalTax.toFixed(2) : "No Tax";
+
       console.log(
         `    ${lineIdx + 1}. ${line["Line: Title"]} (${line["Line: Variant Title"] || "N/A"}) - ${chalk.gray(sku)} - ${chalk.green("$" + price)} - ${chalk.cyan("$" + tax)}`
       );
@@ -117,7 +123,9 @@ function logOrderTransactions(transactions) {
     console.log(`\n  Transactions (${transactions.length}):`);
     transactions.forEach((transaction, transactionIdx) => {
       const amount = transaction['Transaction: Amount'] ? `$${parseFloat(transaction['Transaction: Amount']).toFixed(2)}` : 'No Amount';
-      console.log(`    ${transactionIdx + 1}. ${transaction["Line: Title"]} - ${transaction["Line: Price"]} - ${chalk.blue(amount)}`);
+      const title = transaction["Line: Title"] || 'Transaction';
+      const method = transaction["Transaction: Gateway"] || transaction["Transaction: Kind"] || 'Payment';
+      console.log(`    ${transactionIdx + 1}. ${title} - ${method} - ${chalk.blue(amount)}`);
     });
   }
 }
@@ -147,7 +155,11 @@ function logOrderTotals(shopifyOrderData) {
 
   // Calculate tax totals
   const taxTotal = lineItems.reduce((sum, line) => {
-    return sum + parseFloat(line['Tax: Total'] || 0);
+    const tax1 = parseFloat(line['Tax 1: Price'] || 0);
+    const tax2 = parseFloat(line['Tax 2: Price'] || 0);
+    const tax3 = parseFloat(line['Tax 3: Price'] || 0);
+    const tax4 = parseFloat(line['Tax 4: Price'] || 0);
+    return sum + tax1 + tax2 + tax3 + tax4;
   }, 0);
 
   // Calculate order total (line items + shipping + tax - discounts)

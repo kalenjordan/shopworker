@@ -258,3 +258,55 @@ export function joinArray(value, separator = ', ') {
   }
   return String(value || '');
 }
+
+/**
+ * Save file content to appropriate storage based on environment
+ * @param {string} content - File content to save
+ * @param {Object} options - Save options
+ * @param {string} options.filename - Filename to save as
+ * @param {string} [options.contentType] - MIME type for R2 storage
+ * @param {Object} [options.metadata] - Custom metadata for R2 storage
+ * @param {Object} env - Environment object (should contain CSV_BUCKET for worker env)
+ * @returns {Promise<void>}
+ */
+export async function saveFile(content, options, env) {
+  const { filename, contentType = 'text/plain', metadata = {} } = options;
+
+  // Check if we're in worker environment by looking for R2 bindings
+  const isWorkerEnv = typeof env?.CSV_BUCKET !== 'undefined';
+
+  if (isWorkerEnv) {
+    // Worker environment - save to R2
+    console.log(`Saving file to R2 bucket: ${filename}`);
+    try {
+      await env.CSV_BUCKET.put(filename, content, {
+        httpMetadata: {
+          contentType,
+        },
+        customMetadata: {
+          timestamp: new Date().toISOString(),
+          ...metadata
+        }
+      });
+      console.log(`✓ File saved to R2: ${filename}`);
+    } catch (error) {
+      console.error(`✗ Failed to save file to R2: ${error.message}`);
+      throw error;
+    }
+  } else {
+    // CLI environment - dynamically import Node.js modules and save to Desktop
+    console.log(`Saving file to Desktop: ${filename}`);
+    try {
+      const { default: fs } = await import('fs');
+      const { default: path } = await import('path');
+      const { default: os } = await import('os');
+
+      const desktopPath = path.join(os.homedir(), 'Desktop', filename);
+      fs.writeFileSync(desktopPath, content, 'utf8');
+      console.log(`✓ File saved to Desktop: ${filename}`);
+    } catch (error) {
+      console.error(`✗ Failed to save file to Desktop: ${error.message}`);
+      throw error;
+    }
+  }
+}

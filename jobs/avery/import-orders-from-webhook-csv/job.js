@@ -5,10 +5,11 @@
  * Converts CSV data into structured orders where each CS order creates a single Shopify order.
  */
 
-import { parseCSV } from "../../../connectors/csv.js";
+import { parseCSV, saveFile } from "../../../connectors/csv.js";
 import chalk from "chalk";
 import { runSubJob } from "../../../utils/env.js";
-// import fs from "fs";
+import { format } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 
 // Module-level variables to avoid passing around
 let shopify;
@@ -24,6 +25,7 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   shopConfig = shop;
 
   const decodedContent = validateAndDecodeAttachment(payload);
+  await saveDecodedCSV(decodedContent, payload);
   const parsedData = parseCSVContent(decodedContent);
 
   if (parsedData.rows.length === 0) {
@@ -42,10 +44,30 @@ function validateAndDecodeAttachment(record) {
     throw new Error("No attachments found or attachment content is empty");
   }
 
-  console.log("\n=== Decoding Base64 Attachment Content ===");
+  console.log("\nDecoding Base64 Attachment Content");
   const decodedContent = atob(record.attachments[0].content);
 
   return decodedContent;
+}
+
+async function saveDecodedCSV(decodedContent, record) {
+  const timestamp = formatInTimeZone(new Date(), 'America/Chicago', 'yyyy-MM-dd-HH-mm-ss');
+  const filename = `avery-orders-${timestamp}.csv`;
+
+  console.log("\nSaving decoded CSV file");
+
+  try {
+    await saveFile(decodedContent, {
+      filename,
+      contentType: 'text/csv',
+      metadata: {
+        source: 'avery-webhook-import',
+        originalFilename: record.attachments?.[0]?.filename || 'unknown'
+      }
+    }, env);
+  } catch (error) {
+    console.error(chalk.red(`Failed to save CSV file: ${error.message}`));
+  }
 }
 
 function parseCSVContent(decodedContent) {
@@ -95,7 +117,6 @@ function buildCsOrdersFromRows(filteredRows, totalRowsCount) {
     categorizeRowIntoOrder(csOrders[csOrderIndex], row, lineType);
   }
 
-  console.log("\n");
   console.log(`Built ${csOrders.length} CS orders from ${totalRowsCount} rows`);
   return csOrders;
 }
@@ -128,21 +149,21 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
   let orderCounter = 0;
   const limit = getLimit();
 
-  console.log(`\n=== Processing ${csOrders.length} Shopify orders via sub-jobs ===`);
+  console.log(`Processing ${csOrders.length} Shopify orders via sub-jobs`);
 
   if (limit > 0) {
     console.log(`Limiting processing to ${limit} orders`);
   }
 
   for (const csOrder of csOrders) {
-    orderCounter++;
-
-    if (limit > 0 && orderCounter > limit) {
+    if (limit > 0 && orderCounter >= limit) {
       console.log(`\nReached order limit of ${limit}, stopping processing`);
       break;
     }
 
-    console.log(chalk.cyan(`\nProcessing order ${orderCounter}/${csOrders.length}: ${csOrder.csOrderId}`));
+    orderCounter++;
+
+    console.log(chalk.cyan(`\n${orderCounter}/${csOrders.length} Processing order ${csOrder.csOrderId}`));
 
     try {
       // Use the unified runSubJob interface - handles environment detection automatically

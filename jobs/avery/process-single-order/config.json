@@ -1,6 +1,6 @@
 {
   "name": "Process Single Order",
-  "shop": "kalen-test-store",
+  "shop": "avery",
   "description": "Processes a single Shopify order from CSV data",
   "version": "1.0.0",
   "trigger": "webhook",
