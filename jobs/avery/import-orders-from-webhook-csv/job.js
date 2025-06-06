@@ -134,12 +134,12 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
   }
 
   for (const csOrder of csOrders) {
-    orderCounter++;
-
-    if (limit > 0 && orderCounter > limit) {
+    if (limit > 0 && orderCounter >= limit) {
       console.log(`\nReached order limit of ${limit}, stopping processing`);
       break;
     }
+
+    orderCounter++;
 
     console.log(chalk.cyan(`\nProcessing order ${orderCounter}/${csOrders.length}: ${csOrder.csOrderId}`));
 

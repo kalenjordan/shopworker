@@ -117,7 +117,9 @@ function logOrderTransactions(transactions) {
     console.log(`\n  Transactions (${transactions.length}):`);
     transactions.forEach((transaction, transactionIdx) => {
       const amount = transaction['Transaction: Amount'] ? `$${parseFloat(transaction['Transaction: Amount']).toFixed(2)}` : 'No Amount';
-      console.log(`    ${transactionIdx + 1}. ${transaction["Line: Title"]} - ${transaction["Line: Price"]} - ${chalk.blue(amount)}`);
+      const title = transaction["Line: Title"] || 'Transaction';
+      const method = transaction["Transaction: Gateway"] || transaction["Transaction: Kind"] || 'Payment';
+      console.log(`    ${transactionIdx + 1}. ${title} - ${method} - ${chalk.blue(amount)}`);
     });
   }
 }

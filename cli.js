@@ -43,10 +43,11 @@ program
   .option('-d, --dir <jobDirectory>', 'Job directory name (if not running from within job dir)')
   .option('-q, --query <queryString>', 'Query string to filter results (e.g. "status:any")')
   .option('-s, --shop <shopDomain>', 'Override the shop domain in the job config')
+  .option('-l, --limit <number>', 'Override the limit for the number of records to fetch (default: 1)', parseInt)
   .action(async (jobNameArg, options) => {
     const jobName = await ensureAndResolveJobName(__dirname, jobNameArg, options.dir, true);
     if (!jobName) return;
-    await runJobTest(__dirname, jobName, options.query, options.shop);
+    await runJobTest(__dirname, jobName, options.query, options.shop, options.limit);
   });
 
 program
@@ -136,10 +137,11 @@ program
   .option('-d, --dir <jobDirectory>', 'Job directory name (if not running from within job dir)')
   .option('-q, --query <queryString>', 'Query string to filter results (e.g. "status:any")')
   .option('-j, --shop <shopDomain>', 'Override the shop domain in the job config')
+  .option('-l, --limit <number>', 'Override the limit for the number of records to fetch (default: 1)', parseInt)
   .action(async (options) => {
     const jobName = await ensureAndResolveJobName(__dirname, null, options.dir, true);
     if (!jobName) return;
-    await runJobTest(__dirname, jobName, options.query, options.shop);
+    await runJobTest(__dirname, jobName, options.query, options.shop, options.limit);
   });
 
 program

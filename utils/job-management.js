@@ -266,12 +266,26 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
  * @param {string} jobPath - The job path relative to jobs/
  * @param {string} queryParam - Optional query parameter for filtering results
  * @param {string} shopParam - Optional shop domain to override the one in job config
+ * @param {number} limitParam - Optional limit for the number of records to fetch (default: 1)
  */
-export async function runJobTest(cliDirname, jobPath, queryParam, shopParam) {
+export async function runJobTest(cliDirname, jobPath, queryParam, shopParam, limitParam) {
   const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam);
 
+  // Override the limit in job config if limitParam is provided
+  let configToUse = jobConfig;
+  if (limitParam && limitParam !== 1) {
+    configToUse = {
+      ...jobConfig,
+      test: {
+        ...jobConfig.test,
+        limit: limitParam
+      }
+    };
+    console.log(chalk.yellow(`Overriding job config limit with: ${limitParam}`));
+  }
+
   // Get shop configuration from .shopworker.json
-  const shopConfig = getShopConfig(cliDirname, jobConfig.shop);
+  const shopConfig = getShopConfig(cliDirname, configToUse.shop);
 
   // Load secrets from .secrets directory
   const secrets = loadSecrets(cliDirname);
@@ -289,7 +303,7 @@ export async function runJobTest(cliDirname, jobPath, queryParam, shopParam) {
     shopify: shopify,
     env: process.env,   // Pass Node.js process.env as env
     shopConfig: shopConfig,  // Pass shopConfig separately
-    jobConfig: jobConfig,  // Pass the job config to the process function
+    jobConfig: configToUse,  // Pass the job config (with potential limit override) to the process function
     secrets: secrets    // Pass secrets to the process function
   });
   console.log('Processing complete!');
