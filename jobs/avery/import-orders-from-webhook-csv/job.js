@@ -7,7 +7,7 @@
 
 import { parseCSV, saveFile } from "../../../connectors/csv.js";
 import chalk from "chalk";
-import { runSubJob } from "../../../utils/env.js";
+import { runJob } from "../../../utils/env.js";
 import { format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
@@ -166,13 +166,13 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
     console.log(chalk.cyan(`\n${orderCounter}/${csOrders.length} Processing order ${csOrder.csOrderId}`));
 
     try {
-      // Use the unified runSubJob interface - handles environment detection automatically
+      // Use the unified runJob interface - handles environment detection automatically
       console.log(chalk.green(`  ✓ Running ${orderCounter}`));
-      await runSubJob({
+      await runJob({
         jobPath: 'avery/process-single-order',
         payload: {
           csOrder,
-          subJobIndex: orderCounter,
+          name: `Shopify Order #${orderCounter}`,
           orderCounter
         },
         shopify,

@@ -38,4 +38,4 @@ export {
 } from './deployment.js';
 
 // Re-export environment utilities
-export { logToCli, runSubJob } from './env.js';
+export { logToCli, runJob } from './env.js';

@@ -13,43 +13,44 @@ export function isCliEnvironment(env) {
 }
 
 /**
- * Run a sub-job, automatically handling environment differences
+ * Run a job, automatically handling environment differences
  * In CLI: directly imports and calls the job
  * In Cloudflare Workers: queues the job via durable object
  *
- * @param {Object} options - Options for running the sub-job
+ * @param {Object} options - Options for running the job
  * @param {string} options.jobPath - Path to the job (e.g., 'avery/process-single-order')
- * @param {Object} options.record - Record data to pass to the sub-job
+ * @param {Object} options.payload - Payload data to pass to the job
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.jobConfig - Job configuration
  * @param {Object} options.env - Environment variables
  * @param {Object} [options.shopConfig] - Shop configuration (required for Cloudflare environment)
  * @returns {Promise<void>}
  */
-export async function runSubJob({ jobPath, payload, shopify, jobConfig, env, shopConfig }) {
+export async function runJob({ jobPath, payload, shopify, jobConfig, env, shopConfig }) {
+  let jobName = payload.name ? payload.name : 'unknown job name';
   if (isCliEnvironment(env)) {
-    console.log(`  ✓ Processing subjob#${payload.subJobIndex} directly in CLI`);
-    await runSubJobDirectly({ jobPath, payload, shopify, jobConfig });
+    console.log(`  ✓ Processing job ${jobName} directly in CLI`);
+    await runJobDirectly({ jobPath, payload, shopify, jobConfig });
   } else {
     // Cloudflare Workers Environment: Queue the job via durable object
     if (!shopConfig || !shopConfig.shopify_domain) {
-      throw new Error('Shop configuration with shopify_domain is required for sub-job queuing in Cloudflare Workers environment');
+      throw new Error('Shop configuration with shopify_domain is required for job queuing in Cloudflare Workers environment');
     }
 
-    console.log(`  ✓ Enqueueing subjob #${record.subJobIndex} in Durable Object`);
-    await queueSubJobInWorkerEnvironment({ jobPath, record, shopConfig, env });
+    console.log(`  ✓ Enqueueing job ${jobName} in Durable Object`);
+    await queueJobInWorkerEnvironment({ jobPath, record: payload, shopConfig, env });
   }
 }
 
 /**
- * Run a sub-job directly by importing and calling it (CLI environment)
- * @param {Object} options - Options for running the sub-job
+ * Run a job directly by importing and calling it (CLI environment)
+ * @param {Object} options - Options for running the job
  * @param {string} options.jobPath - Path to the job
- * @param {Object} options.payload - Payload data to pass to the sub-job
+ * @param {Object} options.payload - Payload data to pass to the job
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.jobConfig - Job configuration
  */
-async function runSubJobDirectly({ jobPath, payload, shopify, jobConfig }) {
+async function runJobDirectly({ jobPath, payload, shopify, jobConfig }) {
   // Dynamically import the job module
   const jobModule = await import(`../jobs/${jobPath}/job.js`);
 
@@ -66,46 +67,46 @@ async function runSubJobDirectly({ jobPath, payload, shopify, jobConfig }) {
 }
 
 /**
- * Queue a sub-job in Cloudflare Workers environment using durable objects
- * @param {Object} options - Options for queuing the sub-job
+ * Queue a job in Cloudflare Workers environment using durable objects
+ * @param {Object} options - Options for queuing the job
  * @param {string} options.jobPath - Path to the job
- * @param {Object} options.record - Record data to pass to the sub-job
+ * @param {Object} options.record - Record data to pass to the job
  * @param {Object} options.shopConfig - Shop configuration (contains shopify_domain)
  * @param {Object} options.env - Environment variables
  */
-async function queueSubJobInWorkerEnvironment({ jobPath, record, shopConfig, env }) {
+async function queueJobInWorkerEnvironment({ jobPath, record, shopConfig, env }) {
   // Extract shop domain from shop config
   const shopDomain = shopConfig.shopify_domain;
 
-  // Create a unique ID for this specific sub-job
+  // Create a unique ID for this specific job
   // Option 1: Completely random (maximum isolation)
-  const subJobId = crypto.randomUUID();
+  const jobId = crypto.randomUUID();
 
   // Option 2: Use order ID for more meaningful tracking (if available)
   // const orderId = record.csOrder?.csOrderId || crypto.randomUUID();
   // const durableObjectId = `order:${shopDomain}:${orderId}`;
 
-  const durableObjectId = `subjob:${shopDomain}:${subJobId}`;
+  const durableObjectId = `job:${shopDomain}:${jobId}`;
 
-  // Get a unique JobQueue Durable Object for this specific sub-job
+  // Get a unique JobQueue Durable Object for this specific job
   const jobQueueId = env.JOB_QUEUE.idFromName(durableObjectId);
   const jobQueue = env.JOB_QUEUE.get(jobQueueId);
 
-  // Prepare job data for the sub-job
+  // Prepare job data for the job
   const jobData = {
     shopDomain,
     jobPath,
     bodyData: record,
     shopConfig,
-    topic: 'shopworker/sub-job' // Custom topic for sub-jobs
+    topic: 'shopworker/job' // Custom topic for jobs
   };
 
-  // Enqueue the sub-job (it will be the only job in this durable object)
-  const jobId = await jobQueue.enqueue(jobData);
+  // Enqueue the job (it will be the only job in this durable object)
+  const queuedJobId = await jobQueue.enqueue(jobData);
 
-  console.log(`  Queued sub-job ${jobId} in dedicated durable object ${durableObjectId}`);
+  console.log(`  Queued job ${queuedJobId} in dedicated durable object ${durableObjectId}`);
 
-  // Note: Each sub-job now runs in its own isolated durable object instance
+  // Note: Each job now runs in its own isolated durable object instance
   // This allows for better parallelization and isolation
 }
 
