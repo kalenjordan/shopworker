@@ -3,7 +3,7 @@
   "trigger": "webhook",
   "shop": "kalen-test-store",
   "test": {
-    "limit": 3,
+    "limit": 1,
     "dryRun": false,
     "webhookPayload": "fixtures/avery-june-2-orders.json"
   }

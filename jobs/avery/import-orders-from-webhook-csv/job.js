@@ -42,7 +42,7 @@ function validateAndDecodeAttachment(record) {
     throw new Error("No attachments found or attachment content is empty");
   }
 
-  console.log("\n=== Decoding Base64 Attachment Content ===");
+  console.log("\nDecoding Base64 Attachment Content");
   const decodedContent = atob(record.attachments[0].content);
 
   return decodedContent;
@@ -95,7 +95,6 @@ function buildCsOrdersFromRows(filteredRows, totalRowsCount) {
     categorizeRowIntoOrder(csOrders[csOrderIndex], row, lineType);
   }
 
-  console.log("\n");
   console.log(`Built ${csOrders.length} CS orders from ${totalRowsCount} rows`);
   return csOrders;
 }
@@ -128,7 +127,7 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
   let orderCounter = 0;
   const limit = getLimit();
 
-  console.log(`\n=== Processing ${csOrders.length} Shopify orders via sub-jobs ===`);
+  console.log(`Processing ${csOrders.length} Shopify orders via sub-jobs`);
 
   if (limit > 0) {
     console.log(`Limiting processing to ${limit} orders`);
