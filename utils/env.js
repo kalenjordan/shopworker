@@ -23,16 +23,21 @@ export function isCliEnvironment(env) {
  * @param {Object} options.shopify - Shopify API client
  * @param {Object} options.jobConfig - Job configuration
  * @param {Object} options.env - Environment variables
- * @param {Object} [options.shopConfig] - Shop configuration (used in Cloudflare environment)
+ * @param {Object} [options.shopConfig] - Shop configuration (required for Cloudflare environment)
  * @returns {Promise<void>}
  */
 export async function runSubJob({ jobPath, record, shopify, jobConfig, env, shopConfig }) {
   if (isCliEnvironment(env)) {
-    // CLI Environment: Import and call the job directly
+    console.log(chalk.green(`  ✓ Processing subjob#${record.subJobIndex} directly in CLI`));
     await runSubJobDirectly({ jobPath, record, shopify, jobConfig });
   } else {
     // Cloudflare Workers Environment: Queue the job via durable object
-    await queueSubJobInWorkerEnvironment({ jobPath, record, shopify, env, shopConfig });
+    if (!shopConfig || !shopConfig.shopify_domain) {
+      throw new Error('Shop configuration with shopify_domain is required for sub-job queuing in Cloudflare Workers environment');
+    }
+
+    console.log(chalk.green(`  ✓ Enqueueing subjob #${record.subJobIndex} in Durable Object`));
+    await queueSubJobInWorkerEnvironment({ jobPath, record, shopConfig, env });
   }
 }
 
@@ -65,14 +70,25 @@ async function runSubJobDirectly({ jobPath, record, shopify, jobConfig }) {
  * @param {Object} options - Options for queuing the sub-job
  * @param {string} options.jobPath - Path to the job
  * @param {Object} options.record - Record data to pass to the sub-job
- * @param {Object} options.shopify - Shopify API client (used to get shop domain)
+ * @param {Object} options.shopConfig - Shop configuration (contains shopify_domain)
  * @param {Object} options.env - Environment variables
- * @param {Object} options.shopConfig - Shop configuration
  */
-async function queueSubJobInWorkerEnvironment({ jobPath, record, shopify, env, shopConfig }) {
-  // Get the Job Queue Durable Object for this shop
-  const shopDomain = shopify.shop; // Assuming shopify client has shop property
-  const jobQueueId = env.JOB_QUEUE.idFromName(`shop:${shopDomain}`);
+async function queueSubJobInWorkerEnvironment({ jobPath, record, shopConfig, env }) {
+  // Extract shop domain from shop config
+  const shopDomain = shopConfig.shopify_domain;
+
+  // Create a unique ID for this specific sub-job
+  // Option 1: Completely random (maximum isolation)
+  const subJobId = crypto.randomUUID();
+
+  // Option 2: Use order ID for more meaningful tracking (if available)
+  // const orderId = record.csOrder?.csOrderId || crypto.randomUUID();
+  // const durableObjectId = `order:${shopDomain}:${orderId}`;
+
+  const durableObjectId = `subjob:${shopDomain}:${subJobId}`;
+
+  // Get a unique JobQueue Durable Object for this specific sub-job
+  const jobQueueId = env.JOB_QUEUE.idFromName(durableObjectId);
   const jobQueue = env.JOB_QUEUE.get(jobQueueId);
 
   // Prepare job data for the sub-job
@@ -80,32 +96,17 @@ async function queueSubJobInWorkerEnvironment({ jobPath, record, shopify, env, s
     shopDomain,
     jobPath,
     bodyData: record,
-    shopConfig: shopConfig || await getShopConfigFromEnv(env, shopDomain),
+    shopConfig,
     topic: 'shopworker/sub-job' // Custom topic for sub-jobs
   };
 
-  // Enqueue the sub-job
+  // Enqueue the sub-job (it will be the only job in this durable object)
   const jobId = await jobQueue.enqueue(jobData);
 
-  console.log(`  Queued sub-job ${jobId} for job path ${jobPath} in durable object`);
+  console.log(`  Queued sub-job ${jobId} in dedicated durable object ${durableObjectId}`);
 
-  // Note: In the durable object environment, we don't wait for completion
-  // The job will be processed asynchronously by the JobQueue
-}
-
-/**
- * Get shop configuration from environment (helper for Cloudflare Workers)
- * @param {Object} env - Environment variables
- * @param {string} shopDomain - Shop domain
- * @returns {Object} Shop configuration
- */
-async function getShopConfigFromEnv(env, shopDomain) {
-  if (env && env.SHOPWORKER_CONFIG) {
-    const config = JSON.parse(env.SHOPWORKER_CONFIG);
-    const shopConfig = config.shops?.find(shop => shop.shopify_domain === shopDomain);
-    return shopConfig || {};
-  }
-  return {};
+  // Note: Each sub-job now runs in its own isolated durable object instance
+  // This allows for better parallelization and isolation
 }
 
 /**

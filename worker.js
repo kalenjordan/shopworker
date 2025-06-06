@@ -303,7 +303,7 @@ async function handleGetRequest(request, env) {
   try {
     const url = new URL(request.url);
     const shopDomain = url.searchParams.get('shop');
-    const jobId = url.searchParams.get('jobId');
+    const jobId = url.searchParams.get('job');
     const action = url.searchParams.get('action') || 'status';
 
     if (!shopDomain) {

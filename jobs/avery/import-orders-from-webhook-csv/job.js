@@ -146,10 +146,12 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
 
     try {
       // Use the unified runSubJob interface - handles environment detection automatically
+      console.log(chalk.green(`  ✓ Running ${orderCounter}`));
       await runSubJob({
         jobPath: 'avery/process-single-order',
         record: {
           csOrder,
+          subJobIndex: orderCounter,
           orderCounter
         },
         shopify,
@@ -157,7 +159,6 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
         env,
         shopConfig
       });
-      console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
     } catch (error) {
       console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
     }
