@@ -26,12 +26,13 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   shopConfig = shop;
 
   const decodedContent = validateAndDecodeAttachment(payload);
-  await saveDecodedCSV(decodedContent, payload);
   const parsedData = parseCSVContent(decodedContent);
   if (typeof parsedData.rows[0]['Password'] !== "undefined") {
     console.log("This is the customer csv not the orders csv - skipping");
     return;
   }
+
+  await saveDecodedCSV(decodedContent, payload);
 
   if (parsedData.rows.length === 0) {
     console.log("No data rows found");
