@@ -288,7 +288,6 @@ export async function saveFile(content, options, env) {
           ...metadata
         }
       });
-      console.log(`✓ File saved to R2: ${filename}`);
     } catch (error) {
       console.error(`✗ Failed to save file to R2: ${error.message}`);
       throw error;
@@ -303,7 +302,6 @@ export async function saveFile(content, options, env) {
 
       const desktopPath = path.join(os.homedir(), 'Desktop', filename);
       fs.writeFileSync(desktopPath, content, 'utf8');
-      console.log(`✓ File saved to Desktop: ${filename}`);
     } catch (error) {
       console.error(`✗ Failed to save file to Desktop: ${error.message}`);
       throw error;
