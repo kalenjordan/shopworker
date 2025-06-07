@@ -192,15 +192,6 @@ async function createShopifyOrder(shopifyOrderData, orderCounter) {
 
   const { csCustomerId, csOrderIds, lineItems } = shopifyOrderData;
 
-  // Check if orders already exist
-  for (const csOrderId of csOrderIds) {
-    const existingOrder = await checkExistingOrder(csOrderId);
-    if (existingOrder) {
-      console.log(`  Order already exists: ${csOrderId}`);
-      return;
-    }
-  }
-
   // Check if order is too old (more than 1 month)
   const firstLine = lineItems[0];
   const oneMonthAgo = new Date();
@@ -220,6 +211,16 @@ async function createShopifyOrder(shopifyOrderData, orderCounter) {
 
   // Build order payload
   const orderPayload = buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerId);
+  console.log("Order payload: " + JSON.stringify(orderPayload, null, 2));
+
+  // Check if orders already exist
+  for (const csOrderId of csOrderIds) {
+    const existingOrder = await checkExistingOrder(csOrderId);
+    if (existingOrder) {
+      console.log(`  Order already exists: ${csOrderId}`);
+      return;
+    }
+  }
 
   // Create the order
   await createOrder(orderPayload);
@@ -399,6 +400,7 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
   const orderLineItems = shopifyLineItems.map(item => ({
     quantity: item.quantity,
     variantId: shopify.toGid(item.variant_id, "ProductVariant"),
+    requiresShipping: true,
     priceSet: {
       shopMoney: {
         amount: item.price,
@@ -460,19 +462,17 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
 
   // Build shipping lines with correct structure
   const shippingLines = [];
-  if (totalShipping > 0) {
-    shippingLines.push({
-      title: "CommentSold Shipping",
-      code: "CommentSold Shipping",
-      source: "CommentSold",
-      priceSet: {
-        shopMoney: {
-          amount: totalShipping.toString(),
-          currencyCode: "USD"
-        }
+  shippingLines.push({
+    title: "CommentSold Shipping",
+    code: "CommentSold Shipping",
+    source: "CommentSold",
+    priceSet: {
+      shopMoney: {
+        amount: totalShipping.toString(),
+        currencyCode: "USD"
       }
-    });
-  }
+    }
+  });
 
   const payload = {
     processedAt: processedAt,
