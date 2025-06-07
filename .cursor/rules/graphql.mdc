@@ -86,3 +86,32 @@ The `shopify.graphql()` client function is designed to return the `data` portion
 // DO NOT do this, as 'shopify.graphql()' already returns the data object:
 // const { data: someVar } = await shopify.graphql(query, variables);
 ```
+
+## Shopify ID Utility Methods
+
+The Shopify client includes utility methods for working with GraphQL Global IDs (GIDs) as defined in [utils/shopify.js](mdc:utils/shopify.js):
+
+### `shopify.fromGid(gid)`
+Extracts the numeric ID from a Shopify GraphQL Global ID.
+
+```javascript
+// GraphQL returns: "gid://shopify/ProductVariant/12345678"
+const numericId = shopify.fromGid(variant.id); // Returns "12345678"
+const productId = parseInt(shopify.fromGid(variant.product.id)); // Returns 12345678 as number
+```
+
+### `shopify.toGid(id, type)`
+Converts a numeric ID to a Shopify GraphQL Global ID format.
+
+```javascript
+const gid = shopify.toGid("12345678", "ProductVariant"); // Returns "gid://shopify/ProductVariant/12345678"
+```
+
+### `shopify.getTypeFromGid(gid)`
+Gets the resource type from a Shopify GraphQL Global ID.
+
+```javascript
+const type = shopify.getTypeFromGid("gid://shopify/ProductVariant/12345678"); // Returns "ProductVariant"
+```
+
+**Always use these utility methods instead of manual string parsing** when working with Shopify GraphQL IDs to ensure consistent and reliable ID handling.

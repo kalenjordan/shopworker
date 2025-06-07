@@ -255,8 +255,8 @@ async function buildOrderLineItems(lineItems) {
       requires_shipping: true,
       quantity: parseInt(line['Line: Quantity']),
       taxable: true,
-      product_id: parseInt(variant.product.id),
-      variant_id: parseInt(variant.id),
+      product_id: parseInt(shopify.fromGid(variant.product.id)),
+      variant_id: parseInt(shopify.fromGid(variant.id)),
       grams: parseInt(line['Line: Grams'] || 0)
     };
 
@@ -393,6 +393,10 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
   if (tags.some(tag => tag.includes('CS-LOCAL'))) {
     tags.push('_Local Pickup');
   }
+
+  // Add current date tag
+  const currentDate = format(new Date(), 'yyyy-MM-dd');
+  tags.push(`CS-${currentDate}`);
 
   // Format processed date (add 5 hours as in Liquid template)
   const processedAt = format(addHours(parseISO(firstLine['Processed At']), 5), "yyyy-MM-dd'T'HH:mm:ss");
