@@ -371,6 +371,14 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
     return sum + parseFloat(transaction['Transaction: Amount'] || 0);
   }, 0);
 
+  // Calculate total weight
+  const totalWeight = lineItems.reduce((sum, line) => {
+    return sum + parseInt(line['Line: Grams'] || 0);
+  }, 0);
+
+  // Check buyer accepts marketing based on TBD field
+  const emailConsent = false;
+
   // Build tags
   const tags = [...csOrderIds];
   const rawTags = firstLine['Tags'] ? firstLine['Tags'].replace('First Order', 'First_Order').split(',') : [];
@@ -460,6 +468,7 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
     shippingLines.push({
       title: "CommentSold Shipping",
       code: "CommentSold Shipping",
+      source: "CommentSold",
       priceSet: {
         shopMoney: {
           amount: totalShipping.toString(),
@@ -473,8 +482,10 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
     processedAt: processedAt,
     email: shopifyOrderData.email,
     currency: "USD",
-    buyerAcceptsMarketing: false,
-    financialStatus: "PAID", // Use enum value instead of string
+    buyerAcceptsMarketing: emailConsent,
+    financialStatus: "AUTHORIZED", // Use enum value to match Liquid template
+    sendReceipt: false,
+    totalWeight: totalWeight,
     tags: tags,
     shippingAddress: {
       firstName: firstName,
@@ -490,6 +501,11 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
     taxLines: taxLines,
     shippingLines: shippingLines
   };
+
+  // Add total discounts if there are any
+  if (totalDiscount > 0) {
+    payload.totalDiscounts = totalDiscount.toString();
+  }
 
   // Add customer information
   if (customerId) {
