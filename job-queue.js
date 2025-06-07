@@ -31,11 +31,12 @@ export class JobQueue extends DurableObject {
     if (dataSizeKB > 100) { // If larger than 100KB, store in R2
       console.log(`📦 Job ${jobId}: ${dataSizeKB.toFixed(1)}KB → R2 storage`);
 
-      // Store large payload in R2
+      // Store only bodyData in R2, keep metadata in job object
       const r2Key = `job-data/${jobId}.json`;
+      const bodyDataStr = JSON.stringify(jobData.bodyData);
 
       try {
-        await this.env.R2_BUCKET.put(r2Key, dataStr, {
+        await this.env.R2_BUCKET.put(r2Key, bodyDataStr, {
           httpMetadata: {
             contentType: 'application/json'
           }
@@ -52,7 +53,12 @@ export class JobQueue extends DurableObject {
         status: 'pending',
         isLargePayload: true,
         r2Key: r2Key,
-        payloadSize: dataSizeKB
+        payloadSize: dataSizeKB,
+        // Store metadata needed for processing
+        shopDomain: jobData.shopDomain,
+        jobPath: jobData.jobPath,
+        shopConfig: jobData.shopConfig,
+        topic: jobData.topic
       };
     } else {
       console.log(`📝 Job ${jobId}: ${dataSizeKB.toFixed(1)}KB → local storage`);
@@ -91,14 +97,23 @@ export class JobQueue extends DurableObject {
     }
 
     if (jobMeta.isLargePayload) {
-      // Fetch from R2
+      // Fetch bodyData from R2 and combine with metadata
       try {
         const r2Object = await this.env.R2_BUCKET.get(jobMeta.r2Key);
         if (!r2Object) {
           throw new Error(`Large payload not found in R2: ${jobMeta.r2Key}`);
         }
-        const dataStr = await r2Object.text();
-        return JSON.parse(dataStr);
+        const bodyDataStr = await r2Object.text();
+        const bodyData = JSON.parse(bodyDataStr);
+
+        // Reconstruct full job data
+        return {
+          shopDomain: jobMeta.shopDomain,
+          jobPath: jobMeta.jobPath,
+          bodyData: bodyData,
+          shopConfig: jobMeta.shopConfig,
+          topic: jobMeta.topic
+        };
       } catch (error) {
         console.error(`❌ R2 fetch failed: ${jobMeta.r2Key}`, error);
         throw error;

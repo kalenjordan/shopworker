@@ -45,13 +45,13 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   await processShopifyOrdersViaSubJobs(csOrders);
 }
 
-function validateAndDecodeAttachment(record) {
-  if (!record.attachments || record.attachments.length === 0 || !record.attachments[0].content) {
+function validateAndDecodeAttachment(payload) {
+  if (!payload.attachments || payload.attachments.length === 0 || !payload.attachments[0].content) {
     throw new Error("No attachments found or attachment content is empty");
   }
 
   console.log("Decoding Base64 Attachment Content");
-  const decodedContent = atob(record.attachments[0].content);
+  const decodedContent = atob(payload.attachments[0].content);
 
   return decodedContent;
 }
