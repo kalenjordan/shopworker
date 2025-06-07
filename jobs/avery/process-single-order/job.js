@@ -239,7 +239,6 @@ async function checkExistingOrder(csOrderId) {
 async function buildOrderLineItems(lineItems) {
   const shopifyLineItems = [];
   let lineItemTotals = 0;
-  let totalWeight = 0;
 
   for (const line of lineItems) {
     const sku = line['Line: SKU'];
@@ -262,14 +261,12 @@ async function buildOrderLineItems(lineItems) {
 
     shopifyLineItems.push(shopifyLine);
     lineItemTotals += parseFloat(line['Line: Price']);
-    totalWeight += parseInt(line['Line: Grams'] || 0);
   }
 
   return {
     shopifyLineItems,
     totals: {
       lineItemTotals,
-      totalWeight
     }
   };
 }
@@ -369,11 +366,6 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
   // Calculate transaction total
   const totalTransactionAmount = transactions.reduce((sum, transaction) => {
     return sum + parseFloat(transaction['Transaction: Amount'] || 0);
-  }, 0);
-
-  // Calculate total weight
-  const totalWeight = lineItems.reduce((sum, line) => {
-    return sum + parseInt(line['Line: Grams'] || 0);
   }, 0);
 
   // Check buyer accepts marketing based on TBD field
@@ -488,8 +480,6 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
     currency: "USD",
     buyerAcceptsMarketing: emailConsent,
     financialStatus: "AUTHORIZED", // Use enum value to match Liquid template
-    sendReceipt: false,
-    totalWeight: totalWeight,
     tags: tags,
     shippingAddress: {
       firstName: firstName,
@@ -561,7 +551,15 @@ async function createOrder(orderPayload) {
     return { order: { name: "DRY-RUN-ORDER", legacyResourceId: "123456" } };
   }
 
-  const { orderCreate } = await shopify.graphql(CreateOrder, { input: orderPayload });
+  const options = {
+    sendReceipt: false,
+    sendFulfillmentReceipt: false
+  };
+
+  const { orderCreate } = await shopify.graphql(CreateOrder, {
+    input: orderPayload,
+    options: options
+  });
 
   if (orderCreate.userErrors.length > 0) {
     const errors = orderCreate.userErrors.map(err => err.message).join(', ');

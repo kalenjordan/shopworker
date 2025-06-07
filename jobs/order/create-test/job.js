@@ -1,6 +1,6 @@
 import GetRecentProducts from "../../../graphql/GetRecentProducts.js";
 import GetRecentCustomers from "../../../graphql/GetRecentCustomers.js";
-import OrderCreate from "../../../graphql/OrderCreate.js";
+import CreateOrder from "../../../graphql/CreateOrder.js";
 
 /**
  * Creates an order with a random customer and product
@@ -92,7 +92,7 @@ export async function process({ shopify }) {
 
   // Create the order
   console.log("Creating order");
-  const orderResponse = await shopify.graphql(OrderCreate, {
+  const orderResponse = await shopify.graphql(CreateOrder, {
     order: {
       customerId: shopify.toGid(customer.id, 'Customer'),
       email: customer.email,
