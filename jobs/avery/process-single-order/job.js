@@ -290,19 +290,19 @@ async function findOrCreateCustomer(shopifyOrderData) {
   }
 
   // Try by phone number
-  const phone = formatPhoneNumber(shopifyOrderData.lineItems[0]['Customer: Phone']);
-  if (phone) {
-    const customerIdFromPhone = await findCustomerByPhone(phone);
-    if (customerIdFromPhone) {
-      if (!customerId) {
-        console.log("  Using customer ID from phone number");
-        customerId = customerIdFromPhone;
-      } else if (customerId !== customerIdFromPhone) {
-        console.log("  Phone number conflict, will skip phone in order");
-        // Handle phone conflict by not using phone in order
-      }
-    }
-  }
+  // const phone = formatPhoneNumber(shopifyOrderData.lineItems[0]['Customer: Phone']);
+  // if (phone) {
+  //   const customerIdFromPhone = await findCustomerByPhone(phone);
+  //   if (customerIdFromPhone) {
+  //     if (!customerId) {
+  //       console.log("  Using customer ID from phone number");
+  //       customerId = customerIdFromPhone;
+  //     } else if (customerId !== customerIdFromPhone) {
+  //       console.log("  Phone number conflict, will skip phone in order");
+  //       // Handle phone conflict by not using phone in order
+  //     }
+  //   }
+  // }
 
   return customerId;
 }
@@ -398,7 +398,7 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
   // Build line items with correct structure
   const orderLineItems = shopifyLineItems.map(item => ({
     quantity: item.quantity,
-    variantId: item.variant_id,
+    variantId: shopify.toGid(item.variant_id, "ProductVariant"),
     priceSet: {
       shopMoney: {
         amount: item.price,
@@ -496,19 +496,17 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
     shippingLines: shippingLines
   };
 
-  // Add total discounts if there are any
-  if (totalDiscount > 0) {
-    payload.totalDiscounts = totalDiscount.toString();
-  }
-
   // Add customer information
   if (customerId) {
+    // Use existing customer
+    const customerGid = customerId.startsWith('gid://') ? customerId : shopify.toGid(customerId, "Customer");
     payload.customer = {
       toAssociate: {
-        id: customerId
+        id: customerGid
       }
     };
   } else {
+    // Create new customer
     payload.customer = {
       toUpsert: {
         firstName: firstName,
@@ -519,13 +517,10 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
     };
   }
 
-  // Add phone if available
-  if (phone) {
-    payload.phone = phone;
-    if (payload.customer.toUpsert) {
-      payload.customer.toUpsert.phone = phone;
-    }
-  }
+  // Skip phone due to potential conflicts
+  // if (phone) {
+  //   payload.customer.toUpsert.phone = phone;
+  // }
 
   // Add transactions if there are any
   if (totalTransactionAmount > 0) {
@@ -539,6 +534,22 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
         }
       }
     }];
+  }
+
+    // Add discount code if there are discounts
+  if (totalDiscount > 0 && discounts.length > 0) {
+    payload.discountCode = {
+      itemFixedDiscountCode: {
+        code: 'CS-DISCOUNT',
+        amountSet: {
+          shopMoney: {
+            amount: totalDiscount.toString(),
+            currencyCode: "USD"
+          }
+        }
+      }
+    };
+    console.log(`  Applying discount code: CS-DISCOUNT (Amount: $${totalDiscount.toFixed(2)})`);
   }
 
   return payload;
@@ -566,7 +577,7 @@ async function createOrder(orderPayload) {
     throw new Error(`Order creation failed: ${errors}`);
   }
 
-  console.log(`  Successfully created order: ${orderCreate.order.name} (ID: ${orderCreate.order.legacyResourceId})`);
+    console.log(`  Successfully created order: ${orderCreate.order.name} (ID: ${orderCreate.order.legacyResourceId})`);
   return orderCreate.order;
 }
 
@@ -576,11 +587,11 @@ async function addCustomerTags(customerId, csCustomerId) {
     return;
   }
 
+  let customerGid = shopify.toGid(customerId, "Customer");
   const tag = `CS-${csCustomerId}`;
-  const customerGid = `gid://shopify/Customer/${customerId}`;
 
   const { tagsAdd } = await shopify.graphql(AddCustomerTags, {
-    customerId: customerGid,
+    customerGid,
     tags: [tag]
   });
 

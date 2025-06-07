@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "trigger": "webhook",
   "test": {
-    "skip_query": true,
+    "dryRun": false,
     "webhookPayload": "fixtures/single-order-test.json"
   }
 }
