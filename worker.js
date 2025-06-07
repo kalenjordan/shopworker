@@ -133,22 +133,7 @@ function getJobPathFromUrl(request) {
   return jobPath;
 }
 
-/**
- * Create Shopify client with proper authentication
- */
-function createAuthenticatedShopifyClient(shopDomain, shopConfig, env) {
-  const accessToken = shopConfig?.shopify_token || env.SHOPIFY_ACCESS_TOKEN;
 
-  if (!accessToken) {
-    throw new Error('Shopify API access token not configured');
-  }
-
-  return createShopifyClient({
-    shop: shopDomain,
-    accessToken,
-    apiVersion: '2025-04'
-  });
-}
 
 /**
  * Process webhook with the appropriate job handler

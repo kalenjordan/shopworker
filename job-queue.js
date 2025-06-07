@@ -193,7 +193,7 @@ export class JobQueue extends DurableObject {
       }
 
       // Create Shopify client
-      const shopify = this.createShopifyClient(shopDomain, shopConfig);
+      const shopify = this.createShopifyClient(shopDomain, shopConfig, jobConfig);
 
       // Load secrets from environment
       const secrets = this.loadSecretsFromEnv(this.env);
@@ -217,7 +217,7 @@ export class JobQueue extends DurableObject {
   /**
    * Create Shopify client with proper authentication
    */
-  createShopifyClient(shopDomain, shopConfig) {
+  createShopifyClient(shopDomain, shopConfig, jobConfig) {
     const accessToken = shopConfig?.shopify_token || this.env.SHOPIFY_ACCESS_TOKEN;
     if (!accessToken) {
       throw new Error('Shopify API access token not configured');
@@ -226,7 +226,7 @@ export class JobQueue extends DurableObject {
     return createShopifyClient({
       shop: shopDomain,
       accessToken,
-      apiVersion: '2025-04'
+      apiVersion: jobConfig?.apiVersion // Let createShopifyClient handle the default
     });
   }
 

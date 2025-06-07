@@ -62,6 +62,7 @@ function truncateQuery(query) {
  * @returns {Object} A Shopify client with GraphQL capabilities
  */
 export function createShopifyClient({ shop, accessToken, apiVersion = '2025-04', retries = 3, timeout = 30000 }) {
+  console.log("Using shopify API version " + apiVersion);
   // Format shop name (remove .myshopify.com if present)
   const shopName = shop.replace('.myshopify.com', '');
   const graphqlUrl = `https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`;
@@ -263,7 +264,7 @@ export function initShopify(cliDir, jobPath, shopParam) {
     return createShopifyClient({
       shop: shopDomain,
       accessToken,
-      apiVersion: '2025-04' // Consider making this configurable
+      apiVersion: jobConfig.apiVersion // Let createShopifyClient handle the default
     });
   } catch (error) {
     console.error(`Failed to initialize Shopify API for job '${jobPath}': ${error.message}`);

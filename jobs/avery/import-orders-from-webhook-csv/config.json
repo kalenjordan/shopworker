@@ -2,6 +2,7 @@
   "name": "Import from Webhook CSV",
   "trigger": "webhook",
   "shop": "avery",
+  "apiVersion": "2024-10",
   "test": {
     "limit": 1,
     "dryRun": false,
