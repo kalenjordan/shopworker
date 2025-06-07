@@ -499,10 +499,9 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
   // Add customer information
   if (customerId) {
     // Use existing customer
-    const customerGid = customerId.startsWith('gid://') ? customerId : shopify.toGid(customerId, "Customer");
     payload.customer = {
       toAssociate: {
-        id: customerGid
+        id: shopify.toGid(customerId, "Customer")
       }
     };
   } else {
@@ -586,12 +585,10 @@ async function addCustomerTags(customerId, csCustomerId) {
     console.log(chalk.yellow(`  DRY RUN - Would add tag CS-${csCustomerId} to customer ${customerId}`));
     return;
   }
-
-  let customerGid = shopify.toGid(customerId, "Customer");
   const tag = `CS-${csCustomerId}`;
 
   const { tagsAdd } = await shopify.graphql(AddCustomerTags, {
-    customerGid,
+    customerId: shopify.toGid(customerId, "Customer"),
     tags: [tag]
   });
 

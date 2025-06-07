@@ -264,24 +264,36 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
  * Run a test for a specific job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} jobPath - The job path relative to jobs/
- * @param {string} queryParam - Optional query parameter for filtering results
- * @param {string} shopParam - Optional shop domain to override the one in job config
- * @param {number} limitParam - Optional limit for the number of records to fetch (default: 1)
+ * @param {Object} options - CLI options object containing query, shop, limit, dryRun, etc.
  */
-export async function runJobTest(cliDirname, jobPath, queryParam, shopParam, limitParam) {
-  const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam);
+export async function runJobTest(cliDirname, jobPath, options) {
+  const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobPath, options.query, options.shop);
 
-  // Override the limit in job config if limitParam is provided
+  // Start with the base job config
   let configToUse = jobConfig;
-  if (limitParam && limitParam !== 1) {
+
+  // Override the limit in job config if provided
+  if (options.limit && options.limit !== 1) {
     configToUse = {
-      ...jobConfig,
+      ...configToUse,
       test: {
-        ...jobConfig.test,
-        limit: limitParam
+        ...configToUse.test,
+        limit: options.limit
       }
     };
-    console.log(chalk.yellow(`Overriding job config limit with: ${limitParam}`));
+    console.log(chalk.yellow(`Overriding job config limit with: ${options.limit}`));
+  }
+
+  // Override the dryRun in job config if provided
+  if (options.dryRun !== undefined) {
+    configToUse = {
+      ...configToUse,
+      test: {
+        ...configToUse.test,
+        dryRun: options.dryRun
+      }
+    };
+    console.log(chalk.yellow(`Overriding job config dryRun with: ${options.dryRun}`));
   }
 
   // Get shop configuration from .shopworker.json
@@ -303,7 +315,7 @@ export async function runJobTest(cliDirname, jobPath, queryParam, shopParam, lim
     shopify: shopify,
     env: process.env,   // Pass Node.js process.env as env
     shopConfig: shopConfig,  // Pass shopConfig separately
-    jobConfig: configToUse,  // Pass the job config (with potential limit override) to the process function
+    jobConfig: configToUse,  // Pass the job config (with potential overrides) to the process function
     secrets: secrets    // Pass secrets to the process function
   });
   console.log('Processing complete!');
