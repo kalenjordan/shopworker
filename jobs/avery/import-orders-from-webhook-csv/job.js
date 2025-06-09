@@ -8,9 +8,11 @@
 import { parseCSV, saveFile } from "../../../connectors/csv.js";
 import chalk from "chalk";
 import { runJob } from "../../../utils/env.js";
-import { format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
-import { executeGitPush } from "../../../utils/deployment.js";
+import { process as processSingleOrder } from "../process-single-order/job.js";
+
+// Configuration flag to control how sub jobs are executed
+const RUN_SUB_JOB_DIRECTLY = true; // Set to false to use runJob wrapper
 
 // Module-level variables to avoid passing around
 let shopify;
@@ -167,26 +169,47 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
     console.log(chalk.cyan(`\n${orderCounter}/${csOrders.length} Processing order ${csOrder.csOrderId}`));
 
     try {
-      // Use the unified runJob interface - handles environment detection automatically
       console.log(chalk.green(`  ✓ Running ${orderCounter}`));
-      await runJob({
-        jobPath: 'avery/process-single-order',
-        payload: {
-          csOrder,
-          name: `Shopify Order #${orderCounter}`,
-          orderCounter
-        },
-        shopify,
-        jobConfig,
-        env,
-        shopConfig
-      });
+      await runSingleOrderSubJob(csOrder, orderCounter);
     } catch (error) {
       console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
     }
   }
 
   console.log(`\nCompleted processing ${orderCounter} Shopify orders`);
+}
+
+/**
+ * Run a single order processing sub job
+ * Uses the RUN_SUB_JOB_DIRECTLY flag to determine execution method
+ */
+async function runSingleOrderSubJob(csOrder, orderCounter) {
+  const payload = {
+    csOrder,
+    name: `Shopify Order #${orderCounter}`,
+    orderCounter
+  };
+
+  if (RUN_SUB_JOB_DIRECTLY) {
+    // Call process-single-order directly
+    await processSingleOrder({
+      payload,
+      shopify,
+      jobConfig,
+      env,
+      shopConfig
+    });
+  } else {
+    // Use the runJob wrapper
+    await runJob({
+      jobPath: 'avery/process-single-order',
+      payload,
+      shopify,
+      jobConfig,
+      env,
+      shopConfig
+    });
+  }
 }
 
 // Helper function to get the limit from job config
