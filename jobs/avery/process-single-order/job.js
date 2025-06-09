@@ -35,10 +35,19 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   logOrder(shopifyOrderData);
 
   try {
-    await createShopifyOrder(shopifyOrderData, orderCounter);
+    const result = await createShopifyOrder(shopifyOrderData, orderCounter);
+    return result;
   } catch (error) {
     console.error(chalk.red(`  Error creating Shopify order: ${error.message}`));
-    throw error;
+    const errorResult = {
+      status: 'error',
+      orderCounter: orderCounter,
+      csOrderIds: shopifyOrderData.csOrderIds,
+      customerEmail: shopifyOrderData.email,
+      customerName: shopifyOrderData.name,
+      error: error.message
+    };
+    return errorResult;
   }
 }
 
@@ -200,7 +209,14 @@ async function createShopifyOrder(shopifyOrderData, orderCounter) {
 
   if (processedAt < oneMonthAgo) {
     const errorMessage = `Skipping order because it was created before: ${format(oneMonthAgo, 'yyyy-MM-dd')}`;
-    throw new Error(errorMessage);
+    return {
+      status: 'error',
+      orderCounter: orderCounter,
+      csOrderIds: csOrderIds,
+      customerEmail: shopifyOrderData.email,
+      customerName: shopifyOrderData.name,
+      error: errorMessage
+    };
   }
 
   // Build line items and calculate totals
@@ -218,17 +234,32 @@ async function createShopifyOrder(shopifyOrderData, orderCounter) {
     const existingOrder = await checkExistingOrder(csOrderId);
     if (existingOrder) {
       console.log(`  Order already exists: ${csOrderId}`);
-      return;
+      return {
+        status: 'already exists',
+        orderCounter: orderCounter,
+        csOrderIds: csOrderIds,
+        customerEmail: shopifyOrderData.email,
+        customerName: shopifyOrderData.name
+      };
     }
   }
 
   // Create the order
-  await createOrder(orderPayload);
+  const orderCreate = await createOrder(orderPayload);
 
   // Add customer tags if customer exists
   if (customerId) {
     await addCustomerTags(customerId, csCustomerId);
   }
+
+  return {
+    status: 'success',
+    orderCounter: orderCounter,
+    csOrderIds: csOrderIds,
+    customerEmail: shopifyOrderData.email,
+    customerName: shopifyOrderData.name,
+    orderId: orderCreate.order.legacyResourceId
+  };
 }
 
 async function checkExistingOrder(csOrderId) {
@@ -576,8 +607,8 @@ async function createOrder(orderPayload) {
     throw new Error(`Order creation failed: ${errors}`);
   }
 
-    console.log(`  Successfully created order: ${orderCreate.order.name} (ID: ${orderCreate.order.legacyResourceId})`);
-  return orderCreate.order;
+  console.log(`  Successfully created order: ${orderCreate.order.name} (ID: ${orderCreate.order.legacyResourceId})`);
+  return orderCreate;
 }
 
 async function addCustomerTags(customerId, csCustomerId) {

@@ -44,7 +44,10 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   const filteredRows = applyEmailFilter(parsedData.rows);
   const csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
 
-  await processShopifyOrdersViaSubJobs(csOrders);
+  const results = await processShopifyOrdersViaSubJobs(csOrders);
+
+  // Summarize the results
+  summarizeResults(results);
 }
 
 function validateAndDecodeAttachment(payload) {
@@ -157,6 +160,7 @@ function categorizeRowIntoOrder(csOrder, row, lineType) {
 async function processShopifyOrdersViaSubJobs(csOrders) {
   let orderCounter = 0;
   const limit = getLimit();
+  const results = [];
 
   if (limit > 0) {
     console.log(`Limiting processing to ${limit} orders`);
@@ -174,13 +178,24 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
 
     try {
       console.log(chalk.green(`  ✓ Running ${orderCounter}`));
-      await runSingleOrderSubJob(csOrder, orderCounter);
+      const result = await runSingleOrderSubJob(csOrder, orderCounter);
+      results.push(result);
     } catch (error) {
       console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
+      // Add error result to the results array
+      results.push({
+        status: 'error',
+        orderCounter: orderCounter,
+        csOrderIds: [csOrder.csOrderId],
+        customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
+        customerName: csOrder.customer_name || 'Unknown',
+        error: error.message
+      });
     }
   }
 
   console.log(`\nCompleted processing ${orderCounter} Shopify orders`);
+  return results;
 }
 
 /**
@@ -196,10 +211,10 @@ async function runSingleOrderSubJob(csOrder, orderCounter) {
 
   if (RUN_SUB_JOB_DIRECTLY) {
     // Call process-single-order directly
-    await processSingleOrder({ payload, shopify, jobConfig, env, shopConfig });
+    return await processSingleOrder({ payload, shopify, jobConfig, env, shopConfig });
   } else {
     // Use the runJob wrapper
-    await runJob({
+    const result = await runJob({
       jobPath: "avery/process-single-order",
       payload,
       shopify,
@@ -207,6 +222,7 @@ async function runSingleOrderSubJob(csOrder, orderCounter) {
       env,
       shopConfig,
     });
+    return result;
   }
 }
 
@@ -218,4 +234,62 @@ function getLimit() {
 // Helper function to get the filter email from job config
 function getFilterEmail() {
   return jobConfig.test.filterEmail;
+}
+
+/**
+ * Summarizes the results from processing multiple orders
+ * @param {Array} results - Array of result objects from process function
+ */
+function summarizeResults(results) {
+  if (!results || results.length === 0) {
+    console.log(chalk.yellow("\nNo results to summarize"));
+    return;
+  }
+
+  const summary = {
+    total: results.length,
+    success: 0,
+    alreadyExists: 0,
+    errors: 0,
+    errorDetails: []
+  };
+
+  results.forEach(result => {
+    switch (result.status) {
+      case 'success':
+        summary.success++;
+        break;
+      case 'already exists':
+        summary.alreadyExists++;
+        break;
+      case 'error':
+        summary.errors++;
+        summary.errorDetails.push({
+          orderCounter: result.orderCounter,
+          customer: `${result.customerName} (${result.customerEmail})`,
+          error: result.error
+        });
+        break;
+    }
+  });
+
+  console.log(`\n${chalk.bold.blue('===== ORDER PROCESSING SUMMARY =====')}`);
+  console.log(`${chalk.bold('Total Orders Processed:')} ${summary.total}`);
+  console.log(`${chalk.green('✓ Successfully Created:')} ${summary.success}`);
+  console.log(`${chalk.yellow('~ Already Existed:')} ${summary.alreadyExists}`);
+  console.log(`${chalk.red('✗ Errors:')} ${summary.errors}`);
+
+  if (summary.errorDetails.length > 0) {
+    console.log(`\n${chalk.bold.red('Error Details:')}`);
+    summary.errorDetails.forEach((error, index) => {
+      console.log(`  ${index + 1}. Order ${error.orderCounter} - ${error.customer}`);
+      console.log(`     ${chalk.red(error.error)}`);
+    });
+  }
+
+  const successRate = ((summary.success / summary.total) * 100).toFixed(1);
+  console.log(`\n${chalk.bold('Success Rate:')} ${successRate}%`);
+  console.log(`${chalk.bold.blue('=====================================')}\n`);
+
+  return summary;
 }
