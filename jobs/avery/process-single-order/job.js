@@ -418,9 +418,9 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
     tags.push('_Local Pickup');
   }
 
-  // Add current date tag
-  const currentDate = format(new Date(), 'yyyy-MM-dd');
-  tags.push(`CS-${currentDate}`);
+  // Add processed date tag
+  const processedDate = format(parseISO(firstLine['Processed At']), 'yyyy-MM-dd');
+  tags.push(`CS-${processedDate}`);
 
   // Format processed date (add 5 hours as in Liquid template)
   const processedAt = format(addHours(parseISO(firstLine['Processed At']), 5), "yyyy-MM-dd'T'HH:mm:ss");
