@@ -30,7 +30,7 @@ export async function runJob({ jobPath, payload, shopify, jobConfig, env, shopCo
   let jobName = payload.name ? payload.name : 'unknown job name';
   if (isCliEnvironment(env)) {
     console.log(`  ✓ Processing job ${jobName} directly in CLI`);
-    await runJobDirectly({ jobPath, payload, shopify, jobConfig });
+    return await runJobDirectly({ jobPath, payload, shopify, jobConfig });
   } else {
     // Cloudflare Workers Environment: Queue the job via durable object
     if (!shopConfig || !shopConfig.shopify_domain) {
@@ -38,7 +38,7 @@ export async function runJob({ jobPath, payload, shopify, jobConfig, env, shopCo
     }
 
     console.log(`  ✓ Enqueueing job ${jobName} in Durable Object`);
-    await queueJobInWorkerEnvironment({ jobPath, record: payload, shopConfig, env });
+    return await queueJobInWorkerEnvironment({ jobPath, record: payload, shopConfig, env });
   }
 }
 
@@ -59,7 +59,7 @@ async function runJobDirectly({ jobPath, payload, shopify, jobConfig }) {
   }
 
   // Call the job's process function directly
-  await jobModule.process({
+  return await jobModule.process({
     payload,
     shopify,
     jobConfig

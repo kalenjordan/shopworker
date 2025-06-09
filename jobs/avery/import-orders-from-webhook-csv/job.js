@@ -11,10 +11,6 @@ import chalk from "chalk";
 import { runJob } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
-import { process as processSingleOrder } from "../process-single-order/job.js";
-
-// Configuration flag to control how sub jobs are executed
-const RUN_SUB_JOB_DIRECTLY = false; // Set to false to use runJob wrapper
 
 // Module-level variables to avoid passing around
 let shopify;
@@ -200,6 +196,12 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
   }
 
   console.log(`\nCompleted processing ${orderCounter} Shopify orders`);
+
+  // Summarize results if running in CLI environment (results have status)
+  if (results.length > 0 && results[0] && typeof results[0].status !== 'undefined') {
+    summarizeResults(results);
+  }
+
   return results;
 }
 
@@ -214,21 +216,15 @@ async function runSingleOrderSubJob(csOrder, orderCounter) {
     orderCounter,
   };
 
-  if (RUN_SUB_JOB_DIRECTLY) {
-    // Call process-single-order directly
-    return await processSingleOrder({ payload, shopify, jobConfig, env, shopConfig });
-  } else {
-    // Use the runJob wrapper
-    const result = await runJob({
-      jobPath: "avery/process-single-order",
-      payload,
-      shopify,
-      jobConfig,
-      env,
-      shopConfig,
-    });
-    return result;
-  }
+  const result = await runJob({
+    jobPath: "avery/process-single-order",
+    payload,
+    shopify,
+    jobConfig,
+    env,
+    shopConfig,
+  });
+  return result;
 }
 
 // Helper function to get the limit from job config
@@ -340,4 +336,56 @@ function createHtmlSummary(orderCount, processedDate) {
   </div>`;
 
   return html;
+}
+
+/**
+ * Summarize the results from processing orders (CLI environment only)
+ * @param {Array} results - Array of results from processing orders
+ */
+function summarizeResults(results) {
+  console.log(chalk.cyan('\n📊 Processing Summary:'));
+
+  const summary = {
+    total: results.length,
+    created: 0,
+    'already exists': 0,
+    error: 0
+  };
+
+  const errors = [];
+
+  for (const result of results) {
+    if (result.status === 'created') {
+      summary.created++;
+    } else if (result.status === 'already exists') {
+      summary['already exists']++;
+    } else if (result.status === 'error') {
+      summary.error++;
+      errors.push({
+        orderCounter: result.orderCounter,
+        csOrderIds: result.csOrderIds,
+        error: result.error
+      });
+    }
+  }
+
+  // Print summary counts
+  console.log(chalk.green(`✓ Created: ${summary.created}`));
+  if (summary['already exists'] > 0) {
+    console.log(chalk.yellow(`⚠ Already Exists: ${summary['already exists']}`));
+  }
+  if (summary.error > 0) {
+    console.log(chalk.red(`✗ Errors: ${summary.error}`));
+  }
+  console.log(chalk.cyan(`📈 Total: ${summary.total}`));
+
+  // Print error details if any
+  if (errors.length > 0) {
+    console.log(chalk.red('\n❌ Error Details:'));
+    for (const error of errors) {
+      console.log(chalk.red(`  Order ${error.orderCounter} (${error.csOrderIds?.join(', ') || 'Unknown'}): ${error.error}`));
+    }
+  }
+
+  console.log(''); // Add blank line at end
 }
