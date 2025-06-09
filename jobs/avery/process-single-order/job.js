@@ -253,7 +253,7 @@ async function createShopifyOrder(shopifyOrderData, orderCounter, processedDate)
   }
 
   return {
-    status: 'success',
+    status: 'created',
     orderCounter: orderCounter,
     csOrderIds: csOrderIds,
     customerEmail: shopifyOrderData.email,
