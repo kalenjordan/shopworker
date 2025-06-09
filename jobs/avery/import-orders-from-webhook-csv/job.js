@@ -10,10 +10,11 @@ import { sendEmail } from "../../../connectors/resend.js";
 import chalk from "chalk";
 import { runJob } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
+import { format, parseISO } from "date-fns";
 import { process as processSingleOrder } from "../process-single-order/job.js";
 
 // Configuration flag to control how sub jobs are executed
-const RUN_SUB_JOB_DIRECTLY = true; // Set to false to use runJob wrapper
+const RUN_SUB_JOB_DIRECTLY = false; // Set to false to use runJob wrapper
 
 // Module-level variables to avoid passing around
 let shopify;
@@ -42,13 +43,16 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
     return;
   }
 
+  // Extract processed date from first row for email link
+  const processedDate = extractProcessedDate(parsedData.rows[0]);
+
   const filteredRows = applyEmailFilter(parsedData.rows);
   const csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
 
   const results = await processShopifyOrdersViaSubJobs(csOrders);
 
-  // Summarize the results
-  await summarizeResults(results);
+  // Send simplified email summary
+  await sendSimplifiedEmail(results.length, processedDate);
 }
 
 function validateAndDecodeAttachment(payload) {
@@ -238,71 +242,33 @@ function getFilterEmail() {
 }
 
 /**
- * Summarizes the results from processing multiple orders
- * @param {Array} results - Array of result objects from process function
+ * Extract and format the processed date from the first CSV row
+ * @param {Object} firstRow - First row of CSV data
+ * @returns {string} Date formatted as YYYY-MM-DD
  */
-async function summarizeResults(results) {
-  if (!results || results.length === 0) {
-    console.log(chalk.yellow("\nNo results to summarize"));
-    return;
-  }
-
-  const summary = {
-    total: results.length,
-    success: 0,
-    alreadyExists: 0,
-    errors: 0,
-    errorDetails: []
-  };
-
-  results.forEach(result => {
-    switch (result.status) {
-      case 'success':
-        summary.success++;
-        break;
-      case 'already exists':
-        summary.alreadyExists++;
-        break;
-      case 'error':
-        summary.errors++;
-        summary.errorDetails.push({
-          orderCounter: result.orderCounter,
-          customer: `${result.customerName} (${result.customerEmail})`,
-          error: result.error
-        });
-        break;
+function extractProcessedDate(firstRow) {
+  try {
+    const processedAt = firstRow["Processed At"];
+    if (!processedAt) {
+      console.log("No 'Processed At' column found, using current date");
+      return format(new Date(), 'yyyy-MM-dd');
     }
-  });
 
-  console.log(`\n${chalk.bold.blue('===== ORDER PROCESSING SUMMARY =====')}`);
-  console.log(`${chalk.bold('Total Orders Processed:')} ${summary.total}`);
-  console.log(`${chalk.green('✓ Successfully Created:')} ${summary.success}`);
-  console.log(`${chalk.yellow('~ Already Existed:')} ${summary.alreadyExists}`);
-  console.log(`${chalk.red('✗ Errors:')} ${summary.errors}`);
-
-  if (summary.errorDetails.length > 0) {
-    console.log(`\n${chalk.bold.red('Error Details:')}`);
-    summary.errorDetails.forEach((error, index) => {
-      console.log(`  ${index + 1}. Order ${error.orderCounter} - ${error.customer}`);
-      console.log(`     ${chalk.red(error.error)}`);
-    });
+    // Parse the date and format as YYYY-MM-DD
+    const date = parseISO(processedAt);
+    return format(date, 'yyyy-MM-dd');
+  } catch (error) {
+    console.log(`Error parsing processed date: ${error.message}, using current date`);
+    return format(new Date(), 'yyyy-MM-dd');
   }
-
-  const successRate = ((summary.success / summary.total) * 100).toFixed(1);
-  console.log(`\n${chalk.bold('Success Rate:')} ${successRate}%`);
-  console.log(`${chalk.bold.blue('=====================================')}\n`);
-
-  // Send email summary
-  await sendEmailSummary(summary);
-
-  return summary;
 }
 
 /**
- * Send email summary using Resend
- * @param {Object} summary - Summary object with processing results
+ * Send simplified email summary
+ * @param {number} orderCount - Number of processed orders
+ * @param {string} processedDate - Date processed in YYYY-MM-DD format
  */
-async function sendEmailSummary(summary) {
+async function sendSimplifiedEmail(orderCount, processedDate) {
   try {
     // Check if email configuration is available
     if (!shopConfig.resend_api_key || !shopConfig.email_to || !shopConfig.email_from) {
@@ -310,14 +276,11 @@ async function sendEmailSummary(summary) {
       return;
     }
 
-    const timestamp = formatInTimeZone(new Date(), "America/Chicago", "yyyy-MM-dd HH:mm:ss");
-    const successRate = ((summary.success / summary.total) * 100).toFixed(1);
-
-        // Create email subject
-    const subject = `Avery Order Import Summary - ${summary.total} orders processed (${successRate}% success)`;
+    // Create email subject
+    const subject = `Avery Order Import Summary - ${orderCount} orders processed`;
 
     // Create HTML content
-    const htmlContent = createHtmlSummary(summary, timestamp, successRate);
+    const htmlContent = createHtmlSummary(orderCount, processedDate);
 
     await sendEmail({
       to: shopConfig.email_to,
@@ -335,9 +298,7 @@ async function sendEmailSummary(summary) {
 /**
  * Create HTML email content
  */
-function createHtmlSummary(summary, timestamp, successRate) {
-  const statusColor = summary.errors === 0 ? '#22c55e' : summary.errors > summary.success ? '#ef4444' : '#f59e0b';
-
+function createHtmlSummary(orderCount, processedDate) {
   let html = `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
     <h2 style="color: #1f2937; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">
@@ -345,55 +306,37 @@ function createHtmlSummary(summary, timestamp, successRate) {
     </h2>
 
     <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;">
-      <p style="margin: 0; color: #6b7280; font-size: 14px;">Processed at: ${timestamp} CT</p>
+      <p style="margin: 0; color: #6b7280; font-size: 14px;">Processed at: ${processedDate} CT</p>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 20px 0;">
       <div style="background-color: #f0f9ff; padding: 15px; border-radius: 8px; text-align: center;">
-        <div style="font-size: 24px; font-weight: bold; color: #0369a1;">${summary.total}</div>
+        <div style="font-size: 24px; font-weight: bold; color: #0369a1;">${orderCount}</div>
         <div style="color: #0369a1; font-size: 14px;">Total Orders</div>
-      </div>
-      <div style="background-color: ${statusColor === '#22c55e' ? '#f0fdf4' : statusColor === '#ef4444' ? '#fef2f2' : '#fffbeb'}; padding: 15px; border-radius: 8px; text-align: center;">
-        <div style="font-size: 24px; font-weight: bold; color: ${statusColor};">${successRate}%</div>
-        <div style="color: ${statusColor}; font-size: 14px;">Success Rate</div>
       </div>
     </div>
 
     <div style="margin: 20px 0;">
       <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background-color: #f0fdf4; border-radius: 6px; margin: 5px 0;">
-        <span style="color: #166534;">✓ Successfully Created:</span>
-        <strong style="color: #166534;">${summary.success}</strong>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background-color: #fffbeb; border-radius: 6px; margin: 5px 0;">
-        <span style="color: #a16207;">~ Already Existed:</span>
-        <strong style="color: #a16207;">${summary.alreadyExists}</strong>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background-color: #fef2f2; border-radius: 6px; margin: 5px 0;">
-        <span style="color: #dc2626;">✗ Errors:</span>
-        <strong style="color: #dc2626;">${summary.errors}</strong>
+        <span style="color: #166534;">Orders Processed:</span>
+        <strong style="color: #166534;">${orderCount}</strong>
       </div>
     </div>`;
 
-  if (summary.errorDetails.length > 0) {
-    html += `
-    <div style="margin: 20px 0;">
-      <h3 style="color: #dc2626; margin-bottom: 15px;">Error Details:</h3>
-      <div style="background-color: #fef2f2; padding: 15px; border-radius: 8px;">`;
-
-    summary.errorDetails.forEach((error, index) => {
-      html += `
-        <div style="margin-bottom: 10px; padding-bottom: 10px; ${index < summary.errorDetails.length - 1 ? 'border-bottom: 1px solid #fecaca;' : ''}">
-          <div style="font-weight: bold; color: #dc2626;">Order ${error.orderCounter} - ${error.customer}</div>
-          <div style="color: #991b1b; font-size: 14px; margin-top: 5px;">${error.error}</div>
-        </div>`;
-    });
-
-    html += `
-      </div>
-    </div>`;
-  }
+  // Create Shopify admin URL with tag filter
+  const tag = `cs-${processedDate}`;
+  const encodedTag = encodeURIComponent(tag);
+  const shopifyUrl = `https://admin.shopify.com/store/835a20-6c/orders?start=MQ%3D%3D&tag=${encodedTag}`;
 
   html += `
+    <div style="margin: 20px 0;">
+      <div style="background-color: #f0f9ff; padding: 15px; border-radius: 8px; text-align: center;">
+        <h3 style="color: #0369a1; margin-bottom: 15px;">View Orders in Shopify</h3>
+        <a href="${shopifyUrl}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+          View Orders with Tag: ${tag}
+        </a>
+      </div>
+    </div>
   </div>`;
 
   return html;
