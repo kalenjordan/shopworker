@@ -29,7 +29,7 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
 
   const decodedContent = validateAndDecodeAttachment(payload);
   const parsedData = parseCSVContent(decodedContent);
-  if (typeof parsedData.rows[0]['Password'] !== "undefined") {
+  if (typeof parsedData.rows[0]["Password"] !== "undefined") {
     console.log("This is the customer csv not the orders csv - skipping");
     return;
   }
@@ -59,20 +59,24 @@ function validateAndDecodeAttachment(payload) {
 }
 
 async function saveDecodedCSV(decodedContent, record) {
-  const timestamp = formatInTimeZone(new Date(), 'America/Chicago', 'yyyy-MM-dd-HH-mm-ss');
+  const timestamp = formatInTimeZone(new Date(), "America/Chicago", "yyyy-MM-dd-HH-mm-ss");
   const filename = `avery-orders-${timestamp}.csv`;
 
   console.log("Saving decoded CSV file");
 
   try {
-    await saveFile(decodedContent, {
-      filename,
-      contentType: 'text/csv',
-      metadata: {
-        source: 'avery-webhook-import',
-        originalFilename: record.attachments?.[0]?.filename || 'unknown'
-      }
-    }, env);
+    await saveFile(
+      decodedContent,
+      {
+        filename,
+        contentType: "text/csv",
+        metadata: {
+          source: "avery-webhook-import",
+          originalFilename: record.attachments?.[0]?.filename || "unknown",
+        },
+      },
+      env
+    );
   } catch (error) {
     console.error(chalk.red(`Failed to save CSV file: ${error.message}`));
   }
@@ -187,27 +191,21 @@ async function runSingleOrderSubJob(csOrder, orderCounter) {
   const payload = {
     csOrder,
     name: `Shopify Order #${orderCounter}`,
-    orderCounter
+    orderCounter,
   };
 
   if (RUN_SUB_JOB_DIRECTLY) {
     // Call process-single-order directly
-    await processSingleOrder({
-      payload,
-      shopify,
-      jobConfig,
-      env,
-      shopConfig
-    });
+    await processSingleOrder({ payload, shopify, jobConfig, env, shopConfig });
   } else {
     // Use the runJob wrapper
     await runJob({
-      jobPath: 'avery/process-single-order',
+      jobPath: "avery/process-single-order",
       payload,
       shopify,
       jobConfig,
       env,
-      shopConfig
+      shopConfig,
     });
   }
 }
