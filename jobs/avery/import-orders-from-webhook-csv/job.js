@@ -6,6 +6,7 @@
  */
 
 import { parseCSV, saveFile } from "../../../connectors/csv.js";
+import { sendEmail } from "../../../connectors/resend.js";
 import chalk from "chalk";
 import { runJob } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
@@ -47,7 +48,7 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   const results = await processShopifyOrdersViaSubJobs(csOrders);
 
   // Summarize the results
-  summarizeResults(results);
+  await summarizeResults(results);
 }
 
 function validateAndDecodeAttachment(payload) {
@@ -240,7 +241,7 @@ function getFilterEmail() {
  * Summarizes the results from processing multiple orders
  * @param {Array} results - Array of result objects from process function
  */
-function summarizeResults(results) {
+async function summarizeResults(results) {
   if (!results || results.length === 0) {
     console.log(chalk.yellow("\nNo results to summarize"));
     return;
@@ -291,5 +292,109 @@ function summarizeResults(results) {
   console.log(`\n${chalk.bold('Success Rate:')} ${successRate}%`);
   console.log(`${chalk.bold.blue('=====================================')}\n`);
 
+  // Send email summary
+  await sendEmailSummary(summary);
+
   return summary;
+}
+
+/**
+ * Send email summary using Resend
+ * @param {Object} summary - Summary object with processing results
+ */
+async function sendEmailSummary(summary) {
+  try {
+    // Check if email configuration is available
+    if (!shopConfig.resend_api_key || !shopConfig.email_to || !shopConfig.email_from) {
+      console.log(chalk.yellow("Email configuration not available, skipping email notification"));
+      return;
+    }
+
+    const timestamp = formatInTimeZone(new Date(), "America/Chicago", "yyyy-MM-dd HH:mm:ss");
+    const successRate = ((summary.success / summary.total) * 100).toFixed(1);
+
+        // Create email subject
+    const subject = `Avery Order Import Summary - ${summary.total} orders processed (${successRate}% success)`;
+
+    // Create HTML content
+    const htmlContent = createHtmlSummary(summary, timestamp, successRate);
+
+    await sendEmail({
+      to: shopConfig.email_to,
+      from: shopConfig.email_from,
+      subject: subject,
+      html: htmlContent
+    }, shopConfig.resend_api_key);
+
+    console.log(chalk.green("✓ Email summary sent successfully"));
+  } catch (error) {
+    console.error(chalk.red(`Failed to send email summary: ${error.message}`));
+  }
+}
+
+/**
+ * Create HTML email content
+ */
+function createHtmlSummary(summary, timestamp, successRate) {
+  const statusColor = summary.errors === 0 ? '#22c55e' : summary.errors > summary.success ? '#ef4444' : '#f59e0b';
+
+  let html = `
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h2 style="color: #1f2937; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">
+      📊 Avery Order Import Summary
+    </h2>
+
+    <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;">
+      <p style="margin: 0; color: #6b7280; font-size: 14px;">Processed at: ${timestamp} CT</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 20px 0;">
+      <div style="background-color: #f0f9ff; padding: 15px; border-radius: 8px; text-align: center;">
+        <div style="font-size: 24px; font-weight: bold; color: #0369a1;">${summary.total}</div>
+        <div style="color: #0369a1; font-size: 14px;">Total Orders</div>
+      </div>
+      <div style="background-color: ${statusColor === '#22c55e' ? '#f0fdf4' : statusColor === '#ef4444' ? '#fef2f2' : '#fffbeb'}; padding: 15px; border-radius: 8px; text-align: center;">
+        <div style="font-size: 24px; font-weight: bold; color: ${statusColor};">${successRate}%</div>
+        <div style="color: ${statusColor}; font-size: 14px;">Success Rate</div>
+      </div>
+    </div>
+
+    <div style="margin: 20px 0;">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background-color: #f0fdf4; border-radius: 6px; margin: 5px 0;">
+        <span style="color: #166534;">✓ Successfully Created:</span>
+        <strong style="color: #166534;">${summary.success}</strong>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background-color: #fffbeb; border-radius: 6px; margin: 5px 0;">
+        <span style="color: #a16207;">~ Already Existed:</span>
+        <strong style="color: #a16207;">${summary.alreadyExists}</strong>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background-color: #fef2f2; border-radius: 6px; margin: 5px 0;">
+        <span style="color: #dc2626;">✗ Errors:</span>
+        <strong style="color: #dc2626;">${summary.errors}</strong>
+      </div>
+    </div>`;
+
+  if (summary.errorDetails.length > 0) {
+    html += `
+    <div style="margin: 20px 0;">
+      <h3 style="color: #dc2626; margin-bottom: 15px;">Error Details:</h3>
+      <div style="background-color: #fef2f2; padding: 15px; border-radius: 8px;">`;
+
+    summary.errorDetails.forEach((error, index) => {
+      html += `
+        <div style="margin-bottom: 10px; padding-bottom: 10px; ${index < summary.errorDetails.length - 1 ? 'border-bottom: 1px solid #fecaca;' : ''}">
+          <div style="font-weight: bold; color: #dc2626;">Order ${error.orderCounter} - ${error.customer}</div>
+          <div style="color: #991b1b; font-size: 14px; margin-top: 5px;">${error.error}</div>
+        </div>`;
+    });
+
+    html += `
+      </div>
+    </div>`;
+  }
+
+  html += `
+  </div>`;
+
+  return html;
 }
