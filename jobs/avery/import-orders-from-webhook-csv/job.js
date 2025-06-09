@@ -277,7 +277,7 @@ async function sendSimplifiedEmail(orderCount, processedDate) {
     }
 
     // Create email subject
-    const subject = `Avery Order Import Summary - ${orderCount} orders processed`;
+    const subject = `Avery Order Import Summary - ${orderCount} orders processed (${processedDate})`;
 
     // Create HTML content
     const htmlContent = createHtmlSummary(orderCount, processedDate);
