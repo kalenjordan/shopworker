@@ -425,8 +425,6 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
   // Format processed date (add 5 hours as in Liquid template)
   const processedAt = format(addHours(parseISO(firstLine['Processed At']), 5), "yyyy-MM-dd'T'HH:mm:ss");
 
-  const phone = formatPhoneNumber(firstLine['Customer: Phone']);
-
   // Build line items with correct structure
   const orderLineItems = shopifyLineItems.map(item => ({
     quantity: item.quantity,
