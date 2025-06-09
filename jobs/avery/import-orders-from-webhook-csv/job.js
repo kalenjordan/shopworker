@@ -39,13 +39,13 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
     return;
   }
 
-  // Extract processed date from first row for email link
+  // Extract processed date from first row for email link and tagging
   const processedDate = extractProcessedDate(parsedData.rows[0]);
 
   const filteredRows = applyEmailFilter(parsedData.rows);
   const csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
 
-  const results = await processShopifyOrdersViaSubJobs(csOrders);
+  const results = await processShopifyOrdersViaSubJobs(csOrders, processedDate);
 
   // Send simplified email summary
   await sendSimplifiedEmail(results.length, processedDate);
@@ -158,7 +158,7 @@ function categorizeRowIntoOrder(csOrder, row, lineType) {
   }
 }
 
-async function processShopifyOrdersViaSubJobs(csOrders) {
+async function processShopifyOrdersViaSubJobs(csOrders, processedDate) {
   let orderCounter = 0;
   const limit = getLimit();
   const results = [];
@@ -179,7 +179,7 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
 
     try {
       console.log(chalk.green(`  ✓ Running ${orderCounter}`));
-      const result = await runSingleOrderSubJob(csOrder, orderCounter);
+      const result = await runSingleOrderSubJob(csOrder, orderCounter, processedDate);
       results.push(result);
     } catch (error) {
       console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
@@ -209,11 +209,12 @@ async function processShopifyOrdersViaSubJobs(csOrders) {
  * Run a single order processing sub job
  * Uses the RUN_SUB_JOB_DIRECTLY flag to determine execution method
  */
-async function runSingleOrderSubJob(csOrder, orderCounter) {
+async function runSingleOrderSubJob(csOrder, orderCounter, processedDate) {
   const payload = {
     csOrder,
     name: `Shopify Order #${orderCounter}`,
     orderCounter,
+    processedDate,
   };
 
   const result = await runJob({

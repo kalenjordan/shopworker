@@ -28,14 +28,14 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   jobConfig = config;
 
   // Extract order data from the record (passed from parent job)
-  const { csOrder, orderCounter } = payload;
+  const { csOrder, orderCounter, processedDate } = payload;
 
   const shopifyOrderData = buildShopifyOrderData(csOrder, orderCounter);
 
   logOrder(shopifyOrderData);
 
   try {
-    const result = await createShopifyOrder(shopifyOrderData, orderCounter);
+    const result = await createShopifyOrder(shopifyOrderData, orderCounter, processedDate);
     return result;
   } catch (error) {
     console.error(chalk.red(`  Error creating Shopify order: ${error.message}`));
@@ -192,7 +192,7 @@ function logOrderTotals(shopifyOrderData) {
   }
 }
 
-async function createShopifyOrder(shopifyOrderData, orderCounter) {
+async function createShopifyOrder(shopifyOrderData, orderCounter, processedDate) {
   console.log(chalk.green(`\n  Creating Shopify Order ${orderCounter}`));
   console.log(`  Customer: ${shopifyOrderData.name} (${shopifyOrderData.email})`);
   console.log(`  CS Order IDs: ${shopifyOrderData.csOrderIds.join(", ")}`);
@@ -226,7 +226,7 @@ async function createShopifyOrder(shopifyOrderData, orderCounter) {
   const customerId = await findOrCreateCustomer(shopifyOrderData);
 
   // Build order payload
-  const orderPayload = buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerId);
+  const orderPayload = buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerId, processedDate);
   console.log("Order payload: " + JSON.stringify(orderPayload, null, 2));
 
   // Check if orders already exist
@@ -370,7 +370,7 @@ function formatPhoneNumber(phone) {
   return null;
 }
 
-function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerId) {
+function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerId, processedDate) {
   const { lineItems, csCustomerId, csOrderIds, shipping, discounts, transactions } = shopifyOrderData;
   const firstLine = lineItems[0];
 
@@ -419,7 +419,6 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
   }
 
   // Add processed date tag
-  const processedDate = format(parseISO(firstLine['Processed At']), 'yyyy-MM-dd');
   tags.push(`CS-${processedDate}`);
 
   // Format processed date (add 5 hours as in Liquid template)
