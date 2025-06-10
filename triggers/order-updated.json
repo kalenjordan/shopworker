@@ -1,0 +1,9 @@
+{
+  "name": "Order Updated",
+  "webhook": {
+    "topic": "orders/updated"
+  },
+  "test": {
+    "query": "GetRecentOrders"
+  }
+}
