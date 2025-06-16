@@ -8,6 +8,7 @@
  * @param {Object} options - Email options
  * @param {string} options.to - Recipient email address (or array of addresses)
  * @param {string} options.from - Sender email address
+ * @param {string} [options.replyTo] - Reply-to email address
  * @param {string} options.subject - Email subject
  * @param {string} [options.text] - Plain text body
  * @param {string} [options.html] - HTML body
@@ -23,17 +24,24 @@ export async function sendEmail(options, apiKey) {
     throw new Error('Resend API key is required');
   }
 
-  const { to, from, subject, text, html, attachments } = options;
+  const { to, from, replyTo, subject, text, html, attachments } = options;
 
   if (!to || !from || !subject) {
     throw new Error('to, from, and subject are required fields');
   }
+
+  console.log('to', to);
 
   const emailData = {
     to: Array.isArray(to) ? to : [to],
     from,
     subject
   };
+
+  // Add reply-to if provided
+  if (replyTo) {
+    emailData.reply_to = replyTo;
+  }
 
   // Add content (prefer HTML over text)
   if (html) {

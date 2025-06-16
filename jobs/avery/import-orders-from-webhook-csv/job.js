@@ -279,12 +279,20 @@ async function sendSimplifiedEmail(orderCount, processedDate) {
     // Create HTML content
     const htmlContent = createHtmlSummary(orderCount, processedDate);
 
-    await sendEmail({
+    // Prepare email options
+    const emailOptions = {
       to: shopConfig.email_to,
       from: shopConfig.email_from,
       subject: subject,
       html: htmlContent
-    }, shopConfig.resend_api_key);
+    };
+
+    // Add reply-to if configured
+    if (shopConfig.email_reply_to) {
+      emailOptions.replyTo = shopConfig.email_reply_to;
+    }
+
+    await sendEmail(emailOptions, shopConfig.resend_api_key);
 
     console.log(chalk.green("✓ Email summary sent successfully"));
   } catch (error) {
