@@ -481,3 +481,76 @@ function filterOrdersForDebugging(csOrders, orderId) {
   console.log(`Filtered ${csOrders.length} CS orders to ${orderId}`);
   return csOrders;
 }
+
+/**
+ * Continue batch processing from stored state (called by alarm)
+ */
+export async function continueBatch({ state, durableObjectState, shopify: shopifyClient, env: environment, shopConfig: shop }) {
+  console.log('🔄 Continuing avery batch processing from alarm');
+  
+  // Get batch state to access stored metadata
+  const batchState = await durableObjectState.storage.get('batch:processor:state');
+  if (!batchState) {
+    throw new Error('No batch processor state found');
+  }
+
+  // Reconstruct the ctx object from stored metadata and current parameters
+  const ctx = {
+    shopify: shopifyClient,
+    jobConfig: batchState.metadata.ctx ? batchState.metadata.ctx.jobConfig : state,
+    env: environment,
+    shopConfig: batchState.metadata.ctx ? batchState.metadata.ctx.shopConfig : shop
+  };
+
+  // Reconstruct the processor function
+  const processor = async (csOrder, index, metadata) => {
+    const orderCounter = index + 1;
+    console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
+
+    try {
+      // Reconstruct ctx for the processor call
+      const processorCtx = {
+        shopify: shopifyClient,
+        jobConfig: metadata.ctx ? metadata.ctx.jobConfig : state,
+        env: environment,
+        shopConfig: metadata.ctx ? metadata.ctx.shopConfig : shop
+      };
+      
+      const result = await runSingleOrderSubJob(csOrder, orderCounter, metadata.processedDate, processorCtx);
+      console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
+      return result;
+    } catch (error) {
+      console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
+      return {
+        status: 'error',
+        orderCounter: orderCounter,
+        csOrderIds: [csOrder.csOrderId],
+        customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
+        customerName: csOrder.customer_name || 'Unknown',
+        error: error.message
+      };
+    }
+  };
+
+  // Continue batch processing
+  await continueBatchProcessing({
+    processor,
+    durableObjectState,
+    onProgress: (completed, total) => {
+      if (completed % 10 === 0 || completed === total) {
+        console.log(`📊 Progress: ${completed}/${total} orders processed`);
+      }
+    },
+    onBatchComplete: async (batchResults, batchNum, totalBatches) => {
+      console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
+      
+      // Send email summary only after all batches complete
+      if (batchNum === totalBatches && isWorkerEnvironment(environment)) {
+        const batchState = await durableObjectState.storage.get('batch:processor:state');
+        if (batchState && batchState.metadata) {
+          await sendSimplifiedEmail(batchState.processedCount, batchState.metadata.processedDate, ctx);
+        }
+      }
+    }
+  });
+}

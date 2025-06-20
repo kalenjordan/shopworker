@@ -9,6 +9,43 @@ import { isWorkerEnvironment } from './env.js';
 import chalk from 'chalk';
 
 /**
+ * Serialize metadata to make it safe for durable object storage
+ * Removes non-serializable objects like functions and complex objects
+ */
+function serializeMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') {
+    return metadata;
+  }
+  
+  const serialized = {};
+  
+  for (const [key, value] of Object.entries(metadata)) {
+    if (key === 'ctx') {
+      // Extract only serializable parts of the context
+      serialized[key] = {
+        jobConfig: value.jobConfig,
+        shopConfig: value.shopConfig,
+        // Don't store shopify client or env - they're not serializable
+      };
+    } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+      serialized[key] = value;
+    } else if (Array.isArray(value)) {
+      serialized[key] = value;
+    } else if (typeof value === 'object' && value !== null) {
+      // Try to serialize object, but skip if it contains functions
+      try {
+        JSON.stringify(value);
+        serialized[key] = value;
+      } catch (error) {
+        console.log(`Skipping non-serializable metadata key: ${key}`);
+      }
+    }
+  }
+  
+  return serialized;
+}
+
+/**
  * Process a collection of items with automatic batching in worker environments
  *
  * @param {Object} options - Processing options
@@ -138,10 +175,10 @@ async function startBatchProcessing({
 
   console.log(`📦 Starting batch processing: ${totalItems} items in batches of ${batchSize}`);
 
-  // Store batch state in durable object
+  // Store batch state in durable object (only serializable data)
   const batchState = {
     items: items, // Store items for processing
-    metadata: metadata,
+    metadata: serializeMetadata(metadata),
     cursor: 0,
     batchSize: batchSize,
     totalItems: totalItems,
@@ -150,7 +187,7 @@ async function startBatchProcessing({
     status: 'processing',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    // Store serialized processor function and callbacks for continuation
+    // Store processor info for debugging (but not the actual function)
     processorName: processor.name || 'anonymous',
     hasOnProgress: onProgress !== null,
     hasOnBatchComplete: onBatchComplete !== null
@@ -179,6 +216,12 @@ async function processBatchChunk({
   onBatchComplete
 }) {
   const { cursor, batchSize, items, metadata } = batchState;
+  
+  // If processor is null (from continuation), we can't continue processing
+  // This is a limitation of the current batch processing system
+  if (!processor) {
+    throw new Error('Processor function not available for batch continuation. This is a known limitation.');
+  }
   const currentBatch = items.slice(cursor, cursor + batchSize);
   const batchNum = Math.floor(cursor / batchSize) + 1;
   const totalBatches = Math.ceil(batchState.totalItems / batchSize);
