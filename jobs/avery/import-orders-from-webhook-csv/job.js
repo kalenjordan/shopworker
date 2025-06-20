@@ -64,7 +64,15 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
       console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
 
       try {
-        const result = await runSingleOrderSubJob(csOrder, orderCounter, metadata.processedDate, metadata.ctx);
+        // Reconstruct ctx with current environment (metadata.ctx may have serialized/missing env)
+        const currentCtx = {
+          shopify: shopifyClient,
+          jobConfig: metadata.ctx ? metadata.ctx.jobConfig : config,
+          env: environment, // Use current environment, not serialized one
+          shopConfig: metadata.ctx ? metadata.ctx.shopConfig : shop
+        };
+        
+        const result = await runSingleOrderSubJob(csOrder, orderCounter, metadata.processedDate, currentCtx);
         console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
         return result;
       } catch (error) {
