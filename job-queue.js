@@ -312,6 +312,9 @@ export class JobQueue extends DurableObject {
       return;
     }
 
+    // Log the batch state for debugging
+    console.log('📊 Batch state:', JSON.stringify(batchState, null, 2));
+
     try {
       // Continue processing from where we left off
       await this.continueBatchProcessing(batchState);
