@@ -1,6 +1,6 @@
 /**
  * Batch Processing Utility
- * 
+ *
  * Provides a unified interface for processing large datasets that works transparently
  * in both CLI (sequential) and Worker (batched with durable objects) environments.
  */
@@ -10,7 +10,7 @@ import chalk from 'chalk';
 
 /**
  * Process a collection of items with automatic batching in worker environments
- * 
+ *
  * @param {Object} options - Processing options
  * @param {Array} options.items - Array of items to process
  * @param {Function} options.processor - Function to process each item: async (item, index, metadata) => result
@@ -25,7 +25,7 @@ import chalk from 'chalk';
 export async function processBatch({
   items,
   processor,
-  batchSize = 200,
+  batchSize,
   metadata = {},
   durableObjectState = null,
   onProgress = null,
@@ -35,13 +35,13 @@ export async function processBatch({
   if (!items || !Array.isArray(items)) {
     throw new Error('Items must be an array');
   }
-  
+
   if (typeof processor !== 'function') {
     throw new Error('Processor must be a function');
   }
 
   const totalItems = items.length;
-  
+
   if (totalItems === 0) {
     console.log('No items to process');
     return [];
@@ -49,10 +49,10 @@ export async function processBatch({
 
   // Determine processing strategy based on environment
   const isWorker = env ? isWorkerEnvironment(env) : false;
-  const shouldBatch = isWorker && durableObjectState && totalItems > 10;
+  const shouldBatch = isWorker && durableObjectState;
 
   if (shouldBatch) {
-    console.log(`🔄 Worker environment detected with ${totalItems} items. Starting batch processing.`);
+    console.log(`🔄 Worker environment detected with ${totalItems} items. Starting batch processing with batch size ${batchSize}.`);
     return await startBatchProcessing({
       items,
       processor,
@@ -306,18 +306,18 @@ export async function continueBatchProcessing({
  */
 export async function universalContinueBatch({ state, durableObjectState, shopify, env }) {
   console.log('🔄 Universal batch continuation handler');
-  
+
   // Get the batch processor state
   const batchState = await durableObjectState.storage.get('batch:processor:state');
   if (!batchState) {
     console.log('No batch processor state found, checking for legacy batch state');
-    
+
     // Check for legacy batch state format
     const legacyState = await durableObjectState.storage.get('batch:state');
     if (legacyState) {
       throw new Error('Legacy batch processing detected. Please use new batch processor format.');
     }
-    
+
     throw new Error('No batch state found');
   }
 
