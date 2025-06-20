@@ -176,14 +176,14 @@ async function startBatchProcessing({
   console.log(`📦 Starting batch processing: ${totalItems} items in batches of ${batchSize}`);
 
   // Store batch state in durable object (only serializable data)
+  // Don't store items array - it will be retrieved from R2 when continuing
   const batchState = {
-    items: items, // Store items for processing
     metadata: serializeMetadata(metadata),
     cursor: 0,
     batchSize: batchSize,
     totalItems: totalItems,
     processedCount: 0,
-    results: [],
+    resultCounts: { success: 0, error: 0 },
     status: 'processing',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -198,6 +198,7 @@ async function startBatchProcessing({
   // Process first batch immediately
   return await processBatchChunk({
     batchState,
+    items, // Pass items separately for first batch
     processor,
     durableObjectState,
     onProgress,
@@ -208,14 +209,15 @@ async function startBatchProcessing({
 /**
  * Process a single batch chunk
  */
-async function processBatchChunk({
+export async function processBatchChunk({
   batchState,
+  items,
   processor,
   durableObjectState,
   onProgress,
   onBatchComplete
 }) {
-  const { cursor, batchSize, items, metadata } = batchState;
+  const { cursor, batchSize, metadata } = batchState;
   const currentBatch = items.slice(cursor, cursor + batchSize);
   const batchNum = Math.floor(cursor / batchSize) + 1;
   const totalBatches = Math.ceil(batchState.totalItems / batchSize);
@@ -249,11 +251,17 @@ async function processBatchChunk({
 
   // Update batch state
   const newCursor = cursor + currentBatch.length;
+  const successCount = batchResults.filter(r => r.status !== 'error').length;
+  const errorCount = batchResults.filter(r => r.status === 'error').length;
+  
   const updatedBatchState = {
     ...batchState,
     cursor: newCursor,
     processedCount: batchState.processedCount + currentBatch.length,
-    results: [...batchState.results, ...batchResults],
+    resultCounts: {
+      success: batchState.resultCounts.success + successCount,
+      error: batchState.resultCounts.error + errorCount
+    },
     updatedAt: new Date().toISOString()
   };
 
@@ -261,7 +269,7 @@ async function processBatchChunk({
 
   // Call progress callback
   if (onProgress) {
-    onProgress(updatedBatchState.processedCount, batchState.totalItems, updatedBatchState.results);
+    onProgress(updatedBatchState.processedCount, batchState.totalItems, batchResults);
   }
 
   // Call batch complete callback
@@ -283,7 +291,7 @@ async function processBatchChunk({
     // Clean up alarm
     await durableObjectState.deleteAlarm();
 
-    return updatedBatchState.results;
+    return batchResults;
   } else {
     // Schedule next batch processing
     const nextAlarmTime = new Date(Date.now() + 1000);
@@ -291,7 +299,7 @@ async function processBatchChunk({
     await durableObjectState.setAlarm(nextAlarmTime);
 
     // Return current results (more will be processed via alarm)
-    return updatedBatchState.results;
+    return batchResults;
   }
 }
 
@@ -315,13 +323,9 @@ export async function continueBatchProcessing({
   console.log(`📊 Resuming batch processing from cursor ${batchState.cursor}`);
 
   try {
-    await processBatchChunk({
-      batchState,
-      processor,
-      durableObjectState,
-      onProgress,
-      onBatchComplete
-    });
+    // Items are not stored in state - they need to be retrieved from the original job
+    // For now, we'll throw an error indicating this needs to be handled by the job-specific continueBatch
+    throw new Error('continueBatchProcessing requires job-specific implementation to retrieve items from R2');
   } catch (error) {
     console.error('❌ Batch processing error:', error);
 

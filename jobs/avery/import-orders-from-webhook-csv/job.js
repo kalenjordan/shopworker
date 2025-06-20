@@ -11,7 +11,7 @@ import chalk from "chalk";
 import { runJob, isWorkerEnvironment } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
-import { processBatch, continueBatchProcessing } from "../../../utils/batch-processor.js";
+import { processBatch, processBatchChunk } from "../../../utils/batch-processor.js";
 
 // Export flag to indicate this job supports batch processing
 export const supportsBatchProcessing = true;
@@ -540,8 +540,25 @@ export async function continueBatch({ state, durableObjectState, shopify: shopif
     }
   };
 
-  // Continue batch processing
-  await continueBatchProcessing({
+  // Get the original job data to rebuild items
+  const originalJobData = await durableObjectState.getJobData();
+  
+  // Re-parse the CSV data to rebuild csOrders
+  const decodedContent = validateAndDecodeAttachment(originalJobData.bodyData);
+  const parsedData = parseCSVContent(decodedContent);
+  const filteredRows = applyEmailFilter(parsedData.rows, ctx);
+  let csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
+  
+  // Apply same limit as original processing
+  let limit = getLimit(ctx);
+  if (limit >= 1) {
+    csOrders = csOrders.slice(0, limit);
+  }
+
+  // Continue batch processing with rebuilt items
+  await processBatchChunk({
+    batchState,
+    items: csOrders,
     processor,
     durableObjectState,
     onProgress: (completed, total) => {
