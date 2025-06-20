@@ -198,15 +198,31 @@ export class JobQueue extends DurableObject {
       // Load secrets from environment
       const secrets = this.loadSecretsFromEnv(this.env);
 
-      // Process the job with complete data
-      await jobModule.process({
+      // For batch processing jobs, provide durable object context
+      const processParams = {
         payload: bodyData,
         shopify,
         env: this.env,
         shopConfig,
         jobConfig,
         secrets
-      });
+      };
+
+      // Add durable object state for batch processing if job supports it
+      if (jobModule.supportsBatchProcessing) {
+        processParams.durableObjectState = {
+          storage: this.ctx.storage,
+          setAlarm: (date) => this.ctx.storage.setAlarm(date),
+          getAlarm: () => this.ctx.storage.getAlarm(),
+          deleteAlarm: () => this.ctx.storage.deleteAlarm(),
+          // Provide access to original job data for re-fetching
+          jobId: job.id,
+          getJobData: () => this.getJobData(job.id)
+        };
+      }
+
+      // Process the job with complete data
+      await jobModule.process(processParams);
 
     } catch (error) {
       console.error(`❌ Error processing job ${job.id}:`, error);
@@ -281,5 +297,60 @@ export class JobQueue extends DurableObject {
       .slice(0, limit);
 
     return jobs;
+  }
+
+  /**
+   * Handle alarms for batch processing
+   */
+  async alarm() {
+    console.log('🔔 Alarm triggered for batch processing');
+    
+    // Get the current batch state
+    const batchState = await this.ctx.storage.get('batch:state');
+    if (!batchState) {
+      console.log('No batch state found, alarm may be stale');
+      return;
+    }
+
+    try {
+      // Continue processing from where we left off
+      await this.continueBatchProcessing(batchState);
+    } catch (error) {
+      console.error('❌ Error in batch processing alarm:', error);
+      // Mark batch as failed
+      await this.ctx.storage.put('batch:state', {
+        ...batchState,
+        status: 'failed',
+        error: error.message,
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
+   * Continue batch processing from stored state
+   */
+  async continueBatchProcessing(state) {
+    // This will be called by the alarm to continue processing
+    // The job handler will implement the actual batch logic
+    const jobModule = await import(`./jobs/${state.jobPath}/job.js`);
+    
+    if (jobModule.continueBatch) {
+      await jobModule.continueBatch({
+        state,
+        durableObjectState: {
+          storage: this.ctx.storage,
+          setAlarm: (date) => this.ctx.storage.setAlarm(date),
+          getAlarm: () => this.ctx.storage.getAlarm(),
+          deleteAlarm: () => this.ctx.storage.deleteAlarm(),
+          // Provide access to re-fetch original job data
+          jobId: state.jobId,
+          getJobData: () => this.getJobData(state.jobId)
+        },
+        // Re-create context for continuing processing
+        shopify: this.createShopifyClient(state.shopDomain, state.shopConfig, state.jobConfig),
+        env: this.env
+      });
+    }
   }
 }

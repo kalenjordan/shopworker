@@ -12,7 +12,10 @@ import { runJob, isWorkerEnvironment } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
 
-export async function process({ payload, shopify: shopifyClient, jobConfig: config, env: environment, shopConfig: shop }) {
+// Export flag to indicate this job supports batch processing
+export const supportsBatchProcessing = true;
+
+export async function process({ payload, shopify: shopifyClient, jobConfig: config, env: environment, shopConfig: shop, durableObjectState }) {
   // Create context object to pass around instead of module-level variables
   const ctx = {
     shopify: shopifyClient,
@@ -44,10 +47,16 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   // For troubleshooting, filter to a specific order ID
   // csOrders = filterOrdersForDebugging(csOrders, 'CS-649354')
 
-  const results = await processShopifyOrdersViaSubJobs(csOrders, processedDate, ctx);
-
-  // Send simplified email summary
-  await sendSimplifiedEmail(results.length, processedDate, ctx);
+  // Check if we're in worker environment and have many orders
+  if (isWorkerEnvironment(environment) && durableObjectState && csOrders.length > 10) {
+    console.log(`🔄 Worker environment detected with ${csOrders.length} orders. Starting batch processing.`);
+    await startBatchProcessing(csOrders, processedDate, ctx, durableObjectState);
+  } else {
+    // Process all orders at once (CLI mode or small batches)
+    const results = await processShopifyOrdersViaSubJobs(csOrders, processedDate, ctx);
+    // Send simplified email summary
+    await sendSimplifiedEmail(results.length, processedDate, ctx);
+  }
 }
 
 function validateAndDecodeAttachment(payload) {
@@ -426,4 +435,159 @@ function filterOrdersForDebugging(csOrders, orderId) {
   csOrders = csOrders.filter((csOrder) => csOrder.csOrderId === orderId);
   console.log(`Filtered ${csOrders.length} CS orders to ${orderId}`);
   return csOrders;
+}
+
+/**
+ * Start batch processing for large order sets in worker environment
+ */
+async function startBatchProcessing(csOrders, processedDate, ctx, durableObjectState) {
+  const batchSize = 10;
+  const totalOrders = csOrders.length;
+  
+  console.log(`📦 Starting batch processing: ${totalOrders} orders in batches of ${batchSize}`);
+  
+  // Store minimal batch state - don't store the full csOrders array
+  const batchState = {
+    jobPath: 'avery/import-orders-from-webhook-csv',
+    jobId: durableObjectState.jobId, // Reference to original job for re-fetching data
+    processedDate: processedDate,
+    // Store only essential config info
+    shopDomain: ctx.shopConfig.shop_domain,
+    shopConfig: ctx.shopConfig,
+    jobConfig: ctx.jobConfig,
+    cursor: 0,
+    batchSize: batchSize,
+    totalOrders: totalOrders,
+    processedCount: 0,
+    processedOrderIds: [], // Track completed orders
+    status: 'processing',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  
+  // Store batch state in durable object storage
+  await durableObjectState.storage.put('batch:state', batchState);
+  
+  // Process first batch immediately
+  await processBatch(batchState, durableObjectState, ctx);
+}
+
+/**
+ * Process a single batch of orders and schedule next batch if needed
+ */
+async function processBatch(batchState, durableObjectState, ctx) {
+  console.log(`📊 Processing batch starting at cursor ${batchState.cursor}`);
+  
+  try {
+    // Re-fetch and rebuild orders from original job data
+    const jobData = await durableObjectState.getJobData();
+    const { bodyData } = jobData;
+    
+    // Rebuild orders from original CSV data
+    const decodedContent = validateAndDecodeAttachment(bodyData);
+    const parsedData = parseCSVContent(decodedContent);
+    const filteredRows = applyEmailFilter(parsedData.rows, ctx);
+    const csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
+    
+    // Get current batch
+    const { cursor, batchSize } = batchState;
+    const currentBatch = csOrders.slice(cursor, cursor + batchSize);
+    const batchNum = Math.floor(cursor / batchSize) + 1;
+    const totalBatches = Math.ceil(batchState.totalOrders / batchSize);
+    
+    console.log(`📋 Batch ${batchNum}/${totalBatches}: processing ${currentBatch.length} orders`);
+    
+    // Process this batch
+    const batchResults = [];
+    let orderCounter = batchState.processedCount;
+    
+    for (const csOrder of currentBatch) {
+      orderCounter++;
+      console.log(chalk.cyan(`  ${orderCounter}/${batchState.totalOrders} Processing order ${csOrder.csOrderId}`));
+      
+      try {
+        const result = await runSingleOrderSubJob(csOrder, orderCounter, batchState.processedDate, ctx);
+        batchResults.push(result);
+        console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
+      } catch (error) {
+        console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
+        batchResults.push({
+          status: 'error',
+          orderCounter: orderCounter,
+          csOrderIds: [csOrder.csOrderId],
+          customerEmail: csOrder.lines[0]?.[\"Customer: Email\"] || 'Unknown',
+          customerName: csOrder.customer_name || 'Unknown',
+          error: error.message
+        });
+      }
+    }
+    
+    // Update batch state
+    const newCursor = cursor + currentBatch.length;
+    const processedOrderIds = currentBatch.map(order => order.csOrderId);
+    
+    const updatedBatchState = {
+      ...batchState,
+      cursor: newCursor,
+      processedCount: batchState.processedCount + currentBatch.length,
+      processedOrderIds: [...batchState.processedOrderIds, ...processedOrderIds],
+      updatedAt: new Date().toISOString()
+    };
+    
+    await durableObjectState.storage.put('batch:state', updatedBatchState);
+    
+    // Check if we're done
+    if (newCursor >= batchState.totalOrders) {
+      console.log(`✅ Batch processing complete: ${updatedBatchState.processedCount}/${batchState.totalOrders} orders processed`);
+      
+      // Send final email summary
+      await sendSimplifiedEmail(updatedBatchState.processedCount, batchState.processedDate, ctx);
+      
+      // Mark as completed and clean up
+      await durableObjectState.storage.put('batch:state', {
+        ...updatedBatchState,
+        status: 'completed',
+        completedAt: new Date().toISOString()
+      });
+      
+      // Clean up alarm
+      await durableObjectState.deleteAlarm();
+      
+    } else {
+      // Schedule next batch processing in 1 second
+      const nextAlarmTime = new Date(Date.now() + 1000);
+      console.log(`⏰ Scheduling next batch. Remaining: ${batchState.totalOrders - newCursor} orders`);
+      await durableObjectState.setAlarm(nextAlarmTime);
+    }
+    
+  } catch (error) {
+    console.error(`❌ Batch processing error:`, error);
+    
+    // Update batch state with error
+    await durableObjectState.storage.put('batch:state', {
+      ...batchState,
+      status: 'failed',
+      error: error.message,
+      updatedAt: new Date().toISOString()
+    });
+    
+    throw error;
+  }
+}
+
+/**
+ * Continue batch processing from stored state (called by alarm)
+ */
+export async function continueBatch({ state, durableObjectState, shopify, env }) {
+  console.log(`🔄 Continuing batch processing from cursor ${state.cursor}`);
+  
+  // Recreate context object
+  const ctx = {
+    shopify,
+    jobConfig: state.jobConfig,
+    env,
+    shopConfig: state.shopConfig
+  };
+  
+  await processBatch(state, durableObjectState, ctx);
 }
