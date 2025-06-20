@@ -493,7 +493,7 @@ function filterOrdersForDebugging(csOrders, orderId) {
 /**
  * Continue batch processing from stored state (called by alarm)
  */
-export async function continueBatch({ state, durableObjectState, shopify: shopifyClient, env: environment, shopConfig: shop }) {
+export async function continueBatch({ state, originalJobData, durableObjectState, shopify: shopifyClient, env: environment, shopConfig: shop }) {
   console.log('🔄 Continuing avery batch processing from alarm');
 
   // Get batch state to access stored metadata
@@ -540,10 +540,7 @@ export async function continueBatch({ state, durableObjectState, shopify: shopif
     }
   };
 
-  // Get the original job data to rebuild items
-  const originalJobData = await durableObjectState.getJobData();
-  
-  // Re-parse the CSV data to rebuild csOrders
+  // Re-parse the CSV data to rebuild csOrders using passed originalJobData
   const decodedContent = validateAndDecodeAttachment(originalJobData.bodyData);
   const parsedData = parseCSVContent(decodedContent);
   const filteredRows = applyEmailFilter(parsedData.rows, ctx);

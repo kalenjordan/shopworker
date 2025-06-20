@@ -329,9 +329,13 @@ export class JobQueue extends DurableObject {
         throw new Error(`Job ${originalJob.jobPath} does not export a continueBatch function`);
       }
 
+      // Get the original job data to pass to continueBatch
+      const originalJobData = await this.getJobData(originalJob.jobId);
+      
       // Call the job-specific continueBatch function
       await jobModule.continueBatch({
         state: batchState,
+        originalJobData: originalJobData,
         durableObjectState: {
           storage: this.ctx.storage,
           setAlarm: (date) => this.ctx.storage.setAlarm(date),
@@ -370,6 +374,7 @@ export class JobQueue extends DurableObject {
       const jobModule = await import(`./jobs/${jobData.jobPath}/job.js`);
       if (jobModule.supportsBatchProcessing) {
         return {
+          jobId: job.id,
           jobPath: jobData.jobPath,
           shopDomain: jobData.shopDomain,
           shopConfig: jobData.shopConfig,
