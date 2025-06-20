@@ -14,11 +14,13 @@ import FindOrdersByTag from "../../../graphql/FindOrdersByTag.js";
 import FindVariantBySku from "../../../graphql/FindVariantBySku.js";
 import FindCustomerByEmail from "../../../graphql/FindCustomerByEmail.js";
 import FindCustomerByTag from "../../../graphql/FindCustomerByTag.js";
-import FindCustomerByPhone from "../../../graphql/FindCustomerByPhone.js";
 import CreateOrder from "../../../graphql/CreateOrder.js";
 import AddCustomerTags from "../../../graphql/AddCustomerTags.js";
+import { logToWorker } from "../../../utils/env.js";
 
 export async function process({ payload, shopify, jobConfig, env }) {
+  logToWorker(env, `Running single order sub job for order ${payload.orderCounter}`, payload);
+
   let ctx = {
     shopify,
     jobConfig,
@@ -346,25 +348,6 @@ async function findCustomerByTag(ctx, tag) {
   const query = `'${tag}'`;
   const { customers } = await ctx.shopify.graphql(FindCustomerByTag, { tag: query });
   return customers.nodes[0]?.id;
-}
-
-async function findCustomerByPhone(ctx, phone) {
-  const query = `phone:'${phone}'`;
-  const { customers } = await ctx.shopify.graphql(FindCustomerByPhone, { phone: query });
-  return customers.nodes[0]?.id;
-}
-
-function formatPhoneNumber(phone) {
-  if (!phone) return null;
-  // Basic E.164 formatting for US numbers
-  const cleaned = phone.replace(/\D/g, '');
-  if (cleaned.length === 10) {
-    return `+1${cleaned}`;
-  }
-  if (cleaned.length === 11 && cleaned.startsWith('1')) {
-    return `+${cleaned}`;
-  }
-  return null;
 }
 
 function buildOrderPayload(ctx, shopifyOrderData, shopifyLineItems, totals, customerId, processedDate) {

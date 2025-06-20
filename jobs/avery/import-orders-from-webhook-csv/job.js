@@ -12,18 +12,14 @@ import { runJob } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
 
-// Module-level variables to avoid passing around
-let shopify;
-let jobConfig;
-let env;
-let shopConfig;
-
 export async function process({ payload, shopify: shopifyClient, jobConfig: config, env: environment, shopConfig: shop }) {
-  // Set module-level variables
-  shopify = shopifyClient;
-  jobConfig = config;
-  env = environment;
-  shopConfig = shop;
+  // Create context object to pass around instead of module-level variables
+  const ctx = {
+    shopify: shopifyClient,
+    jobConfig: config,
+    env: environment,
+    shopConfig: shop
+  };
 
   const decodedContent = validateAndDecodeAttachment(payload);
   const parsedData = parseCSVContent(decodedContent);
@@ -32,7 +28,7 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
     return;
   }
 
-  await saveDecodedCSV(decodedContent, payload);
+  await saveDecodedCSV(decodedContent, payload, ctx);
 
   if (parsedData.rows.length === 0) {
     console.log("No data rows found");
@@ -42,13 +38,13 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   // Extract processed date from first row for email link and tagging
   const processedDate = extractProcessedDate(parsedData.rows[0]);
 
-  const filteredRows = applyEmailFilter(parsedData.rows);
+  const filteredRows = applyEmailFilter(parsedData.rows, ctx);
   const csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
 
-  const results = await processShopifyOrdersViaSubJobs(csOrders, processedDate);
+  const results = await processShopifyOrdersViaSubJobs(csOrders, processedDate, ctx);
 
   // Send simplified email summary
-  await sendSimplifiedEmail(results.length, processedDate);
+  await sendSimplifiedEmail(results.length, processedDate, ctx);
 }
 
 function validateAndDecodeAttachment(payload) {
@@ -62,7 +58,7 @@ function validateAndDecodeAttachment(payload) {
   return decodedContent;
 }
 
-async function saveDecodedCSV(decodedContent, record) {
+async function saveDecodedCSV(decodedContent, record, ctx) {
   const timestamp = formatInTimeZone(new Date(), "America/Chicago", "yyyy-MM-dd-HH-mm-ss");
   const filename = `avery-orders-${timestamp}.csv`;
 
@@ -79,7 +75,7 @@ async function saveDecodedCSV(decodedContent, record) {
           originalFilename: record.attachments?.[0]?.filename || "unknown",
         },
       },
-      env
+      ctx.env
     );
   } catch (error) {
     console.error(chalk.red(`Failed to save CSV file: ${error.message}`));
@@ -92,8 +88,8 @@ function parseCSVContent(decodedContent) {
   return parsedData;
 }
 
-function applyEmailFilter(rows) {
-  const filterEmail = getFilterEmail();
+function applyEmailFilter(rows, ctx) {
+  const filterEmail = getFilterEmail(ctx);
 
   if (!filterEmail) {
     return rows;
@@ -158,9 +154,9 @@ function categorizeRowIntoOrder(csOrder, row, lineType) {
   }
 }
 
-async function processShopifyOrdersViaSubJobs(csOrders, processedDate) {
+async function processShopifyOrdersViaSubJobs(csOrders, processedDate, ctx) {
   let orderCounter = 0;
-  const limit = getLimit();
+  const limit = getLimit(ctx);
   const results = [];
 
   if (limit > 0) {
@@ -179,7 +175,7 @@ async function processShopifyOrdersViaSubJobs(csOrders, processedDate) {
 
     try {
       console.log(chalk.green(`  ✓ Running ${orderCounter}`));
-      const result = await runSingleOrderSubJob(csOrder, orderCounter, processedDate);
+      const result = await runSingleOrderSubJob(csOrder, orderCounter, processedDate, ctx);
       results.push(result);
     } catch (error) {
       console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
@@ -209,7 +205,7 @@ async function processShopifyOrdersViaSubJobs(csOrders, processedDate) {
  * Run a single order processing sub job
  * Uses the RUN_SUB_JOB_DIRECTLY flag to determine execution method
  */
-async function runSingleOrderSubJob(csOrder, orderCounter, processedDate) {
+async function runSingleOrderSubJob(csOrder, orderCounter, processedDate, ctx) {
   const payload = {
     csOrder,
     name: `Shopify Order #${orderCounter}`,
@@ -220,22 +216,22 @@ async function runSingleOrderSubJob(csOrder, orderCounter, processedDate) {
   const result = await runJob({
     jobPath: "avery/process-single-order",
     payload,
-    shopify,
-    jobConfig,
-    env,
-    shopConfig,
+    shopify: ctx.shopify,
+    jobConfig: ctx.jobConfig,
+    env: ctx.env,
+    shopConfig: ctx.shopConfig,
   });
   return result;
 }
 
 // Helper function to get the limit from job config
-function getLimit() {
-  return jobConfig.test.limit || 0;
+function getLimit(ctx) {
+  return ctx.jobConfig.test.limit || 0;
 }
 
 // Helper function to get the filter email from job config
-function getFilterEmail() {
-  return jobConfig.test.filterEmail;
+function getFilterEmail(ctx) {
+  return ctx.jobConfig.test.filterEmail;
 }
 
 /**
@@ -265,10 +261,10 @@ function extractProcessedDate(firstRow) {
  * @param {number} orderCount - Number of processed orders
  * @param {string} processedDate - Date processed in YYYY-MM-DD format
  */
-async function sendSimplifiedEmail(orderCount, processedDate) {
+async function sendSimplifiedEmail(orderCount, processedDate, ctx) {
   try {
     // Check if email configuration is available
-    if (!shopConfig.resend_api_key || !shopConfig.email_to || !shopConfig.email_from) {
+    if (!ctx.shopConfig.resend_api_key || !ctx.shopConfig.email_to || !ctx.shopConfig.email_from) {
       console.log(chalk.yellow("Email configuration not available, skipping email notification"));
       return;
     }
@@ -281,18 +277,18 @@ async function sendSimplifiedEmail(orderCount, processedDate) {
 
     // Prepare email options
     const emailOptions = {
-      to: shopConfig.email_to,
-      from: shopConfig.email_from,
+      to: ctx.shopConfig.email_to,
+      from: ctx.shopConfig.email_from,
       subject: subject,
       html: htmlContent
     };
 
     // Add reply-to if configured
-    if (shopConfig.email_reply_to) {
-      emailOptions.replyTo = shopConfig.email_reply_to;
+    if (ctx.shopConfig.email_reply_to) {
+      emailOptions.replyTo = ctx.shopConfig.email_reply_to;
     }
 
-    await sendEmail(emailOptions, shopConfig.resend_api_key);
+    await sendEmail(emailOptions, ctx.shopConfig.resend_api_key);
 
     console.log(chalk.green("✓ Email summary sent successfully"));
   } catch (error) {
