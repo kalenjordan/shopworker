@@ -451,7 +451,7 @@ async function startBatchProcessing(csOrders, processedDate, ctx, durableObjectS
     jobId: durableObjectState.jobId, // Reference to original job for re-fetching data
     processedDate: processedDate,
     // Store only essential config info
-    shopDomain: ctx.shopConfig.shop_domain,
+    shopDomain: ctx.shopConfig.shopify_domain,
     shopConfig: ctx.shopConfig,
     jobConfig: ctx.jobConfig,
     cursor: 0,
