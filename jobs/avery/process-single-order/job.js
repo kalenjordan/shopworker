@@ -18,14 +18,12 @@ import FindCustomerByPhone from "../../../graphql/FindCustomerByPhone.js";
 import CreateOrder from "../../../graphql/CreateOrder.js";
 import AddCustomerTags from "../../../graphql/AddCustomerTags.js";
 
-// Module-level variables to avoid passing around
-let shopify;
-let jobConfig;
-
-export async function process({ payload, shopify: shopifyClient, jobConfig: config }) {
-  // Set module-level variables
-  shopify = shopifyClient;
-  jobConfig = config;
+export async function process({ payload, shopify, jobConfig, env }) {
+  let ctx = {
+    shopify,
+    jobConfig,
+    env
+  };
 
   // Extract order data from the record (passed from parent job)
   const { csOrder, orderCounter, processedDate } = payload;
@@ -35,7 +33,7 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   logOrder(shopifyOrderData);
 
   try {
-    const result = await createShopifyOrder(shopifyOrderData, orderCounter, processedDate);
+    const result = await createShopifyOrder(ctx, shopifyOrderData, orderCounter, processedDate);
     return result;
   } catch (error) {
     console.error(chalk.red(`  Error creating Shopify order: ${error.message}`));
@@ -52,8 +50,8 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
 }
 
 // Helper function to check if we're in dry run mode
-function isDryRun() {
-  return jobConfig.test?.dryRun || false;
+function isDryRun(ctx) {
+  return ctx.jobConfig.test?.dryRun || false;
 }
 
 function buildShopifyOrderData(csOrder, orderCounter) {
@@ -192,7 +190,7 @@ function logOrderTotals(shopifyOrderData) {
   }
 }
 
-async function createShopifyOrder(shopifyOrderData, orderCounter, processedDate) {
+async function createShopifyOrder(ctx, shopifyOrderData, orderCounter, processedDate) {
   console.log(chalk.green(`\n  Creating Shopify Order ${orderCounter}`));
   console.log(`  Customer: ${shopifyOrderData.name} (${shopifyOrderData.email})`);
   console.log(`  CS Order IDs: ${shopifyOrderData.csOrderIds.join(", ")}`);
@@ -220,18 +218,17 @@ async function createShopifyOrder(shopifyOrderData, orderCounter, processedDate)
   }
 
   // Build line items and calculate totals
-  const { shopifyLineItems, totals } = await buildOrderLineItems(lineItems);
+  const { shopifyLineItems, totals } = await buildOrderLineItems(ctx, lineItems);
 
   // Find or create customer
-  const customerId = await findOrCreateCustomer(shopifyOrderData);
+  const customerId = await findOrCreateCustomer(ctx, shopifyOrderData);
 
   // Build order payload
-  const orderPayload = buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerId, processedDate);
-  console.log("Order payload: " + JSON.stringify(orderPayload, null, 2));
+  const orderPayload = buildOrderPayload(ctx, shopifyOrderData, shopifyLineItems, totals, customerId, processedDate);
 
   // Check if orders already exist
   for (const csOrderId of csOrderIds) {
-    const existingOrder = await checkExistingOrder(csOrderId);
+    const existingOrder = await checkExistingOrder(ctx, csOrderId);
     if (existingOrder) {
       console.log(`  Order already exists: ${csOrderId}`);
       return {
@@ -245,11 +242,11 @@ async function createShopifyOrder(shopifyOrderData, orderCounter, processedDate)
   }
 
   // Create the order
-  const orderCreate = await createOrder(orderPayload);
+  const orderCreate = await createOrder(ctx, orderPayload);
 
   // Add customer tags if customer exists
   if (customerId) {
-    await addCustomerTags(customerId, csCustomerId);
+    await addCustomerTags(ctx, customerId, csCustomerId);
   }
 
   return {
@@ -262,19 +259,19 @@ async function createShopifyOrder(shopifyOrderData, orderCounter, processedDate)
   };
 }
 
-async function checkExistingOrder(csOrderId) {
+async function checkExistingOrder(ctx, csOrderId) {
   const query = `tag:'${csOrderId}'`;
-  const { orders } = await shopify.graphql(FindOrdersByTag, { tag: query });
+  const { orders } = await ctx.shopify.graphql(FindOrdersByTag, { tag: query });
   return orders.nodes[0];
 }
 
-async function buildOrderLineItems(lineItems) {
+async function buildOrderLineItems(ctx, lineItems) {
   const shopifyLineItems = [];
   let lineItemTotals = 0;
 
   for (const line of lineItems) {
     const sku = line['Line: SKU'];
-    const variant = await findVariantBySku(sku);
+    const variant = await findVariantBySku(ctx, sku);
 
     if (!variant) {
       throw new Error(`Couldn't find variant from sku: ${sku}`);
@@ -286,8 +283,8 @@ async function buildOrderLineItems(lineItems) {
       requires_shipping: true,
       quantity: parseInt(line['Line: Quantity']),
       taxable: true,
-      product_id: parseInt(shopify.fromGid(variant.product.id)),
-      variant_id: parseInt(shopify.fromGid(variant.id)),
+      product_id: parseInt(ctx.shopify.fromGid(variant.product.id)),
+      variant_id: parseInt(ctx.shopify.fromGid(variant.id)),
       grams: parseInt(line['Line: Grams'] || 0)
     };
 
@@ -303,22 +300,22 @@ async function buildOrderLineItems(lineItems) {
   };
 }
 
-async function findVariantBySku(sku) {
+async function findVariantBySku(ctx, sku) {
   const query = `sku:"${sku}"`;
-  const { productVariants } = await shopify.graphql(FindVariantBySku, { sku: query });
+  const { productVariants } = await ctx.shopify.graphql(FindVariantBySku, { sku: query });
   return productVariants.nodes[0];
 }
 
-async function findOrCreateCustomer(shopifyOrderData) {
+async function findOrCreateCustomer(ctx, shopifyOrderData) {
   const { email, csCustomerId } = shopifyOrderData;
 
   // Try to find by email first
-  let customerId = await findCustomerByEmail(email);
+  let customerId = await findCustomerByEmail(ctx, email);
 
   // If not found by email, try by CS customer tag
   if (!customerId) {
     const tag = `CS-${csCustomerId}`;
-    customerId = await findCustomerByTag(tag);
+    customerId = await findCustomerByTag(ctx, tag);
   }
 
   // Try by phone number
@@ -339,21 +336,21 @@ async function findOrCreateCustomer(shopifyOrderData) {
   return customerId;
 }
 
-async function findCustomerByEmail(email) {
+async function findCustomerByEmail(ctx, email) {
   const query = `email:'${email}'`;
-  const { customers } = await shopify.graphql(FindCustomerByEmail, { email: query });
+  const { customers } = await ctx.shopify.graphql(FindCustomerByEmail, { email: query });
   return customers.nodes[0]?.id;
 }
 
-async function findCustomerByTag(tag) {
+async function findCustomerByTag(ctx, tag) {
   const query = `'${tag}'`;
-  const { customers } = await shopify.graphql(FindCustomerByTag, { tag: query });
+  const { customers } = await ctx.shopify.graphql(FindCustomerByTag, { tag: query });
   return customers.nodes[0]?.id;
 }
 
-async function findCustomerByPhone(phone) {
+async function findCustomerByPhone(ctx, phone) {
   const query = `phone:'${phone}'`;
-  const { customers } = await shopify.graphql(FindCustomerByPhone, { phone: query });
+  const { customers } = await ctx.shopify.graphql(FindCustomerByPhone, { phone: query });
   return customers.nodes[0]?.id;
 }
 
@@ -370,7 +367,7 @@ function formatPhoneNumber(phone) {
   return null;
 }
 
-function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerId, processedDate) {
+function buildOrderPayload(ctx, shopifyOrderData, shopifyLineItems, totals, customerId, processedDate) {
   const { lineItems, csCustomerId, csOrderIds, shipping, discounts, transactions } = shopifyOrderData;
   const firstLine = lineItems[0];
 
@@ -427,7 +424,7 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
   // Build line items with correct structure
   const orderLineItems = shopifyLineItems.map(item => ({
     quantity: item.quantity,
-    variantId: shopify.toGid(item.variant_id, "ProductVariant"),
+    variantId: ctx.shopify.toGid(item.variant_id, "ProductVariant"),
     requiresShipping: true,
     priceSet: {
       shopMoney: {
@@ -529,7 +526,7 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
     // Use existing customer
     payload.customer = {
       toAssociate: {
-        id: shopify.toGid(customerId, "Customer")
+        id: ctx.shopify.toGid(customerId, "Customer")
       }
     };
   } else {
@@ -582,8 +579,8 @@ function buildOrderPayload(shopifyOrderData, shopifyLineItems, totals, customerI
   return payload;
 }
 
-async function createOrder(orderPayload) {
-  if (isDryRun()) {
+async function createOrder(ctx, orderPayload) {
+  if (isDryRun(ctx)) {
     console.log(chalk.yellow("  DRY RUN - Would create order with payload:"));
     console.log(JSON.stringify(orderPayload, null, 2));
     return { order: { name: "DRY-RUN-ORDER", legacyResourceId: "123456" } };
@@ -594,7 +591,7 @@ async function createOrder(orderPayload) {
     sendFulfillmentReceipt: false
   };
 
-  const { orderCreate } = await shopify.graphql(CreateOrder, {
+  const { orderCreate } = await ctx.shopify.graphql(CreateOrder, {
     input: orderPayload,
     options: options
   });
@@ -608,15 +605,15 @@ async function createOrder(orderPayload) {
   return orderCreate;
 }
 
-async function addCustomerTags(customerId, csCustomerId) {
-  if (isDryRun()) {
+async function addCustomerTags(ctx, customerId, csCustomerId) {
+  if (isDryRun(ctx)) {
     console.log(chalk.yellow(`  DRY RUN - Would add tag CS-${csCustomerId} to customer ${customerId}`));
     return;
   }
   const tag = `CS-${csCustomerId}`;
 
-  const { tagsAdd } = await shopify.graphql(AddCustomerTags, {
-    customerId: shopify.toGid(customerId, "Customer"),
+  const { tagsAdd } = await ctx.shopify.graphql(AddCustomerTags, {
+    customerId: ctx.shopify.toGid(customerId, "Customer"),
     tags: [tag]
   });
 
