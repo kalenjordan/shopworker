@@ -71,7 +71,7 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
           env: environment, // Use current environment, not serialized one
           shopConfig: metadata.ctx ? metadata.ctx.shopConfig : shop
         };
-        
+
         const result = await runSingleOrderSubJob(csOrder, orderCounter, metadata.processedDate, currentCtx);
         console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
         return result;
@@ -87,7 +87,7 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
         };
       }
     },
-    batchSize: 5,
+    batchSize: 100,
     metadata: { processedDate, ctx },
     durableObjectState,
     env: environment,
@@ -495,7 +495,7 @@ function filterOrdersForDebugging(csOrders, orderId) {
  */
 export async function continueBatch({ state, durableObjectState, shopify: shopifyClient, env: environment, shopConfig: shop }) {
   console.log('🔄 Continuing avery batch processing from alarm');
-  
+
   // Get batch state to access stored metadata
   const batchState = await durableObjectState.storage.get('batch:processor:state');
   if (!batchState) {
@@ -523,7 +523,7 @@ export async function continueBatch({ state, durableObjectState, shopify: shopif
         env: environment,
         shopConfig: metadata.ctx ? metadata.ctx.shopConfig : shop
       };
-      
+
       const result = await runSingleOrderSubJob(csOrder, orderCounter, metadata.processedDate, processorCtx);
       console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
       return result;
@@ -551,7 +551,7 @@ export async function continueBatch({ state, durableObjectState, shopify: shopif
     },
     onBatchComplete: async (batchResults, batchNum, totalBatches) => {
       console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
-      
+
       // Send email summary only after all batches complete
       if (batchNum === totalBatches && isWorkerEnvironment(environment)) {
         const batchState = await durableObjectState.storage.get('batch:processor:state');

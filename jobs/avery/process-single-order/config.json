@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "trigger": "webhook",
   "test": {
-    "dryRun": true,
+    "dryRun": false,
     "webhookPayload": "fixtures/single-order-test.json"
   }
 }
