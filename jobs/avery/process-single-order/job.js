@@ -19,7 +19,7 @@ import AddCustomerTags from "../../../graphql/AddCustomerTags.js";
 import { logToWorker } from "../../../utils/env.js";
 
 export async function process({ payload, shopify, jobConfig, env }) {
-  logToWorker({ env, jobConfig }, `Running process-single-order job for order #${payload.orderCounter} - ${payload?.csOrder?.csOrderId}`, payload);
+  logToWorker({ env}, `Running process-single-order job for order #${payload.orderCounter} - ${payload?.csOrder?.csOrderId}`, { payload, jobConfig });
 
   let ctx = {
     shopify,
@@ -232,7 +232,11 @@ async function createShopifyOrder(ctx, shopifyOrderData, orderCounter, processed
   for (const csOrderId of csOrderIds) {
     const existingOrder = await checkExistingOrder(ctx, csOrderId);
     if (existingOrder) {
-      console.log(`  Order already exists: ${csOrderId}`);
+      // Parse tags to find CS-YYYY-MM-DD pattern
+      const dateTagRegex = /CS-\d{4}-\d{2}-\d{2}/;
+      const dateTag = existingOrder.tags.find(tag => dateTagRegex.test(tag));
+
+      console.log(`  Order already exists: ${csOrderId} with date tag: ${dateTag}`);
       return {
         status: 'already exists',
         orderCounter: orderCounter,

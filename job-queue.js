@@ -3,6 +3,7 @@
  */
 
 import { createShopifyClient } from './utils/shopify.js';
+import { universalContinueBatch } from './utils/batch-processor.js';
 import { DurableObject } from "cloudflare:workers";
 
 export class JobQueue extends DurableObject {
@@ -334,26 +335,21 @@ export class JobQueue extends DurableObject {
    * Continue batch processing from stored state
    */
   async continueBatchProcessing(state) {
-    // This will be called by the alarm to continue processing
-    // The job handler will implement the actual batch logic
-    const jobModule = await import(`./jobs/${state.jobPath}/job.js`);
-    
-    if (jobModule.continueBatch) {
-      await jobModule.continueBatch({
-        state,
-        durableObjectState: {
-          storage: this.ctx.storage,
-          setAlarm: (date) => this.ctx.storage.setAlarm(date),
-          getAlarm: () => this.ctx.storage.getAlarm(),
-          deleteAlarm: () => this.ctx.storage.deleteAlarm(),
-          // Provide access to re-fetch original job data
-          jobId: state.jobId,
-          getJobData: () => this.getJobData(state.jobId)
-        },
-        // Re-create context for continuing processing
-        shopify: this.createShopifyClient(state.shopDomain, state.shopConfig, state.jobConfig),
-        env: this.env
-      });
-    }
+    // Use the universal batch continuation handler
+    await universalContinueBatch({
+      state,
+      durableObjectState: {
+        storage: this.ctx.storage,
+        setAlarm: (date) => this.ctx.storage.setAlarm(date),
+        getAlarm: () => this.ctx.storage.getAlarm(),
+        deleteAlarm: () => this.ctx.storage.deleteAlarm(),
+        // Provide access to re-fetch original job data
+        jobId: state.jobId,
+        getJobData: () => this.getJobData(state.jobId)
+      },
+      // Re-create context for continuing processing
+      shopify: this.createShopifyClient(state.shopDomain, state.shopConfig, state.jobConfig),
+      env: this.env
+    });
   }
 }
