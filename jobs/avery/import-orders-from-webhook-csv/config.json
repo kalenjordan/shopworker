@@ -3,7 +3,7 @@
   "trigger": "webhook",
   "shop": "avery",
   "test": {
-    "limit": 2,
+    "limit": 999,
     "dryRun": false,
     "webhookPayload": "fixtures/avery/avery-june-11-orders.json"
   }
