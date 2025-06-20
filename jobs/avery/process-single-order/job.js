@@ -19,7 +19,7 @@ import AddCustomerTags from "../../../graphql/AddCustomerTags.js";
 import { logToWorker } from "../../../utils/env.js";
 
 export async function process({ payload, shopify, jobConfig, env }) {
-  logToWorker(env, `Running process-single-order job for order #${payload.orderCounter} - ${payload?.csOrder?.csOrderId}`, payload);
+  logToWorker({ env, jobConfig }, `Running process-single-order job for order #${payload.orderCounter} - ${payload?.csOrder?.csOrderId}`, payload);
 
   let ctx = {
     shopify,
