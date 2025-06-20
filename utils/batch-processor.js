@@ -251,8 +251,8 @@ export async function processBatchChunk({
 
   // Update batch state
   const newCursor = cursor + currentBatch.length;
-  const successCount = batchResults.filter(r => r.status !== 'error').length;
-  const errorCount = batchResults.filter(r => r.status === 'error').length;
+  const successCount = batchResults.filter(r => r && r.status !== 'error').length;
+  const errorCount = batchResults.filter(r => r && r.status === 'error').length;
   
   const updatedBatchState = {
     ...batchState,
