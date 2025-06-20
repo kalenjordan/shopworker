@@ -49,7 +49,7 @@ export async function processBatch({
 
   // Determine processing strategy based on environment
   const isWorker = env ? isWorkerEnvironment(env) : false;
-  const shouldBatch = isWorker && durableObjectState;
+  const shouldBatch = isWorker && durableObjectState && totalItems > 10;
 
   if (shouldBatch) {
     console.log(`🔄 Worker environment detected with ${totalItems} items. Starting batch processing with batch size ${batchSize}.`);
