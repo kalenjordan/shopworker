@@ -12,6 +12,11 @@ export function isCliEnvironment(env) {
   return env && typeof env.PATH === 'string';
 }
 
+export function isWorkerEnvironment(env) {
+  // Check for PATH environment variable which exists in Node.js but not in Cloudflare Workers
+  return env && typeof env.PATH !== 'string';
+}
+
 /**
  * Run a job, automatically handling environment differences
  * In CLI: directly imports and calls the job

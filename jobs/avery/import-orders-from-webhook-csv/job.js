@@ -8,7 +8,7 @@
 import { parseCSV, saveFile } from "../../../connectors/csv.js";
 import { sendEmail } from "../../../connectors/resend.js";
 import chalk from "chalk";
-import { runJob } from "../../../utils/env.js";
+import { runJob, isWorkerEnvironment } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
 
@@ -297,7 +297,11 @@ async function sendSimplifiedEmail(orderCount, processedDate, ctx) {
       emailOptions.replyTo = ctx.shopConfig.email_reply_to;
     }
 
-    await sendEmail(emailOptions, ctx.shopConfig.resend_api_key);
+    if (isWorkerEnvironment(ctx.env)) {
+      await sendEmail(emailOptions, ctx.shopConfig.resend_api_key);
+    } else {
+      console.log(chalk.yellow("Skipping email summary in CLI environment"));
+    }
 
     console.log(chalk.green("✓ Email summary sent successfully"));
   } catch (error) {
