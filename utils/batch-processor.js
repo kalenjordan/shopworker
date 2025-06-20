@@ -216,12 +216,6 @@ async function processBatchChunk({
   onBatchComplete
 }) {
   const { cursor, batchSize, items, metadata } = batchState;
-  
-  // If processor is null (from continuation), we can't continue processing
-  // This is a limitation of the current batch processing system
-  if (!processor) {
-    throw new Error('Processor function not available for batch continuation. This is a known limitation.');
-  }
   const currentBatch = items.slice(cursor, cursor + batchSize);
   const batchNum = Math.floor(cursor / batchSize) + 1;
   const totalBatches = Math.ceil(batchState.totalItems / batchSize);
@@ -343,50 +337,3 @@ export async function continueBatchProcessing({
   }
 }
 
-/**
- * Universal continuation handler for batch processing
- * This can be called directly by the job queue without requiring job-specific continueBatch exports
- */
-export async function universalContinueBatch({ state, durableObjectState, shopify, env }) {
-  console.log('🔄 Universal batch continuation handler');
-
-  // Get the batch processor state
-  const batchState = await durableObjectState.storage.get('batch:processor:state');
-  if (!batchState) {
-    console.log('No batch processor state found, checking for legacy batch state');
-
-    // Check for legacy batch state format
-    const legacyState = await durableObjectState.storage.get('batch:state');
-    if (legacyState) {
-      throw new Error('Legacy batch processing detected. Please use new batch processor format.');
-    }
-
-    throw new Error('No batch state found');
-  }
-
-  console.log(`📊 Resuming batch processing from cursor ${batchState.cursor}`);
-
-  // The batch processor state contains all the data needed to continue
-  // We just need to continue the batch processing with the stored state
-  try {
-    await processBatchChunk({
-      batchState,
-      processor: null, // Will be reconstructed from stored items and metadata
-      durableObjectState,
-      onProgress: null, // Callbacks will be reconstructed if needed
-      onBatchComplete: null
-    });
-  } catch (error) {
-    console.error('❌ Batch processing error:', error);
-
-    // Update batch state with error
-    await durableObjectState.storage.put('batch:processor:state', {
-      ...batchState,
-      status: 'failed',
-      error: error.message,
-      updatedAt: new Date().toISOString()
-    });
-
-    throw error;
-  }
-}

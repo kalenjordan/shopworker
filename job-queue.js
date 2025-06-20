@@ -3,7 +3,6 @@
  */
 
 import { createShopifyClient } from './utils/shopify.js';
-import { universalContinueBatch } from './utils/batch-processor.js';
 import { DurableObject } from "cloudflare:workers";
 
 export class JobQueue extends DurableObject {
@@ -306,10 +305,10 @@ export class JobQueue extends DurableObject {
   async alarm() {
     console.log('🔔 Alarm triggered for batch processing');
     
-    // Get the current batch state
-    const batchState = await this.ctx.storage.get('batch:state');
+    // Check for new batch processor state
+    const batchState = await this.ctx.storage.get('batch:processor:state');
     if (!batchState) {
-      console.log('No batch state found, alarm may be stale');
+      console.log('No batch processor state found, alarm may be stale');
       return;
     }
 
@@ -317,12 +316,37 @@ export class JobQueue extends DurableObject {
     console.log('📊 Batch state:', JSON.stringify(batchState, null, 2));
 
     try {
-      // Continue processing from where we left off
-      await this.continueBatchProcessing(batchState);
+      // Get the original job data to determine which job module to use
+      const originalJob = await this.getActiveJob();
+      if (!originalJob) {
+        throw new Error('No active job found for batch processing continuation');
+      }
+
+      // Dynamically import the job module
+      const jobModule = await import(`./jobs/${originalJob.jobPath}/job.js`);
+      
+      if (!jobModule.continueBatch) {
+        throw new Error(`Job ${originalJob.jobPath} does not export a continueBatch function`);
+      }
+
+      // Call the job-specific continueBatch function
+      await jobModule.continueBatch({
+        state: batchState,
+        durableObjectState: {
+          storage: this.ctx.storage,
+          setAlarm: (date) => this.ctx.storage.setAlarm(date),
+          getAlarm: () => this.ctx.storage.getAlarm(),
+          deleteAlarm: () => this.ctx.storage.deleteAlarm()
+        },
+        shopify: this.createShopifyClient(originalJob.shopDomain, originalJob.shopConfig, originalJob.jobConfig),
+        env: this.env,
+        shopConfig: originalJob.shopConfig
+      });
+
     } catch (error) {
       console.error('❌ Error in batch processing alarm:', error);
       // Mark batch as failed
-      await this.ctx.storage.put('batch:state', {
+      await this.ctx.storage.put('batch:processor:state', {
         ...batchState,
         status: 'failed',
         error: error.message,
@@ -332,24 +356,28 @@ export class JobQueue extends DurableObject {
   }
 
   /**
-   * Continue batch processing from stored state
+   * Get the currently active job for batch processing
    */
-  async continueBatchProcessing(state) {
-    // Use the universal batch continuation handler
-    await universalContinueBatch({
-      state,
-      durableObjectState: {
-        storage: this.ctx.storage,
-        setAlarm: (date) => this.ctx.storage.setAlarm(date),
-        getAlarm: () => this.ctx.storage.getAlarm(),
-        deleteAlarm: () => this.ctx.storage.deleteAlarm(),
-        // Provide access to re-fetch original job data
-        jobId: state.jobId,
-        getJobData: () => this.getJobData(state.jobId)
-      },
-      // Re-create context for continuing processing
-      shopify: this.createShopifyClient(state.shopDomain, state.shopConfig, state.jobConfig),
-      env: this.env
-    });
+  async getActiveJob() {
+    // Look for the most recent job that supports batch processing
+    const allJobs = await this.ctx.storage.list({ prefix: 'job:', suffix: ':meta' });
+    const jobs = Array.from(allJobs.values())
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    // Find the most recent job that supports batch processing
+    for (const job of jobs) {
+      const jobData = await this.getJobData(job.id);
+      const jobModule = await import(`./jobs/${jobData.jobPath}/job.js`);
+      if (jobModule.supportsBatchProcessing) {
+        return {
+          jobPath: jobData.jobPath,
+          shopDomain: jobData.shopDomain,
+          shopConfig: jobData.shopConfig,
+          jobConfig: jobData.jobConfig
+        };
+      }
+    }
+    
+    return null;
   }
 }
