@@ -205,7 +205,7 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
 
   // Override the limit in job config if limitParam is provided
   let configToUse = jobConfig;
-  if (options.limit && options.limit !== 1) {
+  if (options.limit && options.limit >= 1) {
     configToUse = {
       ...jobConfig,
       test: {
