@@ -87,7 +87,7 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
         };
       }
     },
-    batchSize: 100,
+    batchSize: 50,
     metadata: { processedDate, ctx },
     durableObjectState,
     env: environment,
