@@ -4,52 +4,51 @@
  */
 
 import { isCliEnvironment } from '../utils/env.js';
+import Papa from 'papaparse';
 
 /**
  * Parse CSV content into structured data
  * @param {string} csvContent - Raw CSV content string
  * @param {Object} options - Parsing options
  * @param {string} [options.delimiter] - Field delimiter (default: ',')
+ * @param {boolean} [options.hasHeaders] - Whether first row contains headers (default: true)
  * @returns {Object} Parsed CSV data with headers and rows
  */
 export function parseCSV(csvContent, options = {}) {
-  const { delimiter = ',' } = options;
+  const { delimiter = ',', hasHeaders = true } = options;
 
   if (typeof csvContent !== 'string') {
     throw new Error('CSV content must be a string');
   }
 
-  // Split into rows and filter out empty ones
-  const rows = csvContent.split('\n').filter(row => row.trim() !== '');
+  // Use PapaParse for robust CSV parsing
+  const parseResult = Papa.parse(csvContent, {
+    header: hasHeaders,       // First row contains headers
+    skipEmptyLines: true,     // Skip empty lines
+    trim: true,              // Trim whitespace from fields
+    dynamicTyping: false,     // Keep everything as strings for consistency
+    delimiter: delimiter,     // Use specified delimiter
+  });
 
-  if (rows.length === 0) {
-    return { headers: [], rows: [], columnIndices: {} };
+  if (parseResult.errors && parseResult.errors.length > 0) {
+    // Log parsing errors but don't throw unless they're critical
+    const criticalErrors = parseResult.errors.filter(error => error.type === 'Delimiter');
+    if (criticalErrors.length > 0) {
+      throw new Error(`Critical CSV parsing errors: ${criticalErrors.map(e => e.message).join(', ')}`);
+    }
   }
 
-  // Parse headers from first row
-  const headers = parseCSVRow(rows[0], delimiter);
-  const dataRows = rows.slice(1);
+  const headers = parseResult.meta.fields || [];
+  const parsedRows = parseResult.data.map((row, index) => ({
+    ...row,
+    _rowNumber: index + 2 // Account for header row
+  }));
 
-  // Create column indices map for easy lookup
+  // Create column indices map for backward compatibility
   const columnIndices = headers.reduce((acc, header, index) => {
     acc[header] = index;
     return acc;
   }, {});
-
-  // Parse data rows
-  const parsedRows = dataRows.map((row, index) => {
-    const columns = parseCSVRow(row, delimiter);
-    const rowObject = {
-      _rowNumber: index + 2 // Account for header row
-    };
-
-    // Create an object with header keys
-    headers.forEach((header, headerIndex) => {
-      rowObject[header] = columns[headerIndex] || '';
-    });
-
-    return rowObject;
-  });
 
   return {
     headers,
@@ -58,47 +57,7 @@ export function parseCSV(csvContent, options = {}) {
   };
 }
 
-/**
- * Parse a single CSV row, handling quoted fields properly
- * @param {string} row - Single CSV row string
- * @param {string} delimiter - Field delimiter
- * @returns {Array} Array of field values
- */
-export function parseCSVRow(row, delimiter = ',') {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-  let i = 0;
 
-  while (i < row.length) {
-    const char = row[i];
-
-    if (char === '"') {
-      if (inQuotes && row[i + 1] === '"') {
-        // Handle escaped quotes
-        current += '"';
-        i += 2;
-      } else {
-        // Toggle quote state
-        inQuotes = !inQuotes;
-        i++;
-      }
-    } else if (char === delimiter && !inQuotes) {
-      // End of field
-      result.push(current.trim());
-      current = '';
-      i++;
-    } else {
-      current += char;
-      i++;
-    }
-  }
-
-  // Add the last field
-  result.push(current.trim());
-
-  return result;
-}
 
 /**
  * Group parsed CSV rows by a specific column

@@ -39,7 +39,10 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
   const processedDate = extractProcessedDate(parsedData.rows[0]);
 
   const filteredRows = applyEmailFilter(parsedData.rows, ctx);
-  const csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
+  let csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
+
+  // For troubleshooting, filter to a specific order ID
+  // csOrders = filterOrdersForDebugging(csOrders, 'CS-649354')
 
   const results = await processShopifyOrdersViaSubJobs(csOrders, processedDate, ctx);
 
@@ -111,7 +114,13 @@ function buildCsOrdersFromRows(filteredRows, totalRowsCount) {
   let csOrderIndex = -1;
   const csOrders = [];
 
-  for (const row of filteredRows) {
+  // First, filter out malformed rows where Name column contains garbled data
+  const validRows = filteredRows.filter((row) => {
+    const csOrderId = row["Name"];
+    return isValidOrderId(csOrderId);
+  });
+
+  for (const row of validRows) {
     const lineType = row["Line: Type"];
     const csOrderId = row["Name"];
 
@@ -393,4 +402,24 @@ function summarizeResults(results) {
   }
 
   console.log(''); // Add blank line at end
+}
+
+/**
+ * Validate if a string looks like a valid order ID
+ * @param {any} orderId - The potential order ID to validate
+ * @returns {boolean} - True if it looks like a valid order ID
+ */
+function isValidOrderId(orderId) {
+  if (!orderId || typeof orderId !== 'string') {
+    return false;
+  }
+
+  // Check if order ID starts with "CS-" followed by a number
+  return /^CS-\d+$/.test(orderId);
+}
+
+function filterOrdersForDebugging(csOrders, orderId) {
+  csOrders = csOrders.filter((csOrder) => csOrder.csOrderId === orderId);
+  console.log(`Filtered ${csOrders.length} CS orders to ${orderId}`);
+  return csOrders;
 }
