@@ -1,0 +1,7 @@
+{
+  "name": "Fetch Salesforce Customers",
+  "shop": "kalen-test-store",
+  "description": "Fetches customers from Salesforce using the Salesforce REST API",
+  "version": "1.0.0",
+  "trigger": "manual"
+}
