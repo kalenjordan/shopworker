@@ -87,7 +87,7 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
         };
       }
     },
-    batchSize: 15,
+    batchSize: 50,
     metadata: { processedDate, ctx },
     durableObjectState,
     env: environment,
@@ -545,7 +545,7 @@ export async function continueBatch({ state, originalJobData, durableObjectState
   const parsedData = parseCSVContent(decodedContent);
   const filteredRows = applyEmailFilter(parsedData.rows, ctx);
   let csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
-  
+
   // Apply same limit as original processing
   let limit = getLimit(ctx);
   if (limit >= 1) {
