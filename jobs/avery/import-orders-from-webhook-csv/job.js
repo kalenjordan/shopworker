@@ -69,7 +69,7 @@ export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
           env,
           shopConfig
         };
-        await sendSimplifiedEmail(batchState.processedCount, batchState.metadata.processedDate || metadata.processedDate, ctx);
+        await sendEmailSummary(batchState.processedCount, batchState.metadata.processedDate || metadata.processedDate, ctx);
       }
     }
   };
@@ -84,7 +84,7 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
     shopConfig
   };
 
-  console.log("shopconfig: ", shopConfig);
+  console.log("kj shopconfig: ", shopConfig);
 
   const decodedContent = validateAndDecodeAttachment(payload);
   const parsedData = parseCSVContent(decodedContent);
@@ -165,7 +165,7 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
 
       // Send email summary only after all batches complete and in worker environment
       if (batchNum === totalBatches && isWorkerEnvironment(env)) {
-        await sendSimplifiedEmail(completed, processedDate, ctx);
+        await sendEmailSummary(completed, processedDate, ctx);
       }
     }
   });
@@ -289,53 +289,6 @@ function categorizeRowIntoOrder(csOrder, row, lineType) {
   }
 }
 
-async function processShopifyOrdersViaSubJobs(csOrders, processedDate, ctx) {
-  let orderCounter = 0;
-  const limit = getLimit(ctx);
-  const results = [];
-
-  if (limit > 0) {
-    console.log(`Limiting processing to ${limit} orders`);
-  }
-
-  for (const csOrder of csOrders) {
-    if (limit > 0 && orderCounter >= limit) {
-      console.log(`\nReached order limit of ${limit}, stopping processing`);
-      break;
-    }
-
-    orderCounter++;
-
-    console.log(chalk.cyan(`\n${orderCounter}/${csOrders.length} Processing order ${csOrder.csOrderId}`));
-
-    try {
-      console.log(chalk.green(`  ✓ Running ${orderCounter}`));
-      const result = await runSingleOrderSubJob(csOrder, orderCounter, processedDate, ctx);
-      results.push(result);
-    } catch (error) {
-      console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
-      // Add error result to the results array
-      results.push({
-        status: 'error',
-        orderCounter: orderCounter,
-        csOrderIds: [csOrder.csOrderId],
-        customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
-        customerName: csOrder.customer_name || 'Unknown',
-        error: error.message
-      });
-    }
-  }
-
-  console.log(`\nCompleted processing ${orderCounter} Shopify orders`);
-
-  // Summarize results if running in CLI environment (results have status)
-  if (results.length > 0 && results[0] && typeof results[0].status !== 'undefined') {
-    summarizeResults(results);
-  }
-
-  return results;
-}
-
 /**
  * Run a single order processing sub job
  * Uses the RUN_SUB_JOB_DIRECTLY flag to determine execution method
@@ -396,7 +349,7 @@ function extractProcessedDate(firstRow) {
  * @param {number} orderCount - Number of processed orders
  * @param {string} processedDate - Date processed in YYYY-MM-DD format
  */
-async function sendSimplifiedEmail(orderCount, processedDate, ctx) {
+async function sendEmailSummary(orderCount, processedDate, ctx) {
   try {
     // Check if email configuration is available
     if (!ctx.shopConfig.resend_api_key || !ctx.shopConfig.email_to || !ctx.shopConfig.email_from) {
