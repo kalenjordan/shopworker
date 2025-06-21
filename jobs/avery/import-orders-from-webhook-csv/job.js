@@ -55,23 +55,34 @@ export function createProcessor({ shopify, env, shopConfig, metadata }) {
  * Create onBatchComplete callback for batch continuation
  */
 export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
-  return async (batchResults, batchNum, totalBatches, durableObjectState) => {
+  return async (batchResults, batchNum, totalBatches, durableObjectState = null) => {
     console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
 
     // Send email summary only after all batches complete and in worker environment
     if (batchNum === totalBatches && isWorkerEnvironment(env)) {
       console.log("All batches completed, sending email summary");
-      const batchState = await durableObjectState.storage.get('batch:processor:state');
-      if (batchState && batchState.metadata) {
-        // Reconstruct ctx for email sending
-        const ctx = {
-          shopify,
-          jobConfig: metadata.ctx?.jobConfig,
-          env,
-          shopConfig
-        };
-        await sendEmailSummary(batchState.processedCount, batchState.metadata.processedDate || metadata.processedDate, ctx);
+      
+      let processedCount = batchResults.length;
+      let processedDate = metadata.processedDate;
+      
+      // If we have durableObjectState, get more accurate data from batch state
+      if (durableObjectState) {
+        const batchState = await durableObjectState.storage.get('batch:processor:state');
+        if (batchState && batchState.metadata) {
+          processedCount = batchState.processedCount;
+          processedDate = batchState.metadata.processedDate || metadata.processedDate;
+        }
       }
+      
+      // Reconstruct ctx for email sending
+      const ctx = {
+        shopify,
+        jobConfig: metadata.ctx?.jobConfig,
+        env,
+        shopConfig
+      };
+      
+      await sendEmailSummary(processedCount, processedDate, ctx);
     } else {
       console.log("Not all batches completed yet");
     }
@@ -163,14 +174,7 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
         console.log(`📊 Progress: ${completed}/${total} orders processed`);
       }
     },
-    onBatchComplete: async (batchResults, batchNum, totalBatches) => {
-      console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
-
-      // Send email summary only after all batches complete and in worker environment
-      if (batchNum === totalBatches && isWorkerEnvironment(env)) {
-        await sendEmailSummary(completed, processedDate, ctx);
-      }
-    }
+    onBatchComplete: createOnBatchComplete({ shopify, env, shopConfig, metadata: { processedDate, ctx } })
   });
 
   // Summarize results if we have them (CLI environment)
