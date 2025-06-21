@@ -60,6 +60,7 @@ export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
 
     // Send email summary only after all batches complete and in worker environment
     if (batchNum === totalBatches && isWorkerEnvironment(env)) {
+      console.log("All batches completed, sending email summary");
       const batchState = await durableObjectState.storage.get('batch:processor:state');
       if (batchState && batchState.metadata) {
         // Reconstruct ctx for email sending
