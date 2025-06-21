@@ -16,6 +16,65 @@ import { processBatch, processBatchChunk } from "../../../utils/batch-processor.
 // Export flag to indicate this job supports batch processing
 export const supportsBatchProcessing = true;
 
+/**
+ * Create processor function for batch continuation
+ * This function is used by the batch processor to reconstruct the processor during alarm continuation
+ */
+export function createProcessor({ shopify: shopifyClient, env: environment, shopConfig: shop, metadata }) {
+  return async (csOrder, index, processorMetadata) => {
+    const orderCounter = index + 1;
+    console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
+
+    try {
+      // Reconstruct ctx with current environment
+      const currentCtx = {
+        shopify: shopifyClient,
+        jobConfig: processorMetadata.ctx ? processorMetadata.ctx.jobConfig : metadata.ctx?.jobConfig,
+        env: environment,
+        shopConfig: processorMetadata.ctx ? processorMetadata.ctx.shopConfig : shop
+      };
+
+      const result = await runSingleOrderSubJob(csOrder, orderCounter, processorMetadata.processedDate || metadata.processedDate, currentCtx);
+      console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
+      return result;
+    } catch (error) {
+      console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
+      return {
+        status: 'error',
+        orderCounter: orderCounter,
+        csOrderIds: [csOrder.csOrderId],
+        customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
+        customerName: csOrder.customer_name || 'Unknown',
+        error: error.message
+      };
+    }
+  };
+}
+
+/**
+ * Create onBatchComplete callback for batch continuation
+ */
+export function createOnBatchComplete({ shopify: shopifyClient, env: environment, shopConfig: shop, metadata }) {
+  return async (batchResults, batchNum, totalBatches, durableObjectState) => {
+    console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
+
+    // Send email summary only after all batches complete and in worker environment
+    if (batchNum === totalBatches && isWorkerEnvironment(environment)) {
+      const batchState = await durableObjectState.storage.get('batch:processor:state');
+      if (batchState && batchState.metadata) {
+        // Reconstruct ctx for email sending
+        const ctx = {
+          shopify: shopifyClient,
+          jobConfig: metadata.ctx?.jobConfig,
+          env: environment,
+          shopConfig: shop
+        };
+        await sendSimplifiedEmail(batchState.processedCount, batchState.metadata.processedDate || metadata.processedDate, ctx);
+      }
+    }
+  };
+}
+
 export async function process({ payload, shopify: shopifyClient, jobConfig: config, env: environment, shopConfig: shop, durableObjectState }) {
   // Create context object to pass around instead of module-level variables
   const ctx = {
@@ -88,7 +147,12 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
       }
     },
     batchSize: 50,
-    metadata: { processedDate, ctx },
+    metadata: { 
+      processedDate, 
+      ctx,
+      // Store processor factory configuration for continuation
+      processorType: 'avery-order-processor'
+    },
     durableObjectState,
     env: environment,
     onProgress: (completed, total) => {
@@ -490,89 +554,3 @@ function filterOrdersForDebugging(csOrders, orderId) {
   return csOrders;
 }
 
-/**
- * Continue batch processing from stored state (called by alarm)
- */
-export async function continueBatch({ state, originalJobData, durableObjectState, shopify: shopifyClient, env: environment, shopConfig: shop }) {
-  console.log('🔄 Continuing avery batch processing from alarm');
-
-  // Get batch state to access stored metadata
-  const batchState = await durableObjectState.storage.get('batch:processor:state');
-  if (!batchState) {
-    throw new Error('No batch processor state found');
-  }
-
-  // Reconstruct the ctx object from stored metadata and current parameters
-  const ctx = {
-    shopify: shopifyClient,
-    jobConfig: batchState.metadata.ctx ? batchState.metadata.ctx.jobConfig : state,
-    env: environment,
-    shopConfig: batchState.metadata.ctx ? batchState.metadata.ctx.shopConfig : shop
-  };
-
-  // Reconstruct the processor function
-  const processor = async (csOrder, index, metadata) => {
-    const orderCounter = index + 1;
-    console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
-
-    try {
-      // Reconstruct ctx for the processor call
-      const processorCtx = {
-        shopify: shopifyClient,
-        jobConfig: metadata.ctx ? metadata.ctx.jobConfig : state,
-        env: environment,
-        shopConfig: metadata.ctx ? metadata.ctx.shopConfig : shop
-      };
-
-      const result = await runSingleOrderSubJob(csOrder, orderCounter, metadata.processedDate, processorCtx);
-      console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
-      return result;
-    } catch (error) {
-      console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
-      return {
-        status: 'error',
-        orderCounter: orderCounter,
-        csOrderIds: [csOrder.csOrderId],
-        customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
-        customerName: csOrder.customer_name || 'Unknown',
-        error: error.message
-      };
-    }
-  };
-
-  // Re-parse the CSV data to rebuild csOrders using passed originalJobData
-  const decodedContent = validateAndDecodeAttachment(originalJobData.bodyData);
-  const parsedData = parseCSVContent(decodedContent);
-  const filteredRows = applyEmailFilter(parsedData.rows, ctx);
-  let csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
-
-  // Apply same limit as original processing
-  let limit = getLimit(ctx);
-  if (limit >= 1) {
-    csOrders = csOrders.slice(0, limit);
-  }
-
-  // Continue batch processing with rebuilt items
-  await processBatchChunk({
-    batchState,
-    items: csOrders,
-    processor,
-    durableObjectState,
-    onProgress: (completed, total) => {
-      if (completed % 10 === 0 || completed === total) {
-        console.log(`📊 Progress: ${completed}/${total} orders processed`);
-      }
-    },
-    onBatchComplete: async (batchResults, batchNum, totalBatches) => {
-      console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
-
-      // Send email summary only after all batches complete
-      if (batchNum === totalBatches && isWorkerEnvironment(environment)) {
-        const batchState = await durableObjectState.storage.get('batch:processor:state');
-        if (batchState && batchState.metadata) {
-          await sendSimplifiedEmail(batchState.processedCount, batchState.metadata.processedDate, ctx);
-        }
-      }
-    }
-  });
-}
