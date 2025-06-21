@@ -20,7 +20,7 @@ export const supportsBatchProcessing = true;
  * Create processor function for batch continuation
  * This function is used by the batch processor to reconstruct the processor during alarm continuation
  */
-export function createProcessor({ shopify: shopifyClient, env: environment, shopConfig: shop, metadata }) {
+export function createProcessor({ shopify, env, shopConfig, metadata }) {
   return async (csOrder, index, processorMetadata) => {
     const orderCounter = index + 1;
     console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
@@ -28,10 +28,10 @@ export function createProcessor({ shopify: shopifyClient, env: environment, shop
     try {
       // Reconstruct ctx with current environment
       const currentCtx = {
-        shopify: shopifyClient,
+        shopify,
         jobConfig: processorMetadata.ctx ? processorMetadata.ctx.jobConfig : metadata.ctx?.jobConfig,
-        env: environment,
-        shopConfig: processorMetadata.ctx ? processorMetadata.ctx.shopConfig : shop
+        env,
+        shopConfig: processorMetadata.ctx ? processorMetadata.ctx.shopConfig : shopConfig
       };
 
       const result = await runSingleOrderSubJob(csOrder, orderCounter, processorMetadata.processedDate || metadata.processedDate, currentCtx);
@@ -54,20 +54,20 @@ export function createProcessor({ shopify: shopifyClient, env: environment, shop
 /**
  * Create onBatchComplete callback for batch continuation
  */
-export function createOnBatchComplete({ shopify: shopifyClient, env: environment, shopConfig: shop, metadata }) {
+export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
   return async (batchResults, batchNum, totalBatches, durableObjectState) => {
     console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
 
     // Send email summary only after all batches complete and in worker environment
-    if (batchNum === totalBatches && isWorkerEnvironment(environment)) {
+    if (batchNum === totalBatches && isWorkerEnvironment(env)) {
       const batchState = await durableObjectState.storage.get('batch:processor:state');
       if (batchState && batchState.metadata) {
         // Reconstruct ctx for email sending
         const ctx = {
-          shopify: shopifyClient,
+          shopify,
           jobConfig: metadata.ctx?.jobConfig,
-          env: environment,
-          shopConfig: shop
+          env,
+          shopConfig
         };
         await sendSimplifiedEmail(batchState.processedCount, batchState.metadata.processedDate || metadata.processedDate, ctx);
       }
@@ -75,16 +75,16 @@ export function createOnBatchComplete({ shopify: shopifyClient, env: environment
   };
 }
 
-export async function process({ payload, shopify: shopifyClient, jobConfig: config, env: environment, shopConfig: shop, durableObjectState }) {
+export async function process({ payload, shopify, jobConfig, env, shopConfig, durableObjectState }) {
   // Create context object to pass around instead of module-level variables
   const ctx = {
-    shopify: shopifyClient,
-    jobConfig: config,
-    env: environment,
-    shopConfig: shop
+    shopify,
+    jobConfig,
+    env,
+    shopConfig
   };
 
-  console.log("kj job config: ", config);
+  console.log("shopconfig: ", shopConfig);
 
   const decodedContent = validateAndDecodeAttachment(payload);
   const parsedData = parseCSVContent(decodedContent);
@@ -125,10 +125,10 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
       try {
         // Reconstruct ctx with current environment (metadata.ctx may have serialized/missing env)
         const currentCtx = {
-          shopify: shopifyClient,
-          jobConfig: metadata.ctx ? metadata.ctx.jobConfig : config,
-          env: environment, // Use current environment, not serialized one
-          shopConfig: metadata.ctx ? metadata.ctx.shopConfig : shop
+          shopify,
+          jobConfig: metadata.ctx ? metadata.ctx.jobConfig : jobConfig,
+          env, // Use current environment, not serialized one
+          shopConfig: metadata.ctx ? metadata.ctx.shopConfig : shopConfig
         };
 
         const result = await runSingleOrderSubJob(csOrder, orderCounter, metadata.processedDate, currentCtx);
@@ -147,14 +147,14 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
       }
     },
     batchSize: 50,
-    metadata: { 
-      processedDate, 
+    metadata: {
+      processedDate,
       ctx,
       // Store processor factory configuration for continuation
       processorType: 'avery-order-processor'
     },
     durableObjectState,
-    env: environment,
+    env,
     onProgress: (completed, total) => {
       if (completed % 10 === 0 || completed === total) {
         console.log(`📊 Progress: ${completed}/${total} orders processed`);
@@ -164,14 +164,14 @@ export async function process({ payload, shopify: shopifyClient, jobConfig: conf
       console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
 
       // Send email summary only after all batches complete and in worker environment
-      if (batchNum === totalBatches && isWorkerEnvironment(environment)) {
+      if (batchNum === totalBatches && isWorkerEnvironment(env)) {
         await sendSimplifiedEmail(completed, processedDate, ctx);
       }
     }
   });
 
   // Summarize results if we have them (CLI environment)
-  if (results && results.length > 0 && !isWorkerEnvironment(environment)) {
+  if (results && results.length > 0 && !isWorkerEnvironment(env)) {
     summarizeResults(results);
   }
 }
@@ -553,4 +553,3 @@ function filterOrdersForDebugging(csOrders, orderId) {
   console.log(`Filtered ${csOrders.length} CS orders to ${orderId}`);
   return csOrders;
 }
-
