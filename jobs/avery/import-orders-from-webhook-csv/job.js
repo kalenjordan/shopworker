@@ -56,15 +56,15 @@ export function createProcessor({ shopify, env, shopConfig, metadata }) {
  */
 export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
   return async (batchResults, batchNum, totalBatches, durableObjectState = null) => {
-    console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
+    console.log(`✅ Batch ${batchNum}/${totalBatches} completed (In createOnBatchComplete)`);
 
     // Send email summary only after all batches complete and in worker environment
     if (batchNum === totalBatches && isWorkerEnvironment(env)) {
       console.log("All batches completed, sending email summary");
-      
+
       let processedCount = batchResults.length;
       let processedDate = metadata.processedDate;
-      
+
       // If we have durableObjectState, get more accurate data from batch state
       if (durableObjectState) {
         const batchState = await durableObjectState.storage.get('batch:processor:state');
@@ -73,7 +73,7 @@ export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
           processedDate = batchState.metadata.processedDate || metadata.processedDate;
         }
       }
-      
+
       // Reconstruct ctx for email sending
       const ctx = {
         shopify,
@@ -81,7 +81,7 @@ export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
         env,
         shopConfig
       };
-      
+
       await sendEmailSummary(processedCount, processedDate, ctx);
     } else {
       console.log("Not all batches completed yet");

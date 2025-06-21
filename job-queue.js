@@ -328,13 +328,13 @@ export class JobQueue extends DurableObject {
       // Check if job has a createProcessor function (new generic approach)
       if (jobModule.createProcessor) {
         console.log('🔄 Using generic batch continuation with createProcessor');
-        
+
         // Get the original job data
         const originalJobData = await this.getJobData(originalJob.jobId);
-        
+
         // Create Shopify client
         const shopify = this.createShopifyClient(originalJob.shopDomain, originalJob.shopConfig, originalJob.jobConfig);
-        
+
         // Create processor using job's factory
         const processor = jobModule.createProcessor({
           shopify: shopify,
@@ -351,7 +351,7 @@ export class JobQueue extends DurableObject {
         };
 
         let onBatchComplete = async (batchResults, batchNum, totalBatches) => {
-          console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
+          console.log(`✅ Batch ${batchNum}/${totalBatches} completed (In alarm)`);
         };
 
         // Use job's batch complete callback if available
@@ -362,14 +362,14 @@ export class JobQueue extends DurableObject {
             getAlarm: () => this.ctx.storage.getAlarm(),
             deleteAlarm: () => this.ctx.storage.deleteAlarm()
           };
-          
+
           onBatchComplete = jobModule.createOnBatchComplete({
             shopify: shopify,
             env: this.env,
             shopConfig: originalJob.shopConfig,
             metadata: batchState.metadata
           });
-          
+
           // Wrap to pass durableObjectState
           const originalOnBatchComplete = onBatchComplete;
           onBatchComplete = async (batchResults, batchNum, totalBatches) => {
@@ -379,7 +379,7 @@ export class JobQueue extends DurableObject {
 
         // Use generic batch processor continuation
         const { continueBatchProcessing } = await import('./utils/batch-processor.js');
-        
+
         await continueBatchProcessing({
           processor,
           durableObjectState: {
@@ -394,10 +394,10 @@ export class JobQueue extends DurableObject {
         });
       } else if (jobModule.continueBatch) {
         console.log('🔄 Using legacy job-specific continueBatch');
-        
+
         // Get the original job data to pass to continueBatch
         const originalJobData = await this.getJobData(originalJob.jobId);
-        
+
         // Call the job-specific continueBatch function (legacy)
         await jobModule.continueBatch({
           state: batchState,
