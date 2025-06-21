@@ -72,6 +72,8 @@ export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
         };
         await sendEmailSummary(batchState.processedCount, batchState.metadata.processedDate || metadata.processedDate, ctx);
       }
+    } else {
+      console.log("Not all batches completed yet");
     }
   };
 }
