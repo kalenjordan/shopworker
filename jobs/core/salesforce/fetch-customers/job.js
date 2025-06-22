@@ -1,4 +1,4 @@
-import { fetchSalesforceCustomers } from "../../../connectors/salesforce.js";
+import { fetchSalesforceCustomers } from "../../../../connectors/salesforce.js";
 
 /**
  * Fetch customers from Salesforce and display them

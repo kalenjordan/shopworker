@@ -1,4 +1,4 @@
-import { createZendeskTicket } from '../../../connectors/zendesk.js';
+import { createZendeskTicket } from '../../../../connectors/zendesk.js';
 
 /**
  * Create a Zendesk ticket when a low-rated review is received
