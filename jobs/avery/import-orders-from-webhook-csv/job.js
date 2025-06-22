@@ -7,7 +7,7 @@
 
 import { parseCSV, saveFile } from "../../../connectors/csv.js";
 import chalk from "chalk";
-import { runJob, isWorkerEnvironment } from "../../../utils/env.js";
+import { runJob, isWorkerEnvironment, isCLIEnvironment } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
 import { iterateInBatches } from "../../../utils/batch-processor.js";
@@ -99,30 +99,34 @@ export async function onBatchItem({ ctx, item: csOrder, index, allItems }) {
  * Handle batch completion callback
  * Called by batch processor with context object
  */
-export async function onBatchComplete({ ctx, batchResults, batchNum, totalBatches, durableObjectState }) {
+export async function onBatchComplete({ ctx, batchResults, batchNum, totalBatches, durableObjectState, allItems }) {
   console.log(`✅ Batch ${batchNum}/${totalBatches} completed (onBatchComplete)`);
+  if (isCLIEnvironment(ctx.env)) {
+    console.log("This is a CLI environment, skipping email summary");
+    return;
+  }
 
   // Send email summary only after all batches complete and in worker environment
-  if (batchNum === totalBatches && isWorkerEnvironment(ctx.env)) {
-    console.log("All batches completed, sending email summary");
-
-    let processedCount = batchResults.length;
-
-    // If we have durableObjectState, get more accurate data from batch state
-    if (durableObjectState) {
-      const iterationState = await durableObjectState.storage.get('batch:processor:state');
-      if (iterationState) {
-        processedCount = iterationState.processedCount;
-      }
-    }
-
-    // Get processed date from the results (we'll compute it when we need it)
-    const processedDate = format(new Date(), 'yyyy-MM-dd'); // Default to current date for email
-
-    await sendEmailSummary(processedCount, processedDate, ctx);
-  } else {
-    console.log(`Processed ${batchResults.length} items in this batch`);
+  if (batchNum < totalBatches) {
+    console.log(`Processed ${batchResults.length} items in this batch, not sending email summary`);
+    return;
   }
+
+  console.log("All batches completed, sending email summary");
+
+  let processedCount = batchResults.length;
+
+  // If we have durableObjectState, get more accurate data from batch state
+  if (durableObjectState) {
+    const iterationState = await durableObjectState.storage.get('batch:processor:state');
+    if (iterationState) {
+      processedCount = iterationState.processedCount;
+    }
+  }
+
+  const orderTagDate = getOrderTagDate(allItems);
+
+  await sendEmailSummary(processedCount, orderTagDate, ctx);
 }
 
 function validateAndDecodeAttachment(payload) {

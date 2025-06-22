@@ -14,9 +14,9 @@ import { format } from "date-fns";
 /**
  * Send simplified email summary
  * @param {number} orderCount - Number of processed orders
- * @param {string} processedDate - Date processed in YYYY-MM-DD format
+ * @param {string} orderTagDate - Date processed in YYYY-MM-DD format
  */
-export async function sendEmailSummary(orderCount, processedDate, ctx) {
+export async function sendEmailSummary(orderCount, orderTagDate, ctx) {
   try {
     // Check if email configuration is available
     if (!ctx.shopConfig.resend_api_key || !ctx.shopConfig.email_to || !ctx.shopConfig.email_from) {
@@ -25,10 +25,10 @@ export async function sendEmailSummary(orderCount, processedDate, ctx) {
     }
 
     // Create email subject
-    const subject = `Avery Order Import Summary - ${orderCount} orders processed (${processedDate})`;
+    const subject = `Avery Order Import Summary - ${orderCount} orders processed (${orderTagDate})`;
 
     // Create HTML content
-    const htmlContent = createHtmlSummary(orderCount, processedDate);
+    const htmlContent = createHtmlSummary(orderCount, orderTagDate);
 
     // Prepare email options
     const emailOptions = {
@@ -58,7 +58,7 @@ export async function sendEmailSummary(orderCount, processedDate, ctx) {
 /**
  * Create HTML email content
  */
-function createHtmlSummary(orderCount, processedDate) {
+function createHtmlSummary(orderCount, orderTagDate) {
   let html = `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
     <h2 style="color: #1f2937; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">
@@ -66,7 +66,7 @@ function createHtmlSummary(orderCount, processedDate) {
     </h2>
 
     <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;">
-      <p style="margin: 0; color: #6b7280; font-size: 14px;">Processed at: ${processedDate} CT</p>
+      <p style="margin: 0; color: #6b7280; font-size: 14px;">Date: ${orderTagDate} CT</p>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 20px 0;">
@@ -84,7 +84,7 @@ function createHtmlSummary(orderCount, processedDate) {
     </div>`;
 
   // Create Shopify admin URL with tag filter
-  const tag = `cs-${processedDate}`;
+  const tag = `cs-${orderTagDate}`;
   const encodedTag = encodeURIComponent(tag);
   const shopifyUrl = `https://admin.shopify.com/store/835a20-6c/orders?start=MQ%3D%3D&tag=${encodedTag}`;
 

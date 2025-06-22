@@ -21,7 +21,7 @@ import chalk from "chalk";
  * @param {Object} options.ctx - Context object containing: { shopify, jobConfig, env, shopConfig }
  * @param {Object} [options.durableObjectState] - Durable object state for worker batching
  * @param {Function} [options.onProgress] - Progress callback: (completed, total, results) => void
- * @param {Function} [options.onBatchComplete] - Batch completion callback: (batchResults, batchNumber, totalBatches) => void
+ * @param {Function} [options.onBatchComplete] - Batch completion callback: ({ ctx, batchResults, batchNum, totalBatches, durableObjectState, allItems }) => void
  * @returns {Promise<Array>} Array of processing results
  */
 export async function iterateInBatches({
@@ -126,7 +126,8 @@ async function processSequentially({ items, onBatchItem, ctx, onProgress, onBatc
       batchResults: results,
       batchNum: 1,
       totalBatches: 1,
-      durableObjectState: null
+      durableObjectState: null,
+      allItems: items
     });
   }
 
@@ -298,7 +299,8 @@ export async function processBatch({ ctx, iterationState, items, onBatchItem, du
       batchResults,
       batchNum,
       totalBatches,
-      durableObjectState
+      durableObjectState,
+      allItems: items
     });
   }
 
