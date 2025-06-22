@@ -306,14 +306,14 @@ export class JobQueue extends DurableObject {
     console.log('🔔 Alarm triggered for batch processing');
 
     // Check for new batch processor state
-    const batchState = await this.ctx.storage.get('batch:processor:state');
-    if (!batchState) {
+    const iterationState = await this.ctx.storage.get('batch:processor:state');
+    if (!iterationState) {
       console.log('No batch processor state found, alarm may be stale');
       return;
     }
 
-    // Log the batch state for debugging
-    console.log('📊 Batch state:', JSON.stringify(batchState, null, 2));
+    // Log the iteration state for debugging
+    console.log('📊 Iteration state:', JSON.stringify(iterationState, null, 2));
 
     try {
       // Get the original job data to determine which job module to use
@@ -325,102 +325,77 @@ export class JobQueue extends DurableObject {
       // Dynamically import the job module
       const jobModule = await import(`./jobs/${originalJob.jobPath}/job.js`);
 
-      // Check if job has a createProcessor function (new generic approach)
-      if (jobModule.createProcessor) {
-        console.log('🔄 Using generic batch continuation with createProcessor');
-
-        // Get the original job data
-        const originalJobData = await this.getJobData(originalJob.jobId);
-
-        // Create Shopify client
-        const shopify = this.createShopifyClient(originalJob.shopDomain, originalJob.shopConfig, originalJob.jobConfig);
-
-        // Create processor using job's factory
-        const processor = jobModule.createProcessor({
-          shopify: shopify,
-          env: this.env,
-          shopConfig: originalJob.shopConfig,
-          metadata: batchState.metadata
-        });
-
-        // Create callbacks if job provides factories
-        const onProgress = (completed, total) => {
-          if (completed % 10 === 0 || completed === total) {
-            console.log(`📊 Progress: ${completed}/${total} items processed`);
-          }
-        };
-
-        let onBatchComplete = async (batchResults, batchNum, totalBatches) => {
-          console.log(`✅ Batch ${batchNum}/${totalBatches} completed (In alarm)`);
-        };
-
-        // Use job's batch complete callback if available
-        if (jobModule.createOnBatchComplete) {
-          const durableObjectState = {
-            storage: this.ctx.storage,
-            setAlarm: (date) => this.ctx.storage.setAlarm(date),
-            getAlarm: () => this.ctx.storage.getAlarm(),
-            deleteAlarm: () => this.ctx.storage.deleteAlarm()
-          };
-
-          onBatchComplete = jobModule.createOnBatchComplete({
-            shopify: shopify,
-            env: this.env,
-            shopConfig: originalJob.shopConfig,
-            metadata: batchState.metadata
-          });
-
-          // Wrap to pass durableObjectState
-          const originalOnBatchComplete = onBatchComplete;
-          onBatchComplete = async (batchResults, batchNum, totalBatches) => {
-            await originalOnBatchComplete(batchResults, batchNum, totalBatches, durableObjectState);
-          };
-        }
-
-        // Use generic batch processor continuation
-        const { continueBatchProcessing } = await import('./utils/batch-processor.js');
-
-        await continueBatchProcessing({
-          processor,
-          durableObjectState: {
-            storage: this.ctx.storage,
-            setAlarm: (date) => this.ctx.storage.setAlarm(date),
-            getAlarm: () => this.ctx.storage.getAlarm(),
-            deleteAlarm: () => this.ctx.storage.deleteAlarm()
-          },
-          env: this.env,
-          onProgress,
-          onBatchComplete
-        });
-      } else if (jobModule.continueBatch) {
-        console.log('🔄 Using legacy job-specific continueBatch');
-
-        // Get the original job data to pass to continueBatch
-        const originalJobData = await this.getJobData(originalJob.jobId);
-
-        // Call the job-specific continueBatch function (legacy)
-        await jobModule.continueBatch({
-          state: batchState,
-          originalJobData: originalJobData,
-          durableObjectState: {
-            storage: this.ctx.storage,
-            setAlarm: (date) => this.ctx.storage.setAlarm(date),
-            getAlarm: () => this.ctx.storage.getAlarm(),
-            deleteAlarm: () => this.ctx.storage.deleteAlarm()
-          },
-          shopify: this.createShopifyClient(originalJob.shopDomain, originalJob.shopConfig, originalJob.jobConfig),
-          env: this.env,
-          shopConfig: originalJob.shopConfig
-        });
-      } else {
-        throw new Error(`Job ${originalJob.jobPath} does not export a createProcessor or continueBatch function`);
+      // Check if job has a onBatchItem function
+      if (!jobModule.onBatchItem) {
+        throw new Error(`Job ${originalJob.jobPath} does not export a onBatchItem function`);
       }
+
+      console.log('🔄 Using batch continuation with onBatchItem');
+
+      // Create Shopify client
+      const shopify = this.createShopifyClient(originalJob.shopDomain, originalJob.shopConfig, originalJob.jobConfig);
+
+      // Create complete context object for continuation
+      const ctx = {
+        shopify: shopify,
+        jobConfig: originalJob.jobConfig,
+        env: this.env,
+        shopConfig: originalJob.shopConfig
+      };
+
+      // Create processor using job's factory
+      const onBatchItem = jobModule.onBatchItem(ctx);
+
+      // Create callbacks if job provides factories
+      const onProgress = (completed, total) => {
+        if (completed % 10 === 0 || completed === total) {
+          console.log(`📊 Progress: ${completed}/${total} items processed`);
+        }
+      };
+
+      let onBatchComplete = async (batchResults, batchNum, totalBatches) => {
+        console.log(`✅ Batch ${batchNum}/${totalBatches} completed (In alarm)`);
+      };
+
+      // Use job's batch complete callback if available
+      if (jobModule.createOnBatchComplete) {
+        const durableObjectState = {
+          storage: this.ctx.storage,
+          setAlarm: (date) => this.ctx.storage.setAlarm(date),
+          getAlarm: () => this.ctx.storage.getAlarm(),
+          deleteAlarm: () => this.ctx.storage.deleteAlarm()
+        };
+
+        onBatchComplete = jobModule.createOnBatchComplete(ctx);
+
+        // Wrap to pass durableObjectState
+        const originalOnBatchComplete = onBatchComplete;
+        onBatchComplete = async (batchResults, batchNum, totalBatches) => {
+          await originalOnBatchComplete(batchResults, batchNum, totalBatches, durableObjectState);
+        };
+      }
+
+      // Use generic batch processor continuation
+      const { continueBatchProcessing } = await import('./utils/batch-processor.js');
+
+      await continueBatchProcessing({
+        onBatchItem,
+        ctx,
+        durableObjectState: {
+          storage: this.ctx.storage,
+          setAlarm: (date) => this.ctx.storage.setAlarm(date),
+          getAlarm: () => this.ctx.storage.getAlarm(),
+          deleteAlarm: () => this.ctx.storage.deleteAlarm()
+        },
+        onProgress,
+        onBatchComplete
+      });
 
     } catch (error) {
       console.error('❌ Error in batch processing alarm:', error);
       // Mark batch as failed
       await this.ctx.storage.put('batch:processor:state', {
-        ...batchState,
+        ...iterationState,
         status: 'failed',
         error: error.message,
         updatedAt: new Date().toISOString()

@@ -11,30 +11,51 @@ import chalk from "chalk";
 import { runJob, isWorkerEnvironment } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
-import { processBatch, processBatchChunk } from "../../../utils/batch-processor.js";
+import { iterateInBatches } from "../../../utils/batch-processor.js";
 
 // Export flag to indicate this job supports batch processing
 export const supportsBatchProcessing = true;
 
 /**
+ * Helper function to get processed date from first CS order
+ * @param {Array} csOrders - Array of CS orders
+ * @returns {string} Date formatted as YYYY-MM-DD
+ */
+function getProcessedDate(csOrders) {
+  if (!csOrders || csOrders.length === 0) {
+    return format(new Date(), 'yyyy-MM-dd');
+  }
+
+  const firstOrder = csOrders[0];
+  const firstLine = firstOrder.lines[0];
+  if (!firstLine) {
+    return format(new Date(), 'yyyy-MM-dd');
+  }
+
+  const processedAt = firstLine["Processed At"];
+  if (!processedAt) {
+    console.log("No 'Processed At' column found, using current date");
+    return format(new Date(), 'yyyy-MM-dd');
+  }
+
+  // Parse the date and format as YYYY-MM-DD
+  const date = parseISO(processedAt);
+  return format(date, 'yyyy-MM-dd');
+}
+
+/**
  * Create processor function for batch continuation
  * This function is used by the batch processor to reconstruct the processor during alarm continuation
  */
-export function createProcessor({ shopify, env, shopConfig, metadata }) {
-  return async (csOrder, index, processorMetadata) => {
+export function onBatchItem(ctx) {
+  return async (csOrder, index, currentCtx) => {
     const orderCounter = index + 1;
     console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
 
     try {
-      // Reconstruct ctx with current environment
-      const currentCtx = {
-        shopify,
-        jobConfig: processorMetadata.ctx ? processorMetadata.ctx.jobConfig : metadata.ctx?.jobConfig,
-        env,
-        shopConfig: processorMetadata.ctx ? processorMetadata.ctx.shopConfig : shopConfig
-      };
-
-      const result = await runSingleOrderSubJob(csOrder, orderCounter, processorMetadata.processedDate || metadata.processedDate, currentCtx);
+      // Get processed date from the current batch of orders
+      const processedDate = getProcessedDate([csOrder]);
+      const result = await runSingleOrderSubJob(csOrder, orderCounter, processedDate, currentCtx);
       console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
       return result;
     } catch (error) {
@@ -54,33 +75,26 @@ export function createProcessor({ shopify, env, shopConfig, metadata }) {
 /**
  * Create onBatchComplete callback for batch continuation
  */
-export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
+export function createOnBatchComplete(ctx) {
   return async (batchResults, batchNum, totalBatches, durableObjectState = null) => {
     console.log(`✅ Batch ${batchNum}/${totalBatches} completed (In createOnBatchComplete)`);
 
     // Send email summary only after all batches complete and in worker environment
-    if (batchNum === totalBatches && isWorkerEnvironment(env)) {
+    if (batchNum === totalBatches && isWorkerEnvironment(ctx.env)) {
       console.log("All batches completed, sending email summary");
 
       let processedCount = batchResults.length;
-      let processedDate = metadata.processedDate;
 
       // If we have durableObjectState, get more accurate data from batch state
       if (durableObjectState) {
-        const batchState = await durableObjectState.storage.get('batch:processor:state');
-        if (batchState && batchState.metadata) {
-          processedCount = batchState.processedCount;
-          processedDate = batchState.metadata.processedDate || metadata.processedDate;
+        const iterationState = await durableObjectState.storage.get('batch:processor:state');
+        if (iterationState) {
+          processedCount = iterationState.processedCount;
         }
       }
 
-      // Reconstruct ctx for email sending
-      const ctx = {
-        shopify,
-        jobConfig: metadata.ctx?.jobConfig,
-        env,
-        shopConfig
-      };
+      // Get processed date from the results (we'll compute it when we need it)
+      const processedDate = format(new Date(), 'yyyy-MM-dd'); // Default to current date for email
 
       await sendEmailSummary(processedCount, processedDate, ctx);
     } else {
@@ -111,9 +125,6 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
     return;
   }
 
-  // Extract processed date from first row for email link and tagging
-  const processedDate = extractProcessedDate(parsedData.rows[0]);
-
   const filteredRows = applyEmailFilter(parsedData.rows, ctx);
   let csOrders = buildCsOrdersFromRows(filteredRows, parsedData.rows.length);
 
@@ -127,51 +138,18 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
   // csOrders = filterOrdersForDebugging(csOrders, 'CS-649354')
 
   // Process orders using the batch processor abstraction
-  const results = await processBatch({
+  const results = await iterateInBatches({
     items: csOrders,
-    processor: async (csOrder, index, metadata) => {
-      const orderCounter = index + 1;
-      console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
-
-      try {
-        // Reconstruct ctx with current environment (metadata.ctx may have serialized/missing env)
-        const currentCtx = {
-          shopify,
-          jobConfig: metadata.ctx ? metadata.ctx.jobConfig : jobConfig,
-          env, // Use current environment, not serialized one
-          shopConfig: metadata.ctx ? metadata.ctx.shopConfig : shopConfig
-        };
-
-        const result = await runSingleOrderSubJob(csOrder, orderCounter, metadata.processedDate, currentCtx);
-        console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
-        return result;
-      } catch (error) {
-        console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
-        return {
-          status: 'error',
-          orderCounter: orderCounter,
-          csOrderIds: [csOrder.csOrderId],
-          customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
-          customerName: csOrder.customer_name || 'Unknown',
-          error: error.message
-        };
-      }
-    },
+    onBatchItem: onBatchItem(ctx),
     batchSize: 50,
-    metadata: {
-      processedDate,
-      ctx,
-      // Store processor factory configuration for continuation
-      processorType: 'avery-order-processor'
-    },
+    ctx,
     durableObjectState,
-    env,
     onProgress: (completed, total) => {
       if (completed % 10 === 0 || completed === total) {
         console.log(`📊 Progress: ${completed}/${total} orders processed`);
       }
     },
-    onBatchComplete: createOnBatchComplete({ shopify, env, shopConfig, metadata: { processedDate, ctx } })
+    onBatchComplete: createOnBatchComplete(ctx)
   });
 
   // Summarize results if we have them (CLI environment)
@@ -324,28 +302,6 @@ function getLimit(ctx) {
 // Helper function to get the filter email from job config
 function getFilterEmail(ctx) {
   return ctx.jobConfig.test.filterEmail;
-}
-
-/**
- * Extract and format the processed date from the first CSV row
- * @param {Object} firstRow - First row of CSV data
- * @returns {string} Date formatted as YYYY-MM-DD
- */
-function extractProcessedDate(firstRow) {
-  try {
-    const processedAt = firstRow["Processed At"];
-    if (!processedAt) {
-      console.log("No 'Processed At' column found, using current date");
-      return format(new Date(), 'yyyy-MM-dd');
-    }
-
-    // Parse the date and format as YYYY-MM-DD
-    const date = parseISO(processedAt);
-    return format(date, 'yyyy-MM-dd');
-  } catch (error) {
-    console.log(`Error parsing processed date: ${error.message}, using current date`);
-    return format(new Date(), 'yyyy-MM-dd');
-  }
 }
 
 /**
