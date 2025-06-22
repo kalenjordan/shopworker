@@ -50,7 +50,7 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
   // Process orders using the batch processor abstraction
   const results = await iterateInBatches({
     items: csOrders,
-    batchSize: 5,
+    batchSize: 50,
     ctx,
     durableObjectState,
     onBatchItem: onBatchItem,
