@@ -8,33 +8,33 @@
  * batch continuation, eliminating the need for job-specific continueBatch methods.
  */
 
-import { isWorkerEnvironment } from './env.js';
-import chalk from 'chalk';
+import { isWorkerEnvironment } from "./env.js";
+import chalk from "chalk";
 
 /**
  * Serialize metadata to make it safe for durable object storage
  * Removes non-serializable objects like functions and complex objects
  */
 function serializeMetadata(metadata) {
-  if (!metadata || typeof metadata !== 'object') {
+  if (!metadata || typeof metadata !== "object") {
     return metadata;
   }
 
   const serialized = {};
 
   for (const [key, value] of Object.entries(metadata)) {
-    if (key === 'ctx') {
+    if (key === "ctx") {
       // Extract only serializable parts of the context
       serialized[key] = {
         jobConfig: value.jobConfig,
         shopConfig: value.shopConfig,
         // Don't store shopify client or env - they're not serializable
       };
-    } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+    } else if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null) {
       serialized[key] = value;
     } else if (Array.isArray(value)) {
       serialized[key] = value;
-    } else if (typeof value === 'object' && value !== null) {
+    } else if (typeof value === "object" && value !== null) {
       // Try to serialize object, but skip if it contains functions
       try {
         JSON.stringify(value);
@@ -70,20 +70,20 @@ export async function processBatch({
   durableObjectState = null,
   onProgress = null,
   onBatchComplete = null,
-  env = null
+  env = null,
 }) {
   if (!items || !Array.isArray(items)) {
-    throw new Error('Items must be an array');
+    throw new Error("Items must be an array");
   }
 
-  if (typeof processor !== 'function') {
-    throw new Error('Processor must be a function');
+  if (typeof processor !== "function") {
+    throw new Error("Processor must be a function");
   }
 
   const totalItems = items.length;
 
   if (totalItems === 0) {
-    console.log('No items to process');
+    console.log("No items to process");
     return [];
   }
 
@@ -101,7 +101,7 @@ export async function processBatch({
       durableObjectState,
       onProgress,
       onBatchComplete,
-      env
+      env,
     });
   } else {
     console.log(`📋 Processing ${totalItems} items sequentially`);
@@ -110,7 +110,7 @@ export async function processBatch({
       processor,
       metadata,
       onProgress,
-      onBatchComplete
+      onBatchComplete,
     });
   }
 }
@@ -118,13 +118,7 @@ export async function processBatch({
 /**
  * Process items sequentially (CLI mode or small batches)
  */
-async function processSequentially({
-  items,
-  processor,
-  metadata,
-  onProgress,
-  onBatchComplete
-}) {
+async function processSequentially({ items, processor, metadata, onProgress, onBatchComplete }) {
   const results = [];
   const totalItems = items.length;
 
@@ -141,9 +135,9 @@ async function processSequentially({
     } catch (error) {
       console.error(chalk.red(`  ✗ Item ${itemIndex} failed: ${error.message}`));
       results.push({
-        status: 'error',
+        status: "error",
         index: i,
-        error: error.message
+        error: error.message,
       });
     }
 
@@ -165,16 +159,7 @@ async function processSequentially({
 /**
  * Start batch processing in worker environment
  */
-async function startBatchProcessing({
-  items,
-  processor,
-  batchSize,
-  metadata,
-  durableObjectState,
-  onProgress,
-  onBatchComplete,
-  env
-}) {
+async function startBatchProcessing({ items, processor, batchSize, metadata, durableObjectState, onProgress, onBatchComplete, env }) {
   const totalItems = items.length;
   const totalBatches = Math.ceil(totalItems / batchSize);
 
@@ -188,13 +173,13 @@ async function startBatchProcessing({
     console.log(`📦 Storing ${totalItems} items in R2 with key: ${itemsKey}`);
     await env.R2_BUCKET.put(itemsKey, itemsData, {
       httpMetadata: {
-        contentType: 'application/json',
+        contentType: "application/json",
       },
       customMetadata: {
         timestamp: new Date().toISOString(),
         totalItems: totalItems.toString(),
-        batchSize: batchSize.toString()
-      }
+        batchSize: batchSize.toString(),
+      },
     });
   }
 
@@ -206,23 +191,23 @@ async function startBatchProcessing({
     totalItems: totalItems,
     processedCount: 0,
     resultCounts: { success: 0, error: 0 },
-    status: 'processing',
+    status: "processing",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     itemsKey: itemsKey, // Store R2 key for items retrieval
     // Store processor info for debugging (but not the actual function)
-    processorName: processor.name || 'anonymous',
+    processorName: processor.name || "anonymous",
     hasOnProgress: onProgress !== null,
     hasOnBatchComplete: onBatchComplete !== null,
     // Store serializable processor configuration for reconstruction
     processorConfig: {
       // This can be used by jobs to store configuration needed to reconstruct processor
       // For now, just store basic info - jobs can extend this via metadata
-      type: 'generic'
-    }
+      type: "generic",
+    },
   };
 
-  await durableObjectState.storage.put('batch:processor:state', batchState);
+  await durableObjectState.storage.put("batch:processor:state", batchState);
 
   // Process first batch immediately
   return await processBatchChunk({
@@ -232,22 +217,14 @@ async function startBatchProcessing({
     durableObjectState,
     onProgress,
     onBatchComplete,
-    env
+    env,
   });
 }
 
 /**
  * Process a single batch chunk
  */
-export async function processBatchChunk({
-  batchState,
-  items,
-  processor,
-  durableObjectState,
-  onProgress,
-  onBatchComplete,
-  env
-}) {
+export async function processBatchChunk({ batchState, items, processor, durableObjectState, onProgress, onBatchComplete, env }) {
   const { cursor, batchSize, metadata } = batchState;
   const currentBatch = items.slice(cursor, cursor + batchSize);
   const batchNum = Math.floor(cursor / batchSize) + 1;
@@ -258,10 +235,10 @@ export async function processBatchChunk({
     console.log(`⚠️ Empty batch detected at cursor ${cursor}. Marking batch processing as complete.`);
 
     // Mark as completed
-    await durableObjectState.storage.put('batch:processor:state', {
+    await durableObjectState.storage.put("batch:processor:state", {
       ...batchState,
-      status: 'completed',
-      completedAt: new Date().toISOString()
+      status: "completed",
+      completedAt: new Date().toISOString(),
     });
 
     // Clean up R2 items
@@ -300,17 +277,17 @@ export async function processBatchChunk({
     } catch (error) {
       console.error(chalk.red(`  ✗ Item ${itemCounter} failed: ${error.message}`));
       batchResults.push({
-        status: 'error',
+        status: "error",
         index: globalIndex,
-        error: error.message
+        error: error.message,
       });
     }
   }
 
   // Update batch state
   const newCursor = cursor + currentBatch.length;
-  const successCount = batchResults.filter(r => r && r.status !== 'error').length;
-  const errorCount = batchResults.filter(r => r && r.status === 'error').length;
+  const successCount = batchResults.filter((r) => r && r.status !== "error").length;
+  const errorCount = batchResults.filter((r) => r && r.status === "error").length;
 
   const updatedBatchState = {
     ...batchState,
@@ -318,12 +295,12 @@ export async function processBatchChunk({
     processedCount: batchState.processedCount + currentBatch.length,
     resultCounts: {
       success: batchState.resultCounts.success + successCount,
-      error: batchState.resultCounts.error + errorCount
+      error: batchState.resultCounts.error + errorCount,
     },
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
 
-  await durableObjectState.storage.put('batch:processor:state', updatedBatchState);
+  await durableObjectState.storage.put("batch:processor:state", updatedBatchState);
 
   // Call progress callback
   if (onProgress) {
@@ -336,7 +313,7 @@ export async function processBatchChunk({
   }
 
   // Check if we're done
-  if (newCursor >= batchState.totalItems ) {
+  if (newCursor >= batchState.totalItems) {
     console.log(`✅ Batch processing complete: ${updatedBatchState.processedCount}/${batchState.totalItems} items processed`);
 
     // Clean up R2 items
@@ -350,10 +327,10 @@ export async function processBatchChunk({
     }
 
     // Mark as completed
-    await durableObjectState.storage.put('batch:processor:state', {
+    await durableObjectState.storage.put("batch:processor:state", {
       ...updatedBatchState,
-      status: 'completed',
-      completedAt: new Date().toISOString()
+      status: "completed",
+      completedAt: new Date().toISOString(),
     });
 
     // Clean up alarm
@@ -375,18 +352,12 @@ export async function processBatchChunk({
  * Continue batch processing from stored state (called by alarm)
  * This function retrieves items from R2 and continues processing
  */
-export async function continueBatchProcessing({
-  processor,
-  durableObjectState,
-  onProgress = null,
-  onBatchComplete = null,
-  env
-}) {
-  console.log('🔄 Continuing batch processing from alarm');
+export async function continueBatchProcessing({ processor, durableObjectState, onProgress = null, onBatchComplete = null, env }) {
+  console.log("🔄 Continuing batch processing from alarm");
 
-  const batchState = await durableObjectState.storage.get('batch:processor:state');
+  const batchState = await durableObjectState.storage.get("batch:processor:state");
   if (!batchState) {
-    throw new Error('No batch processor state found');
+    throw new Error("No batch processor state found");
   }
 
   console.log(`📊 Resuming batch processing from cursor ${batchState.cursor}`);
@@ -394,7 +365,7 @@ export async function continueBatchProcessing({
   try {
     // Retrieve items from R2 using stored key
     if (!batchState.itemsKey || !env || !env.R2_BUCKET) {
-      throw new Error('Missing items key or R2 bucket for batch continuation');
+      throw new Error("Missing items key or R2 bucket for batch continuation");
     }
 
     console.log(`📦 Retrieving items from R2 with key: ${batchState.itemsKey}`);
@@ -417,17 +388,17 @@ export async function continueBatchProcessing({
       durableObjectState,
       onProgress,
       onBatchComplete,
-      env
+      env,
     });
   } catch (error) {
-    console.error('❌ Batch processing error:', error);
+    console.error("❌ Batch processing error:", error);
 
     // Update batch state with error
-    await durableObjectState.storage.put('batch:processor:state', {
+    await durableObjectState.storage.put("batch:processor:state", {
       ...batchState,
-      status: 'failed',
+      status: "failed",
       error: error.message,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     });
 
     throw error;

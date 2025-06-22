@@ -90,15 +90,12 @@ export function createOnBatchComplete({ shopify, env, shopConfig, metadata }) {
 }
 
 export async function process({ payload, shopify, jobConfig, env, shopConfig, durableObjectState }) {
-  // Create context object to pass around instead of module-level variables
   const ctx = {
     shopify,
     jobConfig,
     env,
     shopConfig
   };
-
-  console.log("kj shopconfig: ", shopConfig);
 
   const decodedContent = validateAndDecodeAttachment(payload);
   const parsedData = parseCSVContent(decodedContent);
