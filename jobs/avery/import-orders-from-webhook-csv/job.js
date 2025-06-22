@@ -7,7 +7,7 @@
 
 import { parseCSV, saveFile } from "../../../connectors/csv.js";
 import chalk from "chalk";
-import { runJob, isWorkerEnvironment, isCLIEnvironment } from "../../../utils/env.js";
+import { runJob, isWorkerEnvironment, isCliEnvironment } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
 import { iterateInBatches } from "../../../utils/batch-processor.js";
@@ -101,7 +101,7 @@ export async function onBatchItem({ ctx, item: csOrder, index, allItems }) {
  */
 export async function onBatchComplete({ ctx, batchResults, batchNum, totalBatches, durableObjectState, allItems }) {
   console.log(`✅ Batch ${batchNum}/${totalBatches} completed (onBatchComplete)`);
-  if (isCLIEnvironment(ctx.env)) {
+  if (isCliEnvironment(ctx.env)) {
     console.log("This is a CLI environment, skipping email summary");
     return;
   }
