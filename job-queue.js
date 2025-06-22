@@ -315,28 +315,49 @@ export class JobQueue extends DurableObject {
       return;
     }
 
+    // Check if we have the job ID in the state
+    if (!iterationState.jobId) {
+      console.log('No job ID found in batch state, alarm may be from old format');
+      return;
+    }
+
     // Log the iteration state for debugging
     console.log('📊 Iteration state:', JSON.stringify(iterationState, null, 2));
 
     try {
-      // Get the original job data to determine which job module to use
-      const originalJob = await this.getActiveJob();
-      if (!originalJob) {
-        throw new Error('No active job found for batch processing continuation');
+      // Get the original job data using the stored job ID
+      const jobData = await this.getJobData(iterationState.jobId);
+      if (!jobData) {
+        throw new Error(`Job data not found for job ID: ${iterationState.jobId}`);
       }
 
       // Dynamically import the job module
-      const jobModule = await import(`./jobs/${originalJob.jobPath}/job.js`);
+      const jobModule = await import(`./jobs/${jobData.jobPath}/job.js`);
 
       // Check if job has a onBatchItem function
       if (!jobModule.onBatchItem) {
-        throw new Error(`Job ${originalJob.jobPath} does not export a onBatchItem function`);
+        throw new Error(`Job ${jobData.jobPath} does not export a onBatchItem function`);
       }
 
       console.log('🔄 Using batch continuation with onBatchItem');
 
+      // Load job config
+      const jobConfigModule = await import(`./jobs/${jobData.jobPath}/config.json`);
+      let jobConfig = jobConfigModule.default;
+
+      // Check for config overrides in the payload
+      if (jobData.bodyData._configOverrides) {
+        jobConfig = {
+          ...jobConfig,
+          test: {
+            ...jobConfig.test,
+            ...jobData.bodyData._configOverrides
+          }
+        };
+      }
+
       // Create Shopify client
-      const shopify = this.createShopifyClient(originalJob.shopDomain, originalJob.shopConfig, originalJob.jobConfig);
+      const shopify = this.createShopifyClient(jobData.shopDomain, jobData.shopConfig, jobConfig);
 
       // Create processor using job's factory
       const onBatchItem = jobModule.onBatchItem;
@@ -344,9 +365,9 @@ export class JobQueue extends DurableObject {
       // Create complete context object for continuation
       const ctx = {
         shopify: shopify,
-        jobConfig: originalJob.jobConfig,
+        jobConfig: jobConfig,
         env: this.env,
-        shopConfig: originalJob.shopConfig
+        shopConfig: jobData.shopConfig
       };
 
       // Create callbacks if job provides factories
@@ -356,7 +377,7 @@ export class JobQueue extends DurableObject {
         }
       };
 
-                  // Use job's batch complete callback if available
+      // Use job's batch complete callback if available
       let onBatchComplete = jobModule.onBatchComplete || null;
 
       // Use generic batch processor continuation
@@ -385,32 +406,5 @@ export class JobQueue extends DurableObject {
         updatedAt: new Date().toISOString()
       });
     }
-  }
-
-  /**
-   * Get the currently active job for batch processing
-   */
-  async getActiveJob() {
-    // Look for the most recent job that supports batch processing
-    const allJobs = await this.ctx.storage.list({ prefix: 'job:', suffix: ':meta' });
-    const jobs = Array.from(allJobs.values())
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    // Find the most recent job that supports batch processing
-    for (const job of jobs) {
-      const jobData = await this.getJobData(job.id);
-      const jobModule = await import(`./jobs/${jobData.jobPath}/job.js`);
-      if (jobModule.onBatchItem) {
-        return {
-          jobId: job.id,
-          jobPath: jobData.jobPath,
-          shopDomain: jobData.shopDomain,
-          shopConfig: jobData.shopConfig,
-          jobConfig: jobData.jobConfig
-        };
-      }
-    }
-
-    return null;
   }
 }

@@ -172,6 +172,7 @@ async function startBatchProcessing({ items, onBatchItem, batchSize, ctx, durabl
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     itemsKey: itemsKey, // Store R2 key for items retrieval
+    jobId: durableObjectState.jobId, // Store the originating job ID
     // Store processor info for debugging (but not the actual function)
     processorName: onBatchItem.name || "anonymous",
     hasOnProgress: onProgress !== null,
