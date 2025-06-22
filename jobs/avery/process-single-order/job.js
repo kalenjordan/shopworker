@@ -28,14 +28,14 @@ export async function process({ payload, shopify, jobConfig, env }) {
   };
 
   // Extract order data from the record (passed from parent job)
-  const { csOrder, orderCounter, processedDate } = payload;
+  const { csOrder, orderCounter, orderTagDate } = payload;
 
   const shopifyOrderData = buildShopifyOrderData(csOrder, orderCounter);
 
   logOrder(shopifyOrderData);
 
   try {
-    const result = await createShopifyOrder(ctx, shopifyOrderData, orderCounter, processedDate);
+    const result = await createShopifyOrder(ctx, shopifyOrderData, orderCounter, orderTagDate);
     return result;
   } catch (error) {
     console.error(chalk.red(`  Error creating Shopify order: ${error.message}`));
@@ -192,7 +192,7 @@ function logOrderTotals(shopifyOrderData) {
   }
 }
 
-async function createShopifyOrder(ctx, shopifyOrderData, orderCounter, processedDate) {
+async function createShopifyOrder(ctx, shopifyOrderData, orderCounter, orderTagDate) {
   console.log(chalk.green(`\n  Creating Shopify Order ${orderCounter}`));
   console.log(`  Customer: ${shopifyOrderData.name} (${shopifyOrderData.email})`);
   console.log(`  CS Order IDs: ${shopifyOrderData.csOrderIds.join(", ")}`);
@@ -226,7 +226,7 @@ async function createShopifyOrder(ctx, shopifyOrderData, orderCounter, processed
   const customerId = await findOrCreateCustomer(ctx, shopifyOrderData);
 
   // Build order payload
-  const orderPayload = buildOrderPayload(ctx, shopifyOrderData, shopifyLineItems, totals, customerId, processedDate);
+  const orderPayload = buildOrderPayload(ctx, shopifyOrderData, shopifyLineItems, totals, customerId, orderTagDate);
 
   // Check if orders already exist
   for (const csOrderId of csOrderIds) {
@@ -354,7 +354,7 @@ async function findCustomerByTag(ctx, tag) {
   return customers.nodes[0]?.id;
 }
 
-function buildOrderPayload(ctx, shopifyOrderData, shopifyLineItems, totals, customerId, processedDate) {
+function buildOrderPayload(ctx, shopifyOrderData, shopifyLineItems, totals, customerId, orderTagDate) {
   const { lineItems, csCustomerId, csOrderIds, shipping, discounts, transactions } = shopifyOrderData;
   const firstLine = lineItems[0];
 
@@ -403,7 +403,7 @@ function buildOrderPayload(ctx, shopifyOrderData, shopifyLineItems, totals, cust
   }
 
   // Add processed date tag
-  tags.push(`CS-${processedDate}`);
+  tags.push(`CS-${orderTagDate}`);
 
   // Format processed date (add 5 hours as in Liquid template)
   const processedAt = format(addHours(parseISO(firstLine['Processed At']), 5), "yyyy-MM-dd'T'HH:mm:ss");

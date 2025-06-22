@@ -6,97 +6,12 @@
  */
 
 import { parseCSV, saveFile } from "../../../connectors/csv.js";
-import { sendEmail } from "../../../connectors/resend.js";
 import chalk from "chalk";
 import { runJob, isWorkerEnvironment } from "../../../utils/env.js";
 import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
 import { iterateInBatches } from "../../../utils/batch-processor.js";
-
-/**
- * Helper function to get processed date from first CS order
- * @param {Array} csOrders - Array of CS orders
- * @returns {string} Date formatted as YYYY-MM-DD
- */
-function getProcessedDate(csOrders) {
-  if (!csOrders || csOrders.length === 0) {
-    return format(new Date(), 'yyyy-MM-dd');
-  }
-
-  const firstOrder = csOrders[0];
-  const firstLine = firstOrder.lines[0];
-  if (!firstLine) {
-    return format(new Date(), 'yyyy-MM-dd');
-  }
-
-  const processedAt = firstLine["Processed At"];
-  if (!processedAt) {
-    console.log("No 'Processed At' column found, using current date");
-    return format(new Date(), 'yyyy-MM-dd');
-  }
-
-  // Parse the date and format as YYYY-MM-DD
-  const date = parseISO(processedAt);
-  return format(date, 'yyyy-MM-dd');
-}
-
-/**
- * Process a single batch item
- * This function is used by the batch processor to process individual items
- */
-export async function onBatchItem({ ctx, item: csOrder, index, allItems }) {
-  const orderCounter = index + 1;
-  console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
-
-  try {
-    // Get processed date from the full dataset (more accurate than single order)
-    const processedDate = getProcessedDate(allItems);
-    const result = await runSingleOrderSubJob(csOrder, orderCounter, processedDate, ctx);
-    console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
-    return result;
-  } catch (error) {
-    console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
-    return {
-      status: 'error',
-      orderCounter: orderCounter,
-      csOrderIds: [csOrder.csOrderId],
-      customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
-      customerName: csOrder.customer_name || 'Unknown',
-      error: error.message
-    };
-  }
-}
-
-/**
- * Create onBatchComplete callback for batch continuation
- */
-export function createOnBatchComplete(ctx) {
-  return async (batchResults, batchNum, totalBatches, durableObjectState = null) => {
-    console.log(`✅ Batch ${batchNum}/${totalBatches} completed (In createOnBatchComplete)`);
-
-    // Send email summary only after all batches complete and in worker environment
-    if (batchNum === totalBatches && isWorkerEnvironment(ctx.env)) {
-      console.log("All batches completed, sending email summary");
-
-      let processedCount = batchResults.length;
-
-      // If we have durableObjectState, get more accurate data from batch state
-      if (durableObjectState) {
-        const iterationState = await durableObjectState.storage.get('batch:processor:state');
-        if (iterationState) {
-          processedCount = iterationState.processedCount;
-        }
-      }
-
-      // Get processed date from the results (we'll compute it when we need it)
-      const processedDate = format(new Date(), 'yyyy-MM-dd'); // Default to current date for email
-
-      await sendEmailSummary(processedCount, processedDate, ctx);
-    } else {
-      console.log("Not all batches completed yet");
-    }
-  };
-}
+import { sendEmailSummary } from "./email-summary.js";
 
 export async function process({ payload, shopify, jobConfig, env, shopConfig, durableObjectState }) {
   const ctx = {
@@ -135,21 +50,77 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
   // Process orders using the batch processor abstraction
   const results = await iterateInBatches({
     items: csOrders,
-    onBatchItem: onBatchItem,
     batchSize: 50,
     ctx,
     durableObjectState,
+    onBatchItem: onBatchItem,
     onProgress: (completed, total) => {
       if (completed % 10 === 0 || completed === total) {
         console.log(`📊 Progress: ${completed}/${total} orders processed`);
       }
     },
-    onBatchComplete: createOnBatchComplete(ctx)
+    onBatchComplete: onBatchComplete
   });
 
   // Summarize results if we have them (CLI environment)
   if (results && results.length > 0 && !isWorkerEnvironment(env)) {
     summarizeResults(results);
+  }
+}
+
+/**
+ * Process a single batch item
+ * This function is used by the batch processor to process individual items
+ */
+export async function onBatchItem({ ctx, item: csOrder, index, allItems }) {
+  const orderCounter = index + 1;
+  console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
+
+  try {
+    // Get processed date from the full dataset (more accurate than single order)
+    const orderTagDate = getOrderTagDate(allItems);
+    const result = await runSingleOrderSubJob(csOrder, orderCounter, orderTagDate, ctx);
+    console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
+    return result;
+  } catch (error) {
+    console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
+    return {
+      status: 'error',
+      orderCounter: orderCounter,
+      csOrderIds: [csOrder.csOrderId],
+      customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
+      customerName: csOrder.customer_name || 'Unknown',
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Handle batch completion callback
+ */
+export async function onBatchComplete({ ctx, batchResults, batchNum, totalBatches, durableObjectState }) {
+  console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
+
+  // Send email summary only after all batches complete and in worker environment
+  if (batchNum === totalBatches && isWorkerEnvironment(ctx.env)) {
+    console.log("All batches completed, sending email summary");
+
+    let processedCount = batchResults.length;
+
+    // If we have durableObjectState, get more accurate data from batch state
+    if (durableObjectState) {
+      const iterationState = await durableObjectState.storage.get('batch:processor:state');
+      if (iterationState) {
+        processedCount = iterationState.processedCount;
+      }
+    }
+
+    // Get processed date from the results (we'll compute it when we need it)
+    const processedDate = format(new Date(), 'yyyy-MM-dd'); // Default to current date for email
+
+    await sendEmailSummary(processedCount, processedDate, ctx);
+  } else {
+    console.log("Not all batches completed yet");
   }
 }
 
@@ -270,12 +241,12 @@ function categorizeRowIntoOrder(csOrder, row, lineType) {
  * Run a single order processing sub job
  * Uses the RUN_SUB_JOB_DIRECTLY flag to determine execution method
  */
-async function runSingleOrderSubJob(csOrder, orderCounter, processedDate, ctx) {
+async function runSingleOrderSubJob(csOrder, orderCounter, orderTagDate, ctx) {
   const payload = {
     csOrder,
     name: `Shopify Order #${orderCounter}`,
     orderCounter,
-    processedDate,
+    orderTagDate,
   };
 
   const result = await runJob({
@@ -297,97 +268,6 @@ function getLimit(ctx) {
 // Helper function to get the filter email from job config
 function getFilterEmail(ctx) {
   return ctx.jobConfig.test.filterEmail;
-}
-
-/**
- * Send simplified email summary
- * @param {number} orderCount - Number of processed orders
- * @param {string} processedDate - Date processed in YYYY-MM-DD format
- */
-async function sendEmailSummary(orderCount, processedDate, ctx) {
-  try {
-    // Check if email configuration is available
-    if (!ctx.shopConfig.resend_api_key || !ctx.shopConfig.email_to || !ctx.shopConfig.email_from) {
-      console.log(chalk.yellow("Email configuration not available, skipping email notification"));
-      return;
-    }
-
-    // Create email subject
-    const subject = `Avery Order Import Summary - ${orderCount} orders processed (${processedDate})`;
-
-    // Create HTML content
-    const htmlContent = createHtmlSummary(orderCount, processedDate);
-
-    // Prepare email options
-    const emailOptions = {
-      to: ctx.shopConfig.email_to,
-      from: ctx.shopConfig.email_from,
-      subject: subject,
-      html: htmlContent
-    };
-
-    // Add reply-to if configured
-    if (ctx.shopConfig.email_reply_to) {
-      emailOptions.replyTo = ctx.shopConfig.email_reply_to;
-    }
-
-    if (isWorkerEnvironment(ctx.env)) {
-      await sendEmail(emailOptions, ctx.shopConfig.resend_api_key);
-    } else {
-      console.log(chalk.yellow("Skipping email summary in CLI environment"));
-    }
-
-    console.log(chalk.green("✓ Email summary sent successfully"));
-  } catch (error) {
-    console.error(chalk.red(`Failed to send email summary: ${error.message}`));
-  }
-}
-
-/**
- * Create HTML email content
- */
-function createHtmlSummary(orderCount, processedDate) {
-  let html = `
-  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-    <h2 style="color: #1f2937; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">
-      📊 Avery Order Import Summary
-    </h2>
-
-    <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;">
-      <p style="margin: 0; color: #6b7280; font-size: 14px;">Processed at: ${processedDate} CT</p>
-    </div>
-
-    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 20px 0;">
-      <div style="background-color: #f0f9ff; padding: 15px; border-radius: 8px; text-align: center;">
-        <div style="font-size: 24px; font-weight: bold; color: #0369a1;">${orderCount}</div>
-        <div style="color: #0369a1; font-size: 14px;">Total Orders</div>
-      </div>
-    </div>
-
-    <div style="margin: 20px 0;">
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background-color: #f0fdf4; border-radius: 6px; margin: 5px 0;">
-        <span style="color: #166534;">Orders Processed:</span>
-        <strong style="color: #166534;">${orderCount}</strong>
-      </div>
-    </div>`;
-
-  // Create Shopify admin URL with tag filter
-  const tag = `cs-${processedDate}`;
-  const encodedTag = encodeURIComponent(tag);
-  const shopifyUrl = `https://admin.shopify.com/store/835a20-6c/orders?start=MQ%3D%3D&tag=${encodedTag}`;
-
-  html += `
-    <div style="margin: 20px 0;">
-      <div style="background-color: #f0f9ff; padding: 15px; border-radius: 8px; text-align: center;">
-        <h3 style="color: #0369a1; margin-bottom: 15px;">View Orders in Shopify</h3>
-        <a href="${shopifyUrl}" style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
-          View Orders with Tag: ${tag}
-        </a>
-      </div>
-    </div>
-  </div>`;
-
-  return html;
 }
 
 /**
@@ -460,4 +340,31 @@ function filterOrdersForDebugging(csOrders, orderId) {
   csOrders = csOrders.filter((csOrder) => csOrder.csOrderId === orderId);
   console.log(`Filtered ${csOrders.length} CS orders to ${orderId}`);
   return csOrders;
+}
+
+/**
+ * Helper function to get processed date from first CS order
+ * @param {Array} csOrders - Array of CS orders
+ * @returns {string} Date formatted as YYYY-MM-DD
+ */
+function getOrderTagDate(csOrders) {
+  if (!csOrders || csOrders.length === 0) {
+    return format(new Date(), 'yyyy-MM-dd');
+  }
+
+  const firstOrder = csOrders[0];
+  const firstLine = firstOrder.lines[0];
+  if (!firstLine) {
+    return format(new Date(), 'yyyy-MM-dd');
+  }
+
+  const processedAt = firstLine["Processed At"];
+  if (!processedAt) {
+    console.log("No 'Processed At' column found, using current date");
+    return format(new Date(), 'yyyy-MM-dd');
+  }
+
+  // Parse the date and format as YYYY-MM-DD
+  const date = parseISO(processedAt);
+  return format(date, 'yyyy-MM-dd');
 }
