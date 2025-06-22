@@ -121,7 +121,13 @@ async function processSequentially({ items, onBatchItem, ctx, onProgress, onBatc
 
   // Call batch complete callback for the entire set
   if (onBatchComplete) {
-    onBatchComplete(results, 1, 1);
+    await onBatchComplete({
+      ctx,
+      batchResults: results,
+      batchNum: 1,
+      totalBatches: 1,
+      durableObjectState: null
+    });
   }
 
   console.log(`\nCompleted processing ${totalItems} items`);
@@ -286,7 +292,13 @@ export async function processBatch({ ctx, iterationState, items, onBatchItem, du
 
   // Call batch complete callback
   if (onBatchComplete) {
-    onBatchComplete(batchResults, batchNum, totalBatches);
+    await onBatchComplete({
+      ctx,
+      batchResults,
+      batchNum,
+      totalBatches,
+      durableObjectState
+    });
   }
 
   // Check if we're done

@@ -97,9 +97,10 @@ export async function onBatchItem({ ctx, item: csOrder, index, allItems }) {
 
 /**
  * Handle batch completion callback
+ * Called by batch processor with context object
  */
 export async function onBatchComplete({ ctx, batchResults, batchNum, totalBatches, durableObjectState }) {
-  console.log(`✅ Batch ${batchNum}/${totalBatches} completed`);
+  console.log(`✅ Batch ${batchNum}/${totalBatches} completed (onBatchComplete)`);
 
   // Send email summary only after all batches complete and in worker environment
   if (batchNum === totalBatches && isWorkerEnvironment(ctx.env)) {
@@ -120,7 +121,7 @@ export async function onBatchComplete({ ctx, batchResults, batchNum, totalBatche
 
     await sendEmailSummary(processedCount, processedDate, ctx);
   } else {
-    console.log("Not all batches completed yet");
+    console.log(`Processed ${batchResults.length} items in this batch`);
   }
 }
 

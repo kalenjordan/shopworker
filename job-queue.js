@@ -356,27 +356,8 @@ export class JobQueue extends DurableObject {
         }
       };
 
-      let onBatchComplete = async (batchResults, batchNum, totalBatches) => {
-        console.log(`✅ Batch ${batchNum}/${totalBatches} completed (In alarm)`);
-      };
-
-      // Use job's batch complete callback if available
-      if (jobModule.createOnBatchComplete) {
-        const durableObjectState = {
-          storage: this.ctx.storage,
-          setAlarm: (date) => this.ctx.storage.setAlarm(date),
-          getAlarm: () => this.ctx.storage.getAlarm(),
-          deleteAlarm: () => this.ctx.storage.deleteAlarm()
-        };
-
-        onBatchComplete = jobModule.createOnBatchComplete(ctx);
-
-        // Wrap to pass durableObjectState
-        const originalOnBatchComplete = onBatchComplete;
-        onBatchComplete = async (batchResults, batchNum, totalBatches) => {
-          await originalOnBatchComplete(batchResults, batchNum, totalBatches, durableObjectState);
-        };
-      }
+                  // Use job's batch complete callback if available
+      let onBatchComplete = jobModule.onBatchComplete || null;
 
       // Use generic batch processor continuation
       const { continueBatchProcessing } = await import('./utils/batch-processor.js');
