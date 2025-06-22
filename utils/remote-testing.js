@@ -38,6 +38,40 @@ export function loadJobConfigsForRemoteTest(jobPath) {
 }
 
 /**
+ * Applies limit and batchSize overrides to job configuration
+ * @param {Object} jobConfig - The original job configuration
+ * @param {Object} options - Command options containing limit and/or batchSize
+ * @returns {Object} The job configuration with overrides applied
+ */
+function applyJobConfigOverrides(jobConfig, options) {
+  if (!options.limit && !options.batchSize) {
+    return jobConfig;
+  }
+
+  const testOverrides = { ...jobConfig.test };
+
+  if (options.limit) {
+    testOverrides.limit = options.limit;
+  }
+
+  if (options.batchSize) {
+    testOverrides.batchSize = options.batchSize;
+  }
+
+  const configToUse = {
+    ...jobConfig,
+    test: testOverrides
+  };
+
+  const overrideMessages = [];
+  if (options.limit) overrideMessages.push(`limit: ${options.limit}`);
+  if (options.batchSize) overrideMessages.push(`batchSize: ${options.batchSize}`);
+  console.log(chalk.yellow(`Overriding job config ${overrideMessages.join(', ')}`));
+
+  return configToUse;
+}
+
+/**
  * Loads Shopworker webhook fixture data for webhook triggers
  * @param {string} cliDirname - The directory where cli.js is located
  * @param {string} jobPath - The job path relative to jobs/
@@ -200,21 +234,11 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   // Get worker URL
   const workerUrl = validateWorkerUrl(options.worker);
 
-  // Load job and trigger configs
+    // Load job and trigger configs
   const { jobConfig, shopifyWebhookTopic } = loadJobConfigsForRemoteTest(jobPath);
 
-  // Override the limit in job config if limitParam is provided
-  let configToUse = jobConfig;
-  if (options.limit && options.limit >= 1) {
-    configToUse = {
-      ...jobConfig,
-      test: {
-        ...jobConfig.test,
-        limit: options.limit
-      }
-    };
-    console.log(chalk.yellow(`Overriding job config limit with: ${options.limit}`));
-  }
+  // Apply any job config overrides
+  const configToUse = applyJobConfigOverrides(jobConfig, options);
 
   // Get shop configuration and API secret
   const { shopConfig, shopDomain } = getShopConfigWithSecret(cliDirname, configToUse.shop, options.shop);

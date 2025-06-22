@@ -4,6 +4,7 @@
   "shop": "avery",
   "test": {
     "limit": 999,
+    "batchSize": 50,
     "dryRun": false,
     "webhookPayload": "fixtures/avery/avery-june-21-orders.json"
   }
