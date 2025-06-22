@@ -263,8 +263,15 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   }
 
   // Prepare Shopify webhook payload and URL
-  const configOverrides = (options.limit && options.limit !== 1) ? { limit: options.limit } : null;
-  const { shopifyWebhookAddress, shopifyWebhookPayload } = prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain, configOverrides);
+  const configOverrides = {};
+  if (options.limit && options.limit !== 1) {
+    configOverrides.limit = options.limit;
+  }
+  if (options.batchSize && options.batchSize !== 50) {
+    configOverrides.batchSize = options.batchSize;
+  }
+  const finalConfigOverrides = Object.keys(configOverrides).length > 0 ? configOverrides : null;
+  const { shopifyWebhookAddress, shopifyWebhookPayload } = prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain, finalConfigOverrides);
 
   // Send test webhook
   await sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, shopConfig, shopifyWebhookTopic, shopDomain, isShopworkerWebhook);
