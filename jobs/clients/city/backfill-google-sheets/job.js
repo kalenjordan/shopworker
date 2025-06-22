@@ -1,5 +1,5 @@
-import GetOrdersForBackfill from "../../../graphql/GetOrdersForBackfill.js";
-import * as GoogleSheets from "../../../connectors/google-sheets.js";
+import GetOrdersForBackfill from "../../../../graphql/GetOrdersForBackfill.js";
+import * as GoogleSheets from "../../../../connectors/google-sheets.js";
 import chalk from "chalk";
 import * as CitySheets from "../city-sheets-common.js";
 

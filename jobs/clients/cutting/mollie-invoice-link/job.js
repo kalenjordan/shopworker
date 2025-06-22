@@ -1,5 +1,5 @@
-import OrderInvoiceSend from "../../../graphql/OrderInvoiceSend.js";
-import GetOrderById from "../../../graphql/GetOrderById.js";
+import OrderInvoiceSend from "../../../../graphql/OrderInvoiceSend.js";
+import GetOrderById from "../../../../graphql/GetOrderById.js";
 
 function validateEnvironment(env) {
   if (!env.mollie_api_key) {
