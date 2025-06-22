@@ -25,10 +25,10 @@ import chalk from "chalk";
  * @returns {Promise<Array>} Array of processing results
  */
 export async function iterateInBatches({
+  ctx,
   items,
   onBatchItem,
   batchSize = 200,
-  ctx,
   durableObjectState = null,
   onProgress = null,
   onBatchComplete = null,
@@ -141,7 +141,7 @@ async function startBatchProcessing({ items, onBatchItem, batchSize, ctx, durabl
   const totalItems = items.length;
   const totalBatches = Math.ceil(totalItems / batchSize);
 
-  console.log(`📦 Starting batch processing: ${totalItems} items in batches of ${batchSize}`);
+  console.log(`📦 Starting batch processing: ${totalItems} items in ${totalBatches} batches of ${batchSize}`);
 
   // Store items array in R2 for retrieval during continuation
   const itemsKey = `batch-items-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
