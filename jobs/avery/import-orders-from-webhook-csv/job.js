@@ -46,12 +46,12 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
 
   // For troubleshooting, filter to a specific order ID
   // csOrders = filterOrdersForDebugging(csOrders, 'CS-649354')
-
   // Process orders using the batch processor abstraction
+
   const results = await iterateInBatches({
+    ctx,
     items: csOrders,
     batchSize: 50,
-    ctx,
     durableObjectState,
     onBatchItem: onBatchItem,
     onProgress: (completed, total) => {
