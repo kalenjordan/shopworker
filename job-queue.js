@@ -209,7 +209,7 @@ export class JobQueue extends DurableObject {
       };
 
       // Add durable object state for batch processing if job supports it
-      if (jobModule.supportsBatchProcessing) {
+      if (jobModule.onBatchItem) {
         processParams.durableObjectState = {
           storage: this.ctx.storage,
           setAlarm: (date) => this.ctx.storage.setAlarm(date),
@@ -220,6 +220,9 @@ export class JobQueue extends DurableObject {
           getJobData: () => this.getJobData(job.id)
         };
       }
+
+      // Use the job's batch item processor function directly
+      const onBatchItem = jobModule.onBatchItem;
 
       // Process the job with complete data
       await jobModule.process(processParams);
@@ -335,6 +338,9 @@ export class JobQueue extends DurableObject {
       // Create Shopify client
       const shopify = this.createShopifyClient(originalJob.shopDomain, originalJob.shopConfig, originalJob.jobConfig);
 
+      // Create processor using job's factory
+      const onBatchItem = jobModule.onBatchItem;
+
       // Create complete context object for continuation
       const ctx = {
         shopify: shopify,
@@ -342,9 +348,6 @@ export class JobQueue extends DurableObject {
         env: this.env,
         shopConfig: originalJob.shopConfig
       };
-
-      // Create processor using job's factory
-      const onBatchItem = jobModule.onBatchItem(ctx);
 
       // Create callbacks if job provides factories
       const onProgress = (completed, total) => {
@@ -379,8 +382,8 @@ export class JobQueue extends DurableObject {
       const { continueBatchProcessing } = await import('./utils/batch-processor.js');
 
       await continueBatchProcessing({
-        onBatchItem,
         ctx,
+        onBatchItem,
         durableObjectState: {
           storage: this.ctx.storage,
           setAlarm: (date) => this.ctx.storage.setAlarm(date),
@@ -416,7 +419,7 @@ export class JobQueue extends DurableObject {
     for (const job of jobs) {
       const jobData = await this.getJobData(job.id);
       const jobModule = await import(`./jobs/${jobData.jobPath}/job.js`);
-      if (jobModule.supportsBatchProcessing) {
+      if (jobModule.onBatchItem) {
         return {
           jobId: job.id,
           jobPath: jobData.jobPath,

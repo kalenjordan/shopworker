@@ -16,7 +16,7 @@ import chalk from "chalk";
  *
  * @param {Object} options - Processing options
  * @param {Array} options.items - Array of items to process
- * @param {Function} options.onBatchItem - Function to process each item: async (item, index, ctx) => result
+ * @param {Function} options.onBatchItem - Function to process each item: async ({ ctx, item, index, allItems }) => result
  * @param {number} [options.batchSize=200] - Size of each batch in worker environment
  * @param {Object} options.ctx - Context object containing: { shopify, jobConfig, env, shopConfig }
  * @param {Object} [options.durableObjectState] - Durable object state for worker batching
@@ -96,7 +96,12 @@ async function processSequentially({ items, onBatchItem, ctx, onProgress, onBatc
     console.log(chalk.cyan(`${itemIndex}/${totalItems} Processing item ${i}`));
 
     try {
-      const result = await onBatchItem(item, i, ctx);
+      const result = await onBatchItem({
+        ctx,
+        item,
+        index: i,
+        allItems: items
+      });
       results.push(result);
       console.log(chalk.green(`  ✓ Item ${itemIndex} completed`));
     } catch (error) {
@@ -171,10 +176,10 @@ async function startBatchProcessing({ items, onBatchItem, batchSize, ctx, durabl
 
   // Process first batch immediately
   return await processBatch({
+    ctx,
     iterationState,
     items, // Pass items separately for first batch
     onBatchItem,
-    ctx,
     durableObjectState,
     onProgress,
     onBatchComplete,
@@ -184,7 +189,7 @@ async function startBatchProcessing({ items, onBatchItem, batchSize, ctx, durabl
 /**
  * Handle empty batch completion - clean up and mark as done
  */
-async function handleEmptyBatch(iterationState, ctx, durableObjectState, cursor) {
+async function handleEmptyBatch(ctx, iterationState, durableObjectState, cursor) {
   console.log(`⚠️ Empty batch detected at cursor ${cursor}. Marking batch processing as complete.`);
 
   // Mark as completed
@@ -213,7 +218,7 @@ async function handleEmptyBatch(iterationState, ctx, durableObjectState, cursor)
 /**
  * Process a single batch
  */
-export async function processBatch({ iterationState, items, onBatchItem, ctx, durableObjectState, onProgress, onBatchComplete }) {
+export async function processBatch({ ctx, iterationState, items, onBatchItem, durableObjectState, onProgress, onBatchComplete }) {
   const { cursor, batchSize } = iterationState;
   const currentBatch = items.slice(cursor, cursor + batchSize);
   const batchNum = Math.floor(cursor / batchSize) + 1;
@@ -221,7 +226,7 @@ export async function processBatch({ iterationState, items, onBatchItem, ctx, du
 
   // Check for empty batch to prevent infinite loops
   if (currentBatch.length === 0) {
-    return await handleEmptyBatch(iterationState, ctx, durableObjectState, cursor);
+    return await handleEmptyBatch(ctx, iterationState, durableObjectState, cursor);
   }
 
   console.log(`📋 Batch ${batchNum}/${totalBatches}: processing ${currentBatch.length} items`);
@@ -238,7 +243,12 @@ export async function processBatch({ iterationState, items, onBatchItem, ctx, du
     console.log(chalk.cyan(`  ${itemCounter}/${iterationState.totalItems} Processing item ${globalIndex}`));
 
     try {
-      const result = await onBatchItem(item, globalIndex, ctx);
+      const result = await onBatchItem({
+        ctx,
+        item,
+        index: globalIndex,
+        allItems: items
+      });
       batchResults.push(result);
       console.log(chalk.green(`  ✓ Item ${itemCounter} completed`));
     } catch (error) {
@@ -319,7 +329,7 @@ export async function processBatch({ iterationState, items, onBatchItem, ctx, du
  * Continue batch processing from stored state (called by alarm)
  * This function retrieves items from R2 and continues processing
  */
-export async function continueBatchProcessing({ onBatchItem, ctx, durableObjectState, onProgress = null, onBatchComplete = null }) {
+export async function continueBatchProcessing({ ctx, onBatchItem, durableObjectState, onProgress = null, onBatchComplete = null }) {
   console.log("🔄 Continuing batch processing from alarm");
 
   const iterationState = await durableObjectState.storage.get("batch:processor:state");
@@ -349,10 +359,10 @@ export async function continueBatchProcessing({ onBatchItem, ctx, durableObjectS
 
     // Continue batch processing with retrieved items
     return await processBatch({
+      ctx,
       iterationState,
       items,
       onBatchItem,
-      ctx,
       durableObjectState,
       onProgress,
       onBatchComplete,

@@ -13,9 +13,6 @@ import { formatInTimeZone } from "date-fns-tz";
 import { format, parseISO } from "date-fns";
 import { iterateInBatches } from "../../../utils/batch-processor.js";
 
-// Export flag to indicate this job supports batch processing
-export const supportsBatchProcessing = true;
-
 /**
  * Helper function to get processed date from first CS order
  * @param {Array} csOrders - Array of CS orders
@@ -44,32 +41,30 @@ function getProcessedDate(csOrders) {
 }
 
 /**
- * Create processor function for batch continuation
- * This function is used by the batch processor to reconstruct the processor during alarm continuation
+ * Process a single batch item
+ * This function is used by the batch processor to process individual items
  */
-export function onBatchItem(ctx) {
-  return async (csOrder, index, currentCtx) => {
-    const orderCounter = index + 1;
-    console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
+export async function onBatchItem({ ctx, item: csOrder, index, allItems }) {
+  const orderCounter = index + 1;
+  console.log(chalk.cyan(`Processing order ${csOrder.csOrderId}`));
 
-    try {
-      // Get processed date from the current batch of orders
-      const processedDate = getProcessedDate([csOrder]);
-      const result = await runSingleOrderSubJob(csOrder, orderCounter, processedDate, currentCtx);
-      console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
-      return result;
-    } catch (error) {
-      console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
-      return {
-        status: 'error',
-        orderCounter: orderCounter,
-        csOrderIds: [csOrder.csOrderId],
-        customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
-        customerName: csOrder.customer_name || 'Unknown',
-        error: error.message
-      };
-    }
-  };
+  try {
+    // Get processed date from the full dataset (more accurate than single order)
+    const processedDate = getProcessedDate(allItems);
+    const result = await runSingleOrderSubJob(csOrder, orderCounter, processedDate, ctx);
+    console.log(chalk.green(`  ✓ Order ${orderCounter} completed`));
+    return result;
+  } catch (error) {
+    console.error(chalk.red(`  ✗ Order ${orderCounter} failed: ${error.message}`));
+    return {
+      status: 'error',
+      orderCounter: orderCounter,
+      csOrderIds: [csOrder.csOrderId],
+      customerEmail: csOrder.lines[0]?.["Customer: Email"] || 'Unknown',
+      customerName: csOrder.customer_name || 'Unknown',
+      error: error.message
+    };
+  }
 }
 
 /**
@@ -140,7 +135,7 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
   // Process orders using the batch processor abstraction
   const results = await iterateInBatches({
     items: csOrders,
-    onBatchItem: onBatchItem(ctx),
+    onBatchItem: onBatchItem,
     batchSize: 50,
     ctx,
     durableObjectState,
