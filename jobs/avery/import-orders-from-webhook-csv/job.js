@@ -51,7 +51,7 @@ export async function process({ payload, shopify, jobConfig, env, shopConfig, du
   const results = await iterateInBatches({
     ctx,
     items: csOrders,
-    batchSize: 50,
+    batchSize: 5,
     durableObjectState,
     onBatchItem: onBatchItem,
     onProgress: (completed, total) => {
