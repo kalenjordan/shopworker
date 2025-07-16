@@ -1,0 +1,7 @@
+{
+  "name": "Sync Inventory to Zoho",
+  "shop": "kalen-test-store",
+  "description": "Sync inventory levels to Zoho Inventory API when updated",
+  "version": "1.0.0",
+  "trigger": "inventory-level-updated"
+}

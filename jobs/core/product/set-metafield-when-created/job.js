@@ -1,4 +1,4 @@
-import ProductMetafieldUpdate from "../../../graphql/ProductMetafieldUpdate.js";
+import ProductMetafieldUpdate from "../../graphql/ProductMetafieldUpdate.js";
 /**
  * Updates a product metafield with the last modified date
  * @param {Object} params - Parameters for the job

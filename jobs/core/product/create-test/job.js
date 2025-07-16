@@ -3,7 +3,7 @@
  * Creates a new product with a random name
  */
 
-import productCreateMutation from '../../../graphql/productCreate.js';
+import productCreateMutation from '../../graphql/productCreate.js';
 
 // Array of adjectives for random product names
 const adjectives = [

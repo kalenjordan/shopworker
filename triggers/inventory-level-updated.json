@@ -1,0 +1,9 @@
+{
+  "name": "Inventory Level Updated",
+  "webhook": {
+    "topic": "inventory_levels/update"
+  },
+  "test": {
+    "query": "GetInventoryLevels"
+  }
+}

@@ -192,3 +192,9 @@ CLOUDFLARE_WORKER_URL=https://your-worker-url.workers.dev
 
 - Implement cloudflare job queue
 - Add documentation related to forking and merging upstream changes in
+
+
+git clone --origin upstream https://github.com/kalenjordan/shopworker shopworker-new
+cd shopworker-new
+git remote rename origin upstream
+git remote add origin https://github.com/kalenjordan/shopworker-new
