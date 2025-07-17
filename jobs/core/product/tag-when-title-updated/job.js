@@ -4,7 +4,7 @@
  * This job adds a last-modified date tag to products when they are updated
  */
 
-import ProductUpdate from '../../graphql/ProductUpdate.js';
+import ProductUpdate from '../../../../graphql/ProductUpdate.js';
 
 /**
  * Formats the current date as YYYY-MM-DD

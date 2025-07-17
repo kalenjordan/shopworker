@@ -1,4 +1,4 @@
-import GetInventoryLevelById from "../../graphql/GetInventoryLevelByID.js";
+import GetInventoryLevelById from "../../../../graphql/GetInventoryLevelById.js";
 
 /**
  * Process an inventory level update and sync to Zoho Inventory API

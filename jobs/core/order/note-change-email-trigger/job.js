@@ -1,6 +1,6 @@
-import GetOrderWithMetafields from "../../graphql/GetOrderWithMetafields.js";
-import OrderInvoiceSend from "../../graphql/OrderInvoiceSend.js";
-import OrderMetafieldUpdate from "../../graphql/OrderMetafieldUpdate.js";
+import GetOrderWithMetafields from "../../../../graphql/GetOrderWithMetafields.js";
+import OrderInvoiceSend from "../../../../graphql/OrderInvoiceSend.js";
+import OrderMetafieldUpdate from "../../../../graphql/OrderMetafieldUpdate.js";
 
 /**
  * Process an order update to check if the note has changed and trigger email confirmation
