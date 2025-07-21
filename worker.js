@@ -5,7 +5,7 @@
 import { createShopifyClient } from './utils/shopify.js';
 import { logToWorker } from './utils/env.js';
 import { hmacSha256 } from './utils/crypto.js';
-import { JobQueue } from './job-queue.js';
+
 
 /**
  * Verify that a webhook request is authentic and from Shopify
@@ -136,25 +136,37 @@ function getJobPathFromUrl(request) {
 
 
 /**
- * Process webhook with the appropriate job handler
+ * Get the size of a payload in bytes
  */
-async function processWebhook(jobModule, bodyData, shopify, env, shopConfig, jobPath) {
-  // Load job config from the jobPath
-  const jobConfig = await loadJobConfig(jobPath);
+function getPayloadSize(data) {
+  return new TextEncoder().encode(JSON.stringify(data)).length;
+}
 
-  // Load secrets from environment variables
-  const secrets = loadSecretsFromEnv(env);
+/**
+ * Store large payload in R2 and return a reference
+ */
+async function handleLargePayload(payload, env) {
+  const payloadSize = getPayloadSize(payload);
+  const sizeThreshold = 1024 * 1024; // 1MB
 
-  await jobModule.process({
-    payload: bodyData,
-    shopify,
-    env,
-    shopConfig,
-    jobConfig,
-    secrets
-  });
+  if (payloadSize > sizeThreshold) {
+    const payloadId = `payload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const r2Key = `payloads/${payloadId}`;
 
-  console.log('Webhook processed successfully');
+    await env.R2_BUCKET.put(r2Key, JSON.stringify(payload));
+
+    return {
+      r2Key,
+      isLargePayload: true,
+      originalSize: payloadSize
+    };
+  }
+
+  return {
+    payload,
+    isLargePayload: false,
+    originalSize: payloadSize
+  };
 }
 
 /**
@@ -250,26 +262,40 @@ async function handleRequest(request, env, ctx) {
     // Get job path from URL parameter
     const jobPath = getJobPathFromUrl(request);
 
-    // Get the Job Queue Durable Object for this shop
-    const jobQueueId = env.JOB_QUEUE.idFromName(`shop:${shopDomain}`);
-    const jobQueue = env.JOB_QUEUE.get(jobQueueId);
+    // Handle large payloads by storing in R2
+    const payloadInfo = await handleLargePayload(bodyData, env);
 
-    // Enqueue the job instead of processing immediately
-    const jobId = await jobQueue.enqueue({
+
+    // Load job config
+    const jobConfig = await loadJobConfig(jobPath);
+
+    // Start the job dispatcher workflow
+    const workflowId = `job-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    const workflowParams = {
       shopDomain,
       jobPath,
-      bodyData,
+      ...(payloadInfo.isLargePayload ?
+        { r2Key: payloadInfo.r2Key, isLargePayload: true } :
+        { payload: payloadInfo.payload, isLargePayload: false }
+      ),
       shopConfig,
-      topic
+      jobConfig,
+      topic,
+      timestamp: new Date().toISOString()
+    };
+
+    const workflowInstance = await env.JOB_DISPATCHER.create({
+      id: workflowId,
+      params: workflowParams
     });
 
-    console.log(`Durable ObjectJob ${jobId} queued for shop ${shopDomain}, path ${jobPath}`);
+    console.log(`Workflow ${workflowId} started for shop ${shopDomain}, job ${jobPath}`);
 
-    // Return immediately with job ID
+    // Return immediately with workflow ID
     return new Response(JSON.stringify({
       success: true,
-      message: 'Job queued successfully',
-      jobId
+      message: 'Job workflow started successfully',
+      workflowId: workflowId
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -282,59 +308,42 @@ async function handleRequest(request, env, ctx) {
 }
 
 /**
- * Handle GET requests for job status and queue stats
+ * Handle GET requests for workflow status
  */
 async function handleGetRequest(request, env) {
   try {
     const url = new URL(request.url);
-    const shopDomain = url.searchParams.get('shop');
-    const jobId = url.searchParams.get('job');
+    const workflowId = url.searchParams.get('workflow');
     const action = url.searchParams.get('action') || 'status';
-
-    if (!shopDomain) {
-      return createErrorResponse('Missing shop parameter', 400);
-    }
-
-    const jobQueueId = env.JOB_QUEUE.idFromName(`shop:${shopDomain}`);
-    const jobQueue = env.JOB_QUEUE.get(jobQueueId);
 
     switch (action) {
       case 'status':
-        if (!jobId) {
-          return createErrorResponse('Missing jobId parameter for status request', 400);
+        if (!workflowId) {
+          return createErrorResponse('Missing workflowId parameter for status request', 400);
         }
-        const jobStatus = await jobQueue.getJobStatus(jobId);
-        return new Response(JSON.stringify({
-          success: true,
-          job: jobStatus
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
 
-      case 'stats':
-        const stats = await jobQueue.getStats();
-        return new Response(JSON.stringify({
-          success: true,
-          stats
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        try {
+          const workflow = await env.JOB_DISPATCHER.get(workflowId);
+          const status = await workflow.status();
 
-      case 'jobs':
-        const limit = parseInt(url.searchParams.get('limit') || '10');
-        const jobs = await jobQueue.listJobs(limit);
-        return new Response(JSON.stringify({
-          success: true,
-          jobs
-        }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
+          return new Response(JSON.stringify({
+            success: true,
+            workflow: {
+              id: workflowId,
+              status: status.status,
+              output: status.output,
+              error: status.error
+            }
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        } catch (error) {
+          return createErrorResponse(`Workflow ${workflowId} not found`, 404);
+        }
 
       default:
-        return createErrorResponse('Unknown action. Valid actions: status, stats, jobs', 400);
+        return createErrorResponse('Unknown action. Valid actions: status', 400);
     }
   } catch (error) {
     console.error('Error handling GET request:', error.message);
@@ -351,5 +360,112 @@ export default {
   }
 };
 
-// Export the JobQueue Durable Object class
-export { JobQueue };
+// JobDispatcher Workflow class - defined inline for proper binding
+import { WorkflowEntrypoint } from "cloudflare:workers";
+
+export class JobDispatcher extends WorkflowEntrypoint {
+  async run(event, step) {
+    // Parameters are passed via event.payload according to Cloudflare docs
+    const { shopDomain, jobPath, payload, r2Key, isLargePayload, shopConfig, jobConfig, topic, timestamp } = event.payload;
+
+    // Step 1: Retrieve payload if it's stored in R2
+    const jobData = await step.do("retrieve-payload", async () => {
+      if (isLargePayload && r2Key) {
+        const r2Object = await this.env.R2_BUCKET.get(r2Key);
+        if (!r2Object) {
+          throw new Error(`Large payload not found in R2: ${r2Key}`);
+        }
+        return await r2Object.json();
+      } else {
+        return payload;
+      }
+    });
+
+    // Step 2: Load job configuration
+    const finalJobConfig = await step.do("load-job-config", async () => {
+      try {
+        // Load job config
+        const jobConfigModule = await import(`./jobs/${jobPath}/config.json`);
+        let config = jobConfigModule.default;
+
+        // Check for config overrides in the payload
+        if (jobData._configOverrides) {
+          config = {
+            ...config,
+            test: {
+              ...config.test,
+              ...jobData._configOverrides
+            }
+          };
+        }
+
+        return config;
+      } catch (error) {
+        throw new Error(`Failed to load job config for ${jobPath}: ${error.message}`);
+      }
+    });
+
+    // Step 3: Create Shopify client (not serializable, so create outside of workflow step)
+    const accessToken = shopConfig?.shopify_token || this.env.SHOPIFY_ACCESS_TOKEN;
+    if (!accessToken) {
+      throw new Error('Shopify API access token not configured');
+    }
+
+    const { createShopifyClient } = await import('./utils/shopify.js');
+    const shopify = createShopifyClient({
+      shop: shopDomain,
+      accessToken,
+      apiVersion: finalJobConfig?.apiVersion
+    });
+
+    // Step 4: Load job module (not a workflow step, just load the module)
+    const jobModule = await import(`./jobs/${jobPath}/job.js`);
+    if (!jobModule.process) {
+      throw new Error(`Job ${jobPath} does not export a process function`);
+    }
+
+    // Execute the job directly - let it create its own workflow steps
+    const result = await jobModule.process({
+      shopify,
+      payload: jobData,
+      shopConfig,
+      jobConfig: finalJobConfig,
+      env: this.env,
+      secrets: this.loadSecretsFromEnv(this.env),
+      step // Pass the step function so jobs can create their own workflow steps at the top level
+    });
+
+    // Step 5: Clean up large payload if needed
+    await step.do("cleanup", async () => {
+      if (isLargePayload && r2Key) {
+        try {
+          await this.env.R2_BUCKET.delete(r2Key);
+          console.log(`Cleaned up large payload: ${r2Key}`);
+        } catch (error) {
+          console.warn(`Failed to clean up large payload ${r2Key}:`, error.message);
+        }
+      }
+      return { cleanup: "completed" };
+    });
+
+    return result;
+  }
+
+  /**
+   * Load secrets from environment variables
+   */
+  loadSecretsFromEnv(env) {
+    const secrets = {};
+    for (const key in env) {
+      if (key.startsWith('SECRET_')) {
+        const secretKey = key.substring(7);
+        try {
+          secrets[secretKey] = JSON.parse(env[key]);
+        } catch (e) {
+          secrets[secretKey] = env[key];
+        }
+      }
+    }
+    return secrets;
+  }
+}

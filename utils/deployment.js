@@ -99,7 +99,7 @@ export async function executeGitPush() {
   try {
     const { execSync } = await import('child_process');
     console.log('Pushing changes to remote Git repository...');
-    execSync('git push', { stdio: 'inherit', encoding: 'utf8' });
+    execSync('git push origin master', { stdio: 'inherit', encoding: 'utf8' });
     console.log('Successfully pushed to remote Git repository.');
     return true;
   } catch (error) {
