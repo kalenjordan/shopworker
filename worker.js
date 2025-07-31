@@ -3,8 +3,12 @@
  */
 
 import { createShopifyClient } from './utils/shopify.js';
-import { logToWorker } from './utils/env.js';
 import { hmacSha256 } from './utils/crypto.js';
+
+// Constants
+const PAYLOAD_SIZE_THRESHOLD = 1024 * 1024; // 1MB
+const WORKFLOW_ID_PREFIX = 'job';
+const PAYLOAD_ID_PREFIX = 'payload';
 
 
 /**
@@ -18,13 +22,13 @@ import { hmacSha256 } from './utils/crypto.js';
 async function verifyShopifyWebhook(req, body, env, shopConfig) {
   try {
     if (!shopConfig || !shopConfig.shopify_api_secret_key) {
-      logToWorker(env, "Missing API secret for shop. Cannot verify webhook.");
+      console.error("Missing API secret for shop. Cannot verify webhook.");
       return false;
     }
 
     const hmac = req.headers.get('X-Shopify-Hmac-Sha256');
     if (!hmac) {
-      logToWorker(env, "Missing HMAC signature in webhook request");
+      console.error("Missing HMAC signature in webhook request");
       return false;
     }
 
@@ -32,27 +36,14 @@ async function verifyShopifyWebhook(req, body, env, shopConfig) {
     const generatedHmac = await hmacSha256(secret, body);
 
     if (generatedHmac !== hmac) {
-      logToWorker(env, "HMAC verification failed for webhook");
+      console.error("HMAC verification failed for webhook");
       return false;
     }
 
     return true;
   } catch (error) {
-    logToWorker(env, "Error verifying webhook:", error);
+    console.error("Error verifying webhook:", error);
     return false;
-  }
-}
-
-/**
- * Dynamically load a job handler
- */
-async function loadJobHandler(jobPath) {
-  try {
-    // Handle job path which might include subdirectories
-    return await import(`./jobs/${jobPath}/job.js`);
-  } catch (error) {
-    console.error(`Failed to load job handler for ${jobPath}:`, error.message);
-    return null;
   }
 }
 
@@ -78,35 +69,6 @@ function parseShopworkerConfig(env) {
     throw new Error('SHOPWORKER_CONFIG secret not found. Please run `shopworker put-secrets` to configure the worker.');
   }
   return JSON.parse(env.SHOPWORKER_CONFIG);
-}
-
-/**
- * Load secrets from environment variables
- * Any environment variable starting with SECRET_ will be added to the secrets object
- * with the key being the part after SECRET_
- */
-function loadSecretsFromEnv(env) {
-  const secrets = {};
-
-  // Look for environment variables with keys starting with SECRET_
-  for (const key in env) {
-    if (key.startsWith('SECRET_')) {
-      const secretKey = key.substring(7); // Remove 'SECRET_' prefix
-
-      try {
-        // Try to parse as JSON, fall back to string if it fails
-        try {
-          secrets[secretKey] = JSON.parse(env[key]);
-        } catch (e) {
-          secrets[secretKey] = env[key];
-        }
-      } catch (error) {
-        console.error(`Error parsing secret ${key}:`, error);
-      }
-    }
-  }
-
-  return secrets;
 }
 
 /**
@@ -147,10 +109,9 @@ function getPayloadSize(data) {
  */
 async function handleLargePayload(payload, env) {
   const payloadSize = getPayloadSize(payload);
-  const sizeThreshold = 1024 * 1024; // 1MB
 
-  if (payloadSize > sizeThreshold) {
-    const payloadId = `payload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  if (payloadSize > PAYLOAD_SIZE_THRESHOLD) {
+    const payloadId = `${PAYLOAD_ID_PREFIX}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     const r2Key = `payloads/${payloadId}`;
 
     await env.R2_BUCKET.put(r2Key, JSON.stringify(payload));
@@ -170,17 +131,12 @@ async function handleLargePayload(payload, env) {
 }
 
 /**
- * Create a success response
+ * Create a JSON response
  */
-function createSuccessResponse() {
-  return new Response(JSON.stringify({
-    success: true,
-    message: 'Webhook processed successfully'
-  }), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json'
-    }
+function createResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
   });
 }
 
@@ -188,31 +144,19 @@ function createSuccessResponse() {
  * Create an error response
  */
 function createErrorResponse(message, status = 500) {
-  console.log("Error response: " + message);
-  return new Response(JSON.stringify({
-    success: false,
-    error: message
-  }), {
-    status,
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  });
+  return createResponse({ success: false, error: message }, status);
 }
 
 /**
  * Handle incoming webhook requests
  */
 async function handleRequest(request, env, ctx) {
-  console.log("Handling request in worker.js");
-
   // Handle GET requests for job status/stats
   if (request.method === 'GET') {
     return await handleGetRequest(request, env);
   }
 
   if (request.method !== 'POST') {
-    console.log("Method not allowed: " + request.method);
     return new Response('Method not allowed', { status: 405 });
   }
 
@@ -236,7 +180,6 @@ async function handleRequest(request, env, ctx) {
     // Parse the configuration and find shop config
     const shopworkerConfig = parseShopworkerConfig(env);
     const shopConfig = findShopConfig(shopworkerConfig, shopDomain);
-    console.log("Shop config loaded for shop: " + shopConfig.name);
 
     // Get the webhook topic from the headers
     const topic = request.headers.get('X-Shopify-Topic');
@@ -248,12 +191,9 @@ async function handleRequest(request, env, ctx) {
     if (topic === 'shopworker/webhook') {
       const shopworkerWebhookSecret = request.headers.get('X-Shopworker-Webhook-Secret');
       if (shopworkerWebhookSecret != shopConfig.shopworker_webhook_secret) {
-        console.log("Invalid shopworker webhook secret: " + shopworkerWebhookSecret);
-        console.log("Expected shopworker webhook secret: " + shopConfig.shopworker_webhook_secret);
-        return createErrorResponse('Invalid shopworker webhook secret: ' + shopworkerWebhookSecret, 401);
+        return createErrorResponse('Invalid shopworker webhook secret', 401);
       }
     } else {
-      console.log("Verifying webhook signature for topic: " + topic);
       if (!await verifyShopifyWebhook(request, bodyText, env, shopConfig)) {
         return createErrorResponse('Invalid webhook signature', 401);
       }
@@ -270,7 +210,7 @@ async function handleRequest(request, env, ctx) {
     const jobConfig = await loadJobConfig(jobPath);
 
     // Start the job dispatcher workflow
-    const workflowId = `job-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    const workflowId = `${WORKFLOW_ID_PREFIX}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     const workflowParams = {
       shopDomain,
       jobPath,
@@ -289,16 +229,11 @@ async function handleRequest(request, env, ctx) {
       params: workflowParams
     });
 
-    console.log(`Workflow ${workflowId} started for shop ${shopDomain}, job ${jobPath}`);
-
     // Return immediately with workflow ID
-    return new Response(JSON.stringify({
+    return createResponse({
       success: true,
       message: 'Job workflow started successfully',
       workflowId: workflowId
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
@@ -326,7 +261,7 @@ async function handleGetRequest(request, env) {
           const workflow = await env.JOB_DISPATCHER.get(workflowId);
           const status = await workflow.status();
 
-          return new Response(JSON.stringify({
+          return createResponse({
             success: true,
             workflow: {
               id: workflowId,
@@ -334,9 +269,6 @@ async function handleGetRequest(request, env) {
               output: status.output,
               error: status.error
             }
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
           });
         } catch (error) {
           return createErrorResponse(`Workflow ${workflowId} not found`, 404);
@@ -366,7 +298,7 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 export class JobDispatcher extends WorkflowEntrypoint {
   async run(event, step) {
     // Parameters are passed via event.payload according to Cloudflare docs
-    const { shopDomain, jobPath, payload, r2Key, isLargePayload, shopConfig, jobConfig, topic, timestamp } = event.payload;
+    const { shopDomain, jobPath, payload, r2Key, isLargePayload, shopConfig } = event.payload;
 
     // Step 1: Retrieve payload if it's stored in R2
     const jobData = await step.do("retrieve-payload", async () => {
@@ -411,7 +343,6 @@ export class JobDispatcher extends WorkflowEntrypoint {
       throw new Error('Shopify API access token not configured');
     }
 
-    const { createShopifyClient } = await import('./utils/shopify.js');
     const shopify = createShopifyClient({
       shop: shopDomain,
       accessToken,
@@ -440,7 +371,6 @@ export class JobDispatcher extends WorkflowEntrypoint {
       if (isLargePayload && r2Key) {
         try {
           await this.env.R2_BUCKET.delete(r2Key);
-          console.log(`Cleaned up large payload: ${r2Key}`);
         } catch (error) {
           console.warn(`Failed to clean up large payload ${r2Key}:`, error.message);
         }
