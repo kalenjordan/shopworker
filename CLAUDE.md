@@ -46,6 +46,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Job Structure
 
+**Important:** When creating new jobs or modifying existing ones, always use the `step.do()` pattern for workflow steps. This ensures atomic, retriable operations and proper error handling. Some older jobs may not use this pattern yet and need refactoring, but all new work should follow this approach.
+
 Jobs follow this pattern:
 ```javascript
 export async function process({ shopify, payload, shopConfig, jobConfig, env, secrets, step }) {

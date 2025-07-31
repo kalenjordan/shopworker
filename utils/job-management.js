@@ -309,6 +309,21 @@ export async function runJobTest(cliDirname, jobPath, options) {
   const jobModulePath = pathToFileURL(path.resolve(cliDirname, `jobs/${jobPath}/job.js`)).href;
   const jobModule = await import(jobModulePath);
 
+  // Create a mock step object for CLI execution
+  const step = {
+    do: async (name, callback) => {
+      console.log(chalk.blue(`→ Step: ${name}`));
+      try {
+        const result = await callback();
+        console.log(chalk.green(`✓ Step completed: ${name}`));
+        return result;
+      } catch (error) {
+        console.log(chalk.red(`✗ Step failed: ${name}`));
+        throw error;
+      }
+    }
+  };
+
   // Pass process.env as env, shopConfig as shopConfig, and secrets for consistency with worker environment
   await jobModule.process({
     payload: record,
@@ -316,7 +331,8 @@ export async function runJobTest(cliDirname, jobPath, options) {
     env: process.env,   // Pass Node.js process.env as env
     shopConfig: shopConfig,  // Pass shopConfig separately
     jobConfig: configToUse,  // Pass the job config (with potential overrides) to the process function
-    secrets: secrets    // Pass secrets to the process function
+    secrets: secrets,    // Pass secrets to the process function
+    step: step          // Pass the mock step object
   });
   console.log('Processing complete!');
 }

@@ -6,7 +6,7 @@ import ProductMetafieldUpdate from "../../../../graphql/ProductMetafieldUpdate.j
  * @param {Object} params.shopify - Shopify API client
  * @param {Object} [params.env] - Environment variables (not used by this job)
  */
-export async function process({ payload: product, shopify }) {
+export async function process({ payload: product, shopify, step }) {
   // Format the current date in ISO format
   const currentDate = new Date().toISOString();
 
@@ -26,26 +26,32 @@ export async function process({ payload: product, shopify }) {
     metafields: metafields,
   };
 
-  console.log(`Updating metafield with value: ${currentDate} for product ID: ${input.id}`);
+  // Execute the mutation within a workflow step
+  const result = await step.do("update-product-metafield", async () => {
+    console.log(`Updating metafield with value: ${currentDate} for product ID: ${input.id}`);
+    
+    const response = await shopify.graphql(ProductMetafieldUpdate, {
+      input: input,
+    });
 
-  // Execute the mutation
-  const response = await shopify.graphql(ProductMetafieldUpdate, {
-    input: input,
+    // Check for errors
+    if (response.productUpdate?.userErrors?.length > 0) {
+      const errors = response.productUpdate.userErrors.map(err => `${err.field}: ${err.message}`).join(", ");
+      console.error(`Failed to update metafield for product ${input.id}: ${errors}`);
+      throw new Error(`Failed to update metafield: ${errors}`);
+    }
+
+    const updateResult = response.productUpdate;
+
+    if (!updateResult || !updateResult.product) {
+      console.error("Unexpected response structure from productUpdate mutation:", response);
+      throw new Error("Failed to get product details from update response.");
+    }
+
+    console.log(`Successfully updated metafield for product: ${updateResult.product.title}`);
+    
+    return updateResult;
   });
 
-  // Check for errors (Optional but recommended)
-  if (response.productUpdate?.userErrors?.length > 0) {
-    const errors = response.productUpdate.userErrors.map(err => `${err.field}: ${err.message}`).join(", ");
-    console.error(`Failed to update metafield for product ${input.id}: ${errors}`);
-    throw new Error(`Failed to update metafield: ${errors}`);
-  }
-
-  const result = response.productUpdate;
-
-  if (!result || !result.product) {
-     console.error("Unexpected response structure from productUpdate mutation:", response);
-     throw new Error("Failed to get product details from update response.");
-  }
-
-  console.log(`Successfully updated metafield for product: ${result.product.title}`);
+  return result;
 }
