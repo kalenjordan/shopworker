@@ -2,14 +2,13 @@
  * Cloudflare Worker entry point for Shopify webhooks
  */
 
-import { createShopifyClient } from './utils/shopify.js';
-import { hmacSha256 } from './utils/crypto.js';
+import { createShopifyClient } from "./utils/shopify.js";
+import { hmacSha256 } from "./utils/crypto.js";
 
 // Constants
 const PAYLOAD_SIZE_THRESHOLD = 1024 * 1024; // 1MB
-const WORKFLOW_ID_PREFIX = 'job';
-const PAYLOAD_ID_PREFIX = 'payload';
-
+const WORKFLOW_ID_PREFIX = "job";
+const PAYLOAD_ID_PREFIX = "payload";
 
 /**
  * Verify that a webhook request is authentic and from Shopify
@@ -26,7 +25,7 @@ async function verifyShopifyWebhook(req, body, env, shopConfig) {
       return false;
     }
 
-    const hmac = req.headers.get('X-Shopify-Hmac-Sha256');
+    const hmac = req.headers.get("X-Shopify-Hmac-Sha256");
     if (!hmac) {
       console.error("Missing HMAC signature in webhook request");
       return false;
@@ -66,7 +65,7 @@ async function loadJobConfig(jobPath) {
  */
 function parseShopworkerConfig(env) {
   if (!env.SHOPWORKER_CONFIG) {
-    throw new Error('SHOPWORKER_CONFIG secret not found. Please run `shopworker put-secrets` to configure the worker.');
+    throw new Error("SHOPWORKER_CONFIG secret not found. Please run `shopworker put-secrets` to configure the worker.");
   }
   return JSON.parse(env.SHOPWORKER_CONFIG);
 }
@@ -78,7 +77,7 @@ function findShopConfig(shopworkerConfig, shopDomain) {
   if (!shopworkerConfig.shops) {
     return null;
   }
-  return shopworkerConfig.shops.find(shop => shop.shopify_domain === shopDomain);
+  return shopworkerConfig.shops.find((shop) => shop.shopify_domain === shopDomain);
 }
 
 /**
@@ -86,16 +85,14 @@ function findShopConfig(shopworkerConfig, shopDomain) {
  */
 function getJobPathFromUrl(request) {
   const url = new URL(request.url);
-  const jobPath = url.searchParams.get('job');
+  const jobPath = url.searchParams.get("job");
 
   if (!jobPath) {
-    throw new Error('Job path must be specified in the URL');
+    throw new Error("Job path must be specified in the URL");
   }
 
   return jobPath;
 }
-
-
 
 /**
  * Get the size of a payload in bytes
@@ -119,14 +116,14 @@ async function handleLargePayload(payload, env) {
     return {
       r2Key,
       isLargePayload: true,
-      originalSize: payloadSize
+      originalSize: payloadSize,
     };
   }
 
   return {
     payload,
     isLargePayload: false,
-    originalSize: payloadSize
+    originalSize: payloadSize,
   };
 }
 
@@ -136,7 +133,7 @@ async function handleLargePayload(payload, env) {
 function createResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -148,137 +145,127 @@ function createErrorResponse(message, status = 500) {
 }
 
 /**
- * Handle incoming webhook requests
+ * Parse webhook request and extract necessary data
  */
-async function handleRequest(request, env, ctx) {
-  // Handle GET requests for job status/stats
-  if (request.method === 'GET') {
-    return await handleGetRequest(request, env);
-  }
-
-  if (request.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
-  }
+async function parseWebhookRequest(request) {
+  const bodyText = await request.clone().text();
+  let bodyData;
 
   try {
-    // Get the request body as text and as JSON
-    const bodyText = await request.clone().text();
-    let bodyData;
+    bodyData = await request.json();
+  } catch (e) {
+    throw new Error("Invalid JSON body");
+  }
 
-    try {
-      bodyData = await request.json();
-    } catch (e) {
-      return createErrorResponse('Invalid JSON body', 400);
+  const shopDomain = request.headers.get("X-Shopify-Shop-Domain");
+  if (!shopDomain) {
+    throw new Error("Missing X-Shopify-Shop-Domain header");
+  }
+
+  const topic = request.headers.get("X-Shopify-Topic");
+  if (!topic) {
+    throw new Error("Missing X-Shopify-Topic header");
+  }
+
+  return { bodyText, bodyData, shopDomain, topic };
+}
+
+/**
+ * Verify webhook authentication based on topic
+ */
+async function verifyWebhookAuth(request, bodyText, topic, env, shopConfig) {
+  if (topic === "shopworker/webhook") {
+    const shopworkerWebhookSecret = request.headers.get("X-Shopworker-Webhook-Secret");
+    if (shopworkerWebhookSecret != shopConfig.shopworker_webhook_secret) {
+      throw new Error("Invalid shopworker webhook secret");
     }
-
-    // Get shop domain from headers
-    const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
-    if (!shopDomain) {
-      return createErrorResponse('Missing X-Shopify-Shop-Domain header', 400);
+  } else {
+    if (!(await verifyShopifyWebhook(request, bodyText, env, shopConfig))) {
+      throw new Error("Invalid webhook signature");
     }
-
-    // Parse the configuration and find shop config
-    const shopworkerConfig = parseShopworkerConfig(env);
-    const shopConfig = findShopConfig(shopworkerConfig, shopDomain);
-
-    // Get the webhook topic from the headers
-    const topic = request.headers.get('X-Shopify-Topic');
-    if (!topic) {
-      return createErrorResponse('Missing X-Shopify-Topic header', 400);
-    }
-
-    // Verify the webhook signature (skip verification for shopworker/webhook topic)
-    if (topic === 'shopworker/webhook') {
-      const shopworkerWebhookSecret = request.headers.get('X-Shopworker-Webhook-Secret');
-      if (shopworkerWebhookSecret != shopConfig.shopworker_webhook_secret) {
-        return createErrorResponse('Invalid shopworker webhook secret', 401);
-      }
-    } else {
-      if (!await verifyShopifyWebhook(request, bodyText, env, shopConfig)) {
-        return createErrorResponse('Invalid webhook signature', 401);
-      }
-    }
-
-    // Get job path from URL parameter
-    const jobPath = getJobPathFromUrl(request);
-
-    // Handle large payloads by storing in R2
-    const payloadInfo = await handleLargePayload(bodyData, env);
-
-
-    // Load job config
-    const jobConfig = await loadJobConfig(jobPath);
-
-    // Start the job dispatcher workflow
-    const workflowId = `${WORKFLOW_ID_PREFIX}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-    const workflowParams = {
-      shopDomain,
-      jobPath,
-      ...(payloadInfo.isLargePayload ?
-        { r2Key: payloadInfo.r2Key, isLargePayload: true } :
-        { payload: payloadInfo.payload, isLargePayload: false }
-      ),
-      shopConfig,
-      jobConfig,
-      topic,
-      timestamp: new Date().toISOString()
-    };
-
-    const workflowInstance = await env.JOB_DISPATCHER.create({
-      id: workflowId,
-      params: workflowParams
-    });
-
-    // Return immediately with workflow ID
-    return createResponse({
-      success: true,
-      message: 'Job workflow started successfully',
-      workflowId: workflowId
-    });
-
-  } catch (error) {
-    console.error('Error processing webhook:', error.message, error.stack);
-    return createErrorResponse(error.message);
   }
 }
 
 /**
- * Handle GET requests for workflow status
+ * Create and start workflow for job processing
  */
-async function handleGetRequest(request, env) {
+async function createJobWorkflow(env, params) {
+  const workflowId = `${WORKFLOW_ID_PREFIX}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
+  await env.JOB_DISPATCHER.create({
+    id: workflowId,
+    params,
+  });
+
+  return workflowId;
+}
+
+/**
+ * Process the webhook request
+ */
+async function _handleRequest(request, env) {
+  // Parse webhook request
+  const { bodyText, bodyData, shopDomain, topic } = await parseWebhookRequest(request);
+
+  // Get shop configuration
+  const shopworkerConfig = parseShopworkerConfig(env);
+  const shopConfig = findShopConfig(shopworkerConfig, shopDomain);
+
+  // Verify webhook authentication
+  await verifyWebhookAuth(request, bodyText, topic, env, shopConfig);
+
+  // Get job path and load config
+  const jobPath = getJobPathFromUrl(request);
+  const jobConfig = await loadJobConfig(jobPath);
+
+  // Handle large payloads
+  const payloadInfo = await handleLargePayload(bodyData, env);
+
+  // Create workflow parameters
+  const workflowParams = {
+    shopDomain,
+    jobPath,
+    ...(payloadInfo.isLargePayload
+      ? { r2Key: payloadInfo.r2Key, isLargePayload: true }
+      : { payload: payloadInfo.payload, isLargePayload: false }),
+    shopConfig,
+    jobConfig,
+    topic,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Start workflow
+  const workflowId = await createJobWorkflow(env, workflowParams);
+
+  // Return success response
+  return createResponse({
+    success: true,
+    message: "Job workflow started successfully",
+    workflowId: workflowId,
+  });
+}
+
+/**
+ * Handle incoming webhook requests
+ */
+async function handleRequest(request, env) {
+  if (request.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+
   try {
-    const url = new URL(request.url);
-    const workflowId = url.searchParams.get('workflow');
-    const action = url.searchParams.get('action') || 'status';
-
-    switch (action) {
-      case 'status':
-        if (!workflowId) {
-          return createErrorResponse('Missing workflowId parameter for status request', 400);
-        }
-
-        try {
-          const workflow = await env.JOB_DISPATCHER.get(workflowId);
-          const status = await workflow.status();
-
-          return createResponse({
-            success: true,
-            workflow: {
-              id: workflowId,
-              status: status.status,
-              output: status.output,
-              error: status.error
-            }
-          });
-        } catch (error) {
-          return createErrorResponse(`Workflow ${workflowId} not found`, 404);
-        }
-
-      default:
-        return createErrorResponse('Unknown action. Valid actions: status', 400);
-    }
+    return await _handleRequest(request, env);
   } catch (error) {
-    console.error('Error handling GET request:', error.message);
+    console.error("Error processing webhook:", error.message, error.stack);
+
+    // Map specific errors to appropriate status codes
+    if (error.message.includes("Missing") || error.message.includes("Invalid JSON")) {
+      return createErrorResponse(error.message, 400);
+    }
+    if (error.message.includes("webhook secret") || error.message.includes("webhook signature")) {
+      return createErrorResponse(error.message, 401);
+    }
+
     return createErrorResponse(error.message);
   }
 }
@@ -288,8 +275,8 @@ async function handleGetRequest(request, env) {
  */
 export default {
   async fetch(request, env, ctx) {
-    return await handleRequest(request, env, ctx);
-  }
+    return await handleRequest(request, env);
+  },
 };
 
 // JobDispatcher Workflow class - defined inline for proper binding
@@ -326,8 +313,8 @@ export class JobDispatcher extends WorkflowEntrypoint {
             ...config,
             test: {
               ...config.test,
-              ...jobData._configOverrides
-            }
+              ...jobData._configOverrides,
+            },
           };
         }
 
@@ -340,13 +327,13 @@ export class JobDispatcher extends WorkflowEntrypoint {
     // Step 3: Create Shopify client (not serializable, so create outside of workflow step)
     const accessToken = shopConfig?.shopify_token || this.env.SHOPIFY_ACCESS_TOKEN;
     if (!accessToken) {
-      throw new Error('Shopify API access token not configured');
+      throw new Error("Shopify API access token not configured");
     }
 
     const shopify = createShopifyClient({
       shop: shopDomain,
       accessToken,
-      apiVersion: finalJobConfig?.apiVersion
+      apiVersion: finalJobConfig?.apiVersion,
     });
 
     // Step 4: Load job module (not a workflow step, just load the module)
@@ -363,7 +350,7 @@ export class JobDispatcher extends WorkflowEntrypoint {
       jobConfig: finalJobConfig,
       env: this.env,
       secrets: this.loadSecretsFromEnv(this.env),
-      step // Pass the step function so jobs can create their own workflow steps at the top level
+      step, // Pass the step function so jobs can create their own workflow steps at the top level
     });
 
     // Step 5: Clean up large payload if needed
@@ -387,7 +374,7 @@ export class JobDispatcher extends WorkflowEntrypoint {
   loadSecretsFromEnv(env) {
     const secrets = {};
     for (const key in env) {
-      if (key.startsWith('SECRET_')) {
+      if (key.startsWith("SECRET_")) {
         const secretKey = key.substring(7);
         try {
           secrets[secretKey] = JSON.parse(env[key]);
