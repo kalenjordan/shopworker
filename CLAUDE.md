@@ -71,7 +71,7 @@ export async function process({ shopify, payload, shopConfig, jobConfig, env, se
 
 ### Key Patterns
 
-1. **GraphQL Queries** - Stored in `graphql/` directory, imported by jobs
+1. **GraphQL Queries** - Stored in `core/graphql/` directory as `.js` files with template literals, imported by jobs. Follow naming conventions like `productsGetRecent.js`, `orderUpdate.js`
 2. **Workflow Steps** - Use `step.do()` for atomic, retriable operations
 3. **Large Payload Handling** - Automatic R2 storage for payloads >1MB
 4. **Multi-Shop Support** - Configure multiple shops in `.shopworker.json`
