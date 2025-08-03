@@ -1,6 +1,5 @@
 {
   "name": "Tag SKUs in Order",
-  "shop": "kalen-test-store",
   "description": "Tags customers with SKUs from their order",
   "version": "1.0.0",
   "trigger": "order-created"

@@ -1,6 +1,5 @@
 {
   "name": "Send product to Google Sheets",
-  "shop": "flow-test",
   "description": "Sends product data to Google Sheets when a product is updated",
   "version": "1.0.0",
   "spreadsheet_id": "1DJvNyc2C__7vJGTl9VJHaThpn7s6i9KZeD-jrLOED68",

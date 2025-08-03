@@ -1,6 +1,5 @@
 {
   "name": "Note Change Email Trigger",
-  "shop": "kalen-test-store",
   "description": "Triggers order confirmation email when order note changes",
   "version": "1.0.0",
   "trigger": "order-updated"

@@ -1,6 +1,5 @@
 {
   "name": "Create Zendesk ticket for low review",
-  "shop": "kalen-test-store",
   "description": "When a review of 2 stars or less is created, open a Zendesk ticket",
   "version": "1.0.0",
   "trigger": "review-created"

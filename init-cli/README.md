@@ -1,6 +1,6 @@
 # create-shopworker
 
-CLI tool to create and set up Shopworker instances with git worktrees.
+CLI tool to create and set up Shopworker instances with symlinks.
 
 ## Usage
 
@@ -21,23 +21,35 @@ create-shopworker
 
 This CLI tool helps you set up a new Shopworker instance by:
 
-1. Creating a new GitHub repository for your account-specific Shopworker configuration
-2. Cloning the main Shopworker repository
-3. Setting up git worktrees to link account-specific directories (jobs, triggers, connectors)
-4. Creating a template structure with example files
+1. Cloning the main Shopworker repository
+2. Creating a GitHub repository for your account-specific code
+3. Setting up a symlink-based structure to keep your code separate
+4. Initializing with template files including a hello-world job example
 
 ## Architecture
 
-Each Shopworker instance consists of:
+The tool creates a symlink-based structure:
 
-- **Main Repository**: The core Shopworker codebase (cloned as `shopworker-main/`)
-- **Account Repository**: Your account-specific configuration and custom jobs
-- **Git Worktrees**: Links the account-specific directories to branches in the main repo
+```
+shopworker-demo/              # Main Shopworker repository
+├── core/                     # Core Shopworker code
+├── jobs/                     # Core jobs
+├── triggers/                 # Core triggers
+├── connectors/               # Core connectors
+├── local/                    # Symlink → shopworker-demo-local
+└── .gitignore                # Ignores /local
 
-This architecture allows you to:
-- Keep your custom code separate from the core Shopworker code
-- Easily pull updates from the main Shopworker repository
-- Maintain account-specific configurations in their own repositories
+shopworker-demo-local/        # Your account-specific repository
+├── jobs/                     # Your custom jobs
+├── triggers/                 # Your custom triggers
+└── connectors/               # Your custom connectors
+```
+
+This architecture:
+- **Keeps code separate**: Main and account repos are independent
+- **Simple to understand**: Just symlinks, no complex git worktrees
+- **Easy updates**: Pull main repo updates without conflicts
+- **Clean git history**: Each repo has its own history
 
 ## Prerequisites
 
@@ -47,25 +59,71 @@ This architecture allows you to:
 
 ## Example
 
+### In an empty directory:
+
 ```bash
+$ mkdir shopworker-demo && cd shopworker-demo
 $ npx create-shopworker
 
 🛍️  Create Shopworker Instance
 
-✔ Account name (e.g., acme-corp): › acme-corp
-✔ Repository name: › shopworker-acme-corp
+Using current directory: shopworker-demo
+
+✔ Repository name: › shopworker-demo
 ✔ Create private repository? › Yes
-✔ Main Shopworker repository URL: › https://github.com/your-org/shopworker.git
-✔ Local directory path: › ./acme-corp
 
 ✅ Shopworker instance created successfully!
 
+Structure:
+  shopworker-demo/            - Main Shopworker repository
+    ├── core/                 - Core Shopworker code
+    └── local/                - Symlink to shopworker-demo-local
+  shopworker-demo-local/      - Your account-specific code
+    ├── jobs/
+    ├── triggers/
+    └── connectors/
+
 Next steps:
-  1. cd ./acme-corp
-  2. Configure .shopworker.json with your Shopify credentials
-  3. Set up .env with your environment variables
-  4. Create your custom jobs in the jobs/ directory
+  1. Configure .shopworker.json with your Shopify credentials
+  2. Set up .env with your environment variables
+  3. Install dependencies: npm install
+  4. Create your custom jobs in local/jobs/
   5. Deploy with: npm run deploy
+```
+
+### In a non-empty directory:
+
+```bash
+$ cd ~/projects
+$ npx create-shopworker
+
+🛍️  Create Shopworker Instance
+
+✔ Repository name: › shopworker-acme
+✔ Create private repository? › Yes
+✔ Directory name for Shopworker instance: › shopworker-acme
+
+✅ Creates shopworker-acme/ and shopworker-acme-local/ directories
+```
+
+## Working with the Structure
+
+- **Main repository** (`shopworker-demo/`): Contains core Shopworker code
+- **Account repository** (`shopworker-demo-local/`): Contains your custom code
+- **Symlink** (`shopworker-demo/local/`): Points to your account repository
+
+To update the main Shopworker code:
+```bash
+cd shopworker-demo
+git pull origin main
+```
+
+To push your custom code:
+```bash
+cd shopworker-demo-local
+git add .
+git commit -m "Add custom job"
+git push
 ```
 
 ## Development
@@ -74,7 +132,7 @@ To work on this CLI tool:
 
 ```bash
 git clone <this-repo>
-cd create-shopworker
+cd init-cli
 npm install
 npm link  # Makes 'create-shopworker' available globally for testing
 ```

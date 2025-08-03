@@ -33,7 +33,7 @@ export function getWorkerUrl(options, cliDirname = process.cwd()) {
 /**
  * Get shop configuration from .shopworker.json
  * @param {string} cliDirname - The directory where cli.js is located
- * @param {string} shopName - The shop name from job config
+ * @param {string} shopName - The shop name from job config (ignored in new format)
  * @returns {Object} The shop configuration
  */
 export function getShopConfig(cliDirname, shopName) {
@@ -45,8 +45,14 @@ export function getShopConfig(cliDirname, shopName) {
   const shopworkerFileContent = fs.readFileSync(shopworkerFilePath, 'utf8');
   const shopworkerData = JSON.parse(shopworkerFileContent);
 
+  // Check if using new format (direct shop config)
+  if (shopworkerData.shopify_domain && shopworkerData.shopify_token) {
+    return shopworkerData;
+  }
+
+  // Legacy format support
   if (!shopworkerData.shops || !Array.isArray(shopworkerData.shops)) {
-    throw new Error('Invalid .shopworker.json format: "shops" array is missing or not an array.');
+    throw new Error('Invalid .shopworker.json format: Missing shop configuration.');
   }
 
   const shopConfig = shopworkerData.shops.find(s => s.name === shopName);
@@ -60,7 +66,7 @@ export function getShopConfig(cliDirname, shopName) {
 /**
  * Get shop domain from shopworker.json
  * @param {string} cliDirname - The directory where cli.js is located
- * @param {string} shopName - The shop name from job config
+ * @param {string} shopName - The shop name from job config (ignored in new format)
  * @returns {string} The shop domain or a default value
  */
 export function getShopDomain(cliDirname, shopName) {
@@ -68,8 +74,14 @@ export function getShopDomain(cliDirname, shopName) {
     const shopworkerPath = path.join(cliDirname, '.shopworker.json');
     const shopworkerContent = fs.readFileSync(shopworkerPath, 'utf8');
     const shopworkerData = JSON.parse(shopworkerContent);
+    
+    // Check if using new format
+    if (shopworkerData.shopify_domain) {
+      return shopworkerData.shopify_domain;
+    }
+    
+    // Legacy format support
     const shopConfig = shopworkerData.shops.find(s => s.name === shopName);
-
     if (shopConfig && shopConfig.shopify_domain) {
       return shopConfig.shopify_domain;
     }
@@ -83,7 +95,7 @@ export function getShopDomain(cliDirname, shopName) {
 /**
  * Gets the shop configuration with API secret for remote testing
  * @param {string} cliDirname - The directory where cli.js is located
- * @param {string} shopName - The shop name from job config
+ * @param {string} shopName - The shop name from job config (ignored in new format)
  * @param {string} optionalShopDomain - Optional shop domain override
  * @returns {Object} Object containing shop config, API secret, and shop domain
  * @throws {Error} If API secret is not found
@@ -92,13 +104,26 @@ export function getShopConfigWithSecret(cliDirname, shopName, optionalShopDomain
   const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
   const shopworkerContent = fs.readFileSync(shopworkerFilePath, 'utf8');
   const shopworkerData = JSON.parse(shopworkerContent);
-  const shopConfig = shopworkerData.shops.find(s => s.name === shopName);
-
-  if (!shopConfig || !shopConfig.shopify_api_secret_key) {
-    throw new Error(`API secret not found for shop '${shopName}'. Make sure shopify_api_secret_key is defined in .shopworker.json.`);
+  
+  let shopConfig, apiSecret;
+  
+  // Check if using new format
+  if (shopworkerData.shopify_domain && shopworkerData.shopify_token) {
+    shopConfig = shopworkerData;
+    apiSecret = shopworkerData.shopify_api_secret_key;
+  } else {
+    // Legacy format support
+    shopConfig = shopworkerData.shops.find(s => s.name === shopName);
+    if (!shopConfig) {
+      throw new Error(`Shop configuration for '${shopName}' not found in .shopworker.json.`);
+    }
+    apiSecret = shopConfig.shopify_api_secret_key;
   }
 
-  const apiSecret = shopConfig.shopify_api_secret_key;
+  if (!apiSecret) {
+    throw new Error(`API secret not found. Make sure shopify_api_secret_key is defined in .shopworker.json.`);
+  }
+
   const shopDomain = optionalShopDomain || getShopDomain(cliDirname, shopName);
 
   return { shopConfig, apiSecret, shopDomain };

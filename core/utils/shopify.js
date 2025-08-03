@@ -231,30 +231,37 @@ export function initShopify(cliDir, jobPath, shopParam) {
     const shopworkerFileContent = fs.readFileSync(shopworkerFilePath, 'utf8');
     const shopworkerData = JSON.parse(shopworkerFileContent);
 
-    if (!shopworkerData.shops || !Array.isArray(shopworkerData.shops)) {
-      throw new Error('Invalid .shopworker.json format: "shops" array is missing or not an array.');
-    }
-
-    // If shopParam is provided, look it up in .shopworker.json
     let shopDetails = null;
-    if (shopParam) {
-      // Try to find shop by domain or name
-      shopDetails = shopworkerData.shops.find(s =>
-        s.shopify_domain === shopParam || s.name === shopParam
-      );
-
-      if (!shopDetails) {
-        throw new Error(`Shop with domain or name '${shopParam}' not found in .shopworker.json.`);
-      }
+    
+    // Check if using new format (direct shop config)
+    if (shopworkerData.shopify_domain && shopworkerData.shopify_token) {
+      shopDetails = shopworkerData;
     } else {
-      // Use shop from job config
-      if (!shopIdentifier) {
-        throw new Error(`'shop' not defined in job configuration: ${jobConfigPath}`);
+      // Legacy format support
+      if (!shopworkerData.shops || !Array.isArray(shopworkerData.shops)) {
+        throw new Error('Invalid .shopworker.json format: Missing shop configuration.');
       }
 
-      shopDetails = shopworkerData.shops.find(s => s.name === shopIdentifier);
-      if (!shopDetails) {
-        throw new Error(`Shop configuration for '${shopIdentifier}' not found in .shopworker.json.`);
+      // If shopParam is provided, look it up in .shopworker.json
+      if (shopParam) {
+        // Try to find shop by domain or name
+        shopDetails = shopworkerData.shops.find(s =>
+          s.shopify_domain === shopParam || s.name === shopParam
+        );
+
+        if (!shopDetails) {
+          throw new Error(`Shop with domain or name '${shopParam}' not found in .shopworker.json.`);
+        }
+      } else {
+        // Use shop from job config
+        if (!shopIdentifier) {
+          throw new Error(`'shop' not defined in job configuration: ${jobConfigPath}`);
+        }
+
+        shopDetails = shopworkerData.shops.find(s => s.name === shopIdentifier);
+        if (!shopDetails) {
+          throw new Error(`Shop configuration for '${shopIdentifier}' not found in .shopworker.json.`);
+        }
       }
     }
 
