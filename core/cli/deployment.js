@@ -3,7 +3,6 @@ import path from 'path';
 import { execSync } from 'child_process';
 import readline from 'readline';
 import { needsSecretsPush, executePutSecrets } from './secrets.js';
-import { updateJobManifest } from './job-manifest.js';
 
 /**
  * Checks Git repository status before deployment
@@ -381,8 +380,18 @@ export async function handleCloudflareDeployment(cliDirname) {
     return false;
   }
 
-  // Generate job manifest before deployment
-  updateJobManifest(cliDirname);
+  // Generate the job loader for Cloudflare Workers
+  console.log('Generating job loader for Cloudflare Workers...');
+  try {
+    execSync('node core/bundle-jobs.js', {
+      stdio: 'inherit',
+      encoding: 'utf8',
+      cwd: cliDirname
+    });
+  } catch (error) {
+    console.error('Failed to generate job loader:', error.message);
+    return false;
+  }
 
   // Replace symlink with directory copy
   const symlinkReplaced = await replaceSymlinkWithCopy(cliDirname);

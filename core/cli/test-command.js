@@ -5,7 +5,6 @@ import chalk from 'chalk';
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { initShopify } from '../shared/shopify.js';
 import { getShopConfig, loadSecrets } from '../shared/config-helpers.js';
-import { updateJobManifest } from './job-manifest.js';
 
 /**
  * Find a sample record for testing a job
@@ -130,9 +129,6 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
  * @param {Object} options - CLI options object containing query, shop, limit, dryRun, etc.
  */
 export async function runJobTest(cliDirname, jobPath, options) {
-  // Generate job manifest before running test
-  updateJobManifest(cliDirname);
-
   const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobPath, options.query, options.shop);
 
   // Start with the base job config

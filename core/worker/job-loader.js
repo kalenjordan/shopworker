@@ -1,9 +1,9 @@
 /**
  * Worker-specific job loading utilities
- * These functions handle dynamic imports using the pre-generated job manifest
+ * These functions use statically imported jobs for Cloudflare Workers compatibility
  */
 
-import manifest from '../../job-manifest.json';
+import { getJobModule, getJobConfig } from './job-loader-generated.js';
 
 /**
  * Load job configuration in the worker environment
@@ -11,14 +11,11 @@ import manifest from '../../job-manifest.json';
  * @returns {Promise<Object>} The job configuration
  */
 export async function loadJobConfig(jobPath) {
-  const jobInfo = manifest.jobs[jobPath];
-  
-  if (!jobInfo) {
-    throw new Error(`Job not found in manifest: ${jobPath}`);
+  try {
+    return getJobConfig(jobPath);
+  } catch (error) {
+    throw new Error(`Job not found: ${jobPath}`);
   }
-  
-  // Use the config from the manifest directly
-  return jobInfo.config;
 }
 
 /**
@@ -27,18 +24,15 @@ export async function loadJobConfig(jobPath) {
  * @returns {Promise<Object>} The job module
  */
 export async function loadJobModule(jobPath) {
-  const jobInfo = manifest.jobs[jobPath];
-  
-  if (!jobInfo) {
-    throw new Error(`Job not found in manifest: ${jobPath}`);
+  try {
+    const jobModule = getJobModule(jobPath);
+    
+    if (!jobModule.process) {
+      throw new Error(`Job ${jobPath} does not export a process function`);
+    }
+    
+    return jobModule;
+  } catch (error) {
+    throw new Error(`Job not found: ${jobPath}`);
   }
-  
-  // Use the exact import path from the manifest
-  const jobModule = await import(jobInfo.jobPath);
-  
-  if (!jobModule.process) {
-    throw new Error(`Job ${jobPath} does not export a process function`);
-  }
-  
-  return jobModule;
 }
