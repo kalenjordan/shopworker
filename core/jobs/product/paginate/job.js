@@ -2,7 +2,7 @@
  * Paginate Products Job
  * 
  * This job paginates through all products in the store, fetching them in pages of 5,
- * and counts the total number of products.
+ * and counts the total number of products by type.
  */
 
 import paginateQuery from '../../../graphql/productsGetPaginated.js';
@@ -17,73 +17,81 @@ export async function process({ shopify, step }) {
   console.log("====== Starting product pagination job ======");
 
   // Step 1: Initialize pagination state
-  const { pageSize, totalPages } = await step.do("initialize-pagination", async () => {
+  const initialState = await step.do("initialize-pagination", async () => {
     const pageSize = 5;
     console.log(`Starting pagination with page size: ${pageSize}`);
     
     return {
       pageSize,
-      totalPages: 0,
-      productCounts: []
+      hasNextPage: true,
+      cursor: null,
+      pageNumber: 0,
+      productCounts: [],
+      productTypeCount: {}
     };
   });
 
-  // Step 2: Fetch pages of products
-  let hasNextPage = true;
-  let cursor = null;
-  let pageNumber = 0;
-  const productCounts = [];
+  // Process pages iteratively, passing state through each step
+  let currentState = initialState;
+  let stepIndex = 0;
 
-  // Continue fetching pages until there are no more
-  while (hasNextPage) {
-    const currentPageNumber = pageNumber;
-    const currentCursor = cursor;
+  while (currentState.hasNextPage) {
+    const stepName = `fetch-page-${stepIndex}`;
     
-    // Fetch a page of products
-    const pageResult = await step.do(`fetch-page-${currentPageNumber}`, async () => {
-      console.log(`Fetching page ${currentPageNumber + 1}...`);
+    currentState = await step.do(stepName, async () => {
+      const { pageSize, cursor, pageNumber, productCounts, productTypeCount } = currentState;
+      
+      console.log(`Fetching page ${pageNumber + 1}...`);
       
       const response = await shopify.graphql(paginateQuery, {
         first: pageSize,
-        after: currentCursor
+        after: cursor
       });
 
       const products = response.products.edges;
       const pageInfo = response.products.pageInfo;
       
-      console.log(`Page ${currentPageNumber + 1}: Found ${products.length} products`);
+      console.log(`Page ${pageNumber + 1}: Found ${products.length} products`);
       
-      // Log product details for this page
+      // Create a copy of the accumulated type counts
+      const updatedTypeCount = { ...productTypeCount };
+      
+      // Log product details for this page and count by type
       products.forEach((edge, index) => {
         const product = edge.node;
-        console.log(`  ${index + 1}. ${product.title} (${product.handle})`);
+        console.log(`  ${index + 1}. ${product.title} (${product.handle}) - Type: ${product.productType || 'None'}`);
+        
+        // Count products by type
+        const type = product.productType || 'None';
+        updatedTypeCount[type] = (updatedTypeCount[type] || 0) + 1;
       });
 
+      // Create updated product counts array
+      const updatedProductCounts = [
+        ...productCounts,
+        {
+          page: pageNumber + 1,
+          count: products.length
+        }
+      ];
+
+      // Return the complete state for the next iteration
       return {
-        pageNumber: currentPageNumber + 1,
-        productCount: products.length,
+        pageSize,
         hasNextPage: pageInfo.hasNextPage,
-        endCursor: pageInfo.endCursor,
-        products: products.map(edge => ({
-          id: edge.node.admin_graphql_api_id,
-          title: edge.node.title,
-          handle: edge.node.handle
-        }))
+        cursor: pageInfo.endCursor,
+        pageNumber: pageNumber + 1,
+        productCounts: updatedProductCounts,
+        productTypeCount: updatedTypeCount
       };
     });
 
-    productCounts.push({
-      page: pageResult.pageNumber,
-      count: pageResult.productCount
-    });
-
-    hasNextPage = pageResult.hasNextPage;
-    cursor = pageResult.endCursor;
-    pageNumber++;
+    stepIndex++;
   }
 
-  // Step 3: Summarize the results
+  // Step 3: Summarize the results using the final state
   const summary = await step.do("summarize-results", async () => {
+    const { productCounts, productTypeCount, pageSize } = currentState;
     const totalProducts = productCounts.reduce((sum, page) => sum + page.count, 0);
     const totalPages = productCounts.length;
 
@@ -97,11 +105,18 @@ export async function process({ shopify, step }) {
       console.log(`  Page ${page}: ${count} products`);
     });
 
+    console.log("\n====== Product Type Counts ======");
+    const sortedTypes = Object.entries(productTypeCount).sort((a, b) => b[1] - a[1]);
+    sortedTypes.forEach(([type, count]) => {
+      console.log(`  ${type}: ${count} products`);
+    });
+
     return {
       totalPages,
       pageSize,
       totalProducts,
-      pageBreakdown: productCounts
+      pageBreakdown: productCounts,
+      productTypeCount
     };
   });
 

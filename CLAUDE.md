@@ -48,12 +48,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Important:** When creating new jobs or modifying existing ones, always use the `step.do()` pattern for workflow steps. This ensures atomic, retriable operations and proper error handling. Some older jobs may not use this pattern yet and need refactoring, but all new work should follow this approach.
 
+**Critical Workflow State Management Rule:** NEVER store accumulated state in variables at the workflow level. Cloudflare Workflows can hibernate between steps, causing workflow-level variables to be lost. ALL state must be stored in and retrieved from step return values. Each step should return the complete state needed for subsequent steps.
+
 Jobs follow this pattern:
 ```javascript
 export async function process({ shopify, payload, shopConfig, jobConfig, env, secrets, step }) {
   // Use step.do() for workflow steps
   const result = await step.do("step-name", async () => {
     // Step logic here
+    return { /* All state that needs to persist */ };
+  });
+  
+  // For iterative processes, pass state through steps:
+  let currentState = await step.do("initial-step", async () => {
+    return { count: 0, items: [] };
+  });
+  
+  currentState = await step.do("next-step", async () => {
+    // Use currentState from previous step
+    return { count: currentState.count + 1, items: [...currentState.items, newItem] };
   });
   
   // Access Shopify API via shopify.graphql()

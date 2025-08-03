@@ -7,6 +7,7 @@ query GetProductsPage($first: Int!, $after: String) {
         admin_graphql_api_id: id
         title
         handle
+        productType
         status
         createdAt
         updatedAt
