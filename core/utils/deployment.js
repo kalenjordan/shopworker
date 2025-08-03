@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 
 /**
  * Checks Git repository status before deployment
@@ -58,18 +59,130 @@ export async function getCurrentCommit() {
 }
 
 /**
+ * Temporarily replaces the 'local' symlink with a full directory copy
+ * @param {string} projectRoot - The project root directory
+ * @returns {Promise<boolean>} Whether the replacement was successful
+ */
+export async function replaceSymlinkWithCopy(projectRoot) {
+  const localPath = path.join(projectRoot, 'local');
+  const tempPath = path.join(projectRoot, 'local-temp');
+  
+  try {
+    // Check if 'local' exists and is a symlink
+    const stats = fs.lstatSync(localPath);
+    if (!stats.isSymbolicLink()) {
+      console.log("'local' is not a symlink, proceeding with deployment as-is.");
+      return true;
+    }
+    
+    // Get the target of the symlink
+    const symlinkTarget = fs.readlinkSync(localPath);
+    const absoluteTarget = path.resolve(projectRoot, symlinkTarget);
+    
+    console.log(`Temporarily replacing symlink with directory copy...`);
+    
+    // Rename symlink to local-temp
+    fs.renameSync(localPath, tempPath);
+    
+    // Copy the target directory to 'local'
+    execSync(`cp -R "${absoluteTarget}" "${localPath}"`, { 
+      stdio: 'pipe', 
+      encoding: 'utf8' 
+    });
+    
+    console.log('Successfully replaced symlink with directory copy.');
+    return true;
+  } catch (error) {
+    console.error('Error replacing symlink:', error.message);
+    // Try to restore if something went wrong
+    if (fs.existsSync(tempPath) && !fs.existsSync(localPath)) {
+      fs.renameSync(tempPath, localPath);
+    }
+    return false;
+  }
+}
+
+/**
+ * Restores the 'local' symlink after deployment
+ * @param {string} projectRoot - The project root directory
+ * @returns {Promise<boolean>} Whether the restoration was successful
+ */
+export async function restoreSymlink(projectRoot) {
+  const localPath = path.join(projectRoot, 'local');
+  const tempPath = path.join(projectRoot, 'local-temp');
+  
+  try {
+    // Check if local-temp exists (our backed up symlink)
+    if (!fs.existsSync(tempPath)) {
+      console.log("No symlink backup found, skipping restoration.");
+      return true;
+    }
+    
+    console.log('Restoring symlink...');
+    
+    // Remove the copied directory
+    if (fs.existsSync(localPath)) {
+      execSync(`rm -rf "${localPath}"`, { 
+        stdio: 'pipe', 
+        encoding: 'utf8' 
+      });
+    }
+    
+    // Rename local-temp back to local
+    fs.renameSync(tempPath, localPath);
+    
+    console.log('Successfully restored symlink.');
+    return true;
+  } catch (error) {
+    console.error('Error restoring symlink:', error.message);
+    return false;
+  }
+}
+
+/**
  * Executes the Cloudflare deployment using Wrangler
  * @returns {Promise<boolean>} Whether the deployment was successful
  */
 export async function executeCloudflareDeployment() {
   try {
-    const { execSync } = await import('child_process');
     execSync('npx wrangler deploy', { stdio: 'inherit', encoding: 'utf8' });
     console.log('Successfully deployed to Cloudflare.');
     return true;
   } catch (error) {
     console.error('Error deploying to Cloudflare with Wrangler:', error.message);
     console.error('Aborting deployment.');
+    return false;
+  }
+}
+
+/**
+ * Creates R2 bucket if it doesn't exist
+ * @param {string} bucketName - The name of the R2 bucket
+ * @returns {Promise<boolean>} Whether the bucket creation was successful
+ */
+export async function ensureR2BucketExists(bucketName) {
+  try {
+    // First check if bucket exists
+    console.log(`Checking if R2 bucket '${bucketName}' exists...`);
+    try {
+      execSync(`npx wrangler r2 bucket list | grep -q "^${bucketName}$"`, { 
+        encoding: 'utf8',
+        stdio: 'pipe'
+      });
+      console.log(`R2 bucket '${bucketName}' already exists.`);
+      return true;
+    } catch (checkError) {
+      // Bucket doesn't exist, create it
+      console.log(`R2 bucket '${bucketName}' not found. Creating...`);
+      execSync(`npx wrangler r2 bucket create ${bucketName}`, { 
+        stdio: 'inherit', 
+        encoding: 'utf8' 
+      });
+      console.log(`Successfully created R2 bucket '${bucketName}'.`);
+      return true;
+    }
+  } catch (error) {
+    console.error(`Error ensuring R2 bucket exists: ${error.message}`);
     return false;
   }
 }
@@ -125,23 +238,44 @@ export async function handleCloudflareDeployment(cliDirname) {
     return false;
   }
 
-  // Execution phase
-  if (currentCommit !== lastDeployedCommit) {
-    console.log(`Current commit (${currentCommit}) differs from last deployed commit (${lastDeployedCommit || 'None'}).`);
-    console.log('Deploying to Cloudflare via Wrangler...');
-
-    const deploymentSuccess = await executeCloudflareDeployment();
-
-    if (deploymentSuccess) {
-      updateShopworkerFile(cliDirname, currentCommit);
-
-      // Execute git push after successful deployment
-      await executeGitPush();
-    }
-
-    return deploymentSuccess;
-  } else {
-    console.log(`Current commit (${currentCommit}) matches last deployed commit. No new deployment needed.`);
-    return true;
+  // Ensure R2 bucket exists
+  const bucketCreated = await ensureR2BucketExists('shopworker-job-data');
+  if (!bucketCreated) {
+    console.error('Failed to ensure R2 bucket exists. Aborting deployment.');
+    return false;
   }
+
+  // Replace symlink with directory copy
+  const symlinkReplaced = await replaceSymlinkWithCopy(cliDirname);
+  if (!symlinkReplaced) {
+    console.error('Failed to prepare local directory for deployment. Aborting.');
+    return false;
+  }
+
+  let deploymentSuccess = false;
+  
+  try {
+    // Execution phase
+    if (currentCommit !== lastDeployedCommit) {
+      console.log(`Current commit (${currentCommit}) differs from last deployed commit (${lastDeployedCommit || 'None'}).`);
+      console.log('Deploying to Cloudflare via Wrangler...');
+
+      deploymentSuccess = await executeCloudflareDeployment();
+
+      if (deploymentSuccess) {
+        updateShopworkerFile(cliDirname, currentCommit);
+
+        // Execute git push after successful deployment
+        await executeGitPush();
+      }
+    } else {
+      console.log(`Current commit (${currentCommit}) matches last deployed commit. No new deployment needed.`);
+      deploymentSuccess = true;
+    }
+  } finally {
+    // Always restore symlink, regardless of deployment success
+    await restoreSymlink(cliDirname);
+  }
+
+  return deploymentSuccess;
 }
