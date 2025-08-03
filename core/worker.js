@@ -20,8 +20,13 @@ const PAYLOAD_ID_PREFIX = "payload";
  */
 async function verifyShopifyWebhook(req, body, env, shopConfig) {
   try {
-    if (!shopConfig || !shopConfig.shopify_api_secret_key) {
-      console.error("Missing API secret for shop. Cannot verify webhook.");
+    if (!shopConfig) {
+      console.error("Shop configuration not found. Make sure the shop is configured in .shopworker.json");
+      return false;
+    }
+    
+    if (!shopConfig.shopify_api_secret_key) {
+      console.error("Missing shopify_api_secret_key in shop configuration. Cannot verify webhook.");
       return false;
     }
 
@@ -74,10 +79,19 @@ function parseShopworkerConfig(env) {
  * Find shop configuration for the given domain
  */
 function findShopConfig(shopworkerConfig, shopDomain) {
-  if (!shopworkerConfig.shops) {
-    return null;
+  // Handle single-shop configuration (flat structure)
+  if (shopworkerConfig.shopify_domain && shopworkerConfig.shopify_domain === shopDomain) {
+    return shopworkerConfig;
   }
-  return shopworkerConfig.shops.find((shop) => shop.shopify_domain === shopDomain);
+  
+  // Handle multi-shop configuration (shops array)
+  if (shopworkerConfig.shops && Array.isArray(shopworkerConfig.shops)) {
+    return shopworkerConfig.shops.find((shop) => shop.shopify_domain === shopDomain);
+  }
+  
+  // No matching configuration found
+  console.error(`No configuration found for shop domain: ${shopDomain}`);
+  return null;
 }
 
 /**

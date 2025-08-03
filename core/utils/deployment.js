@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import readline from 'readline';
+import { needsSecretsPush, executePutSecrets } from './secrets.js';
 
 /**
  * Checks Git repository status before deployment
@@ -212,6 +214,96 @@ export async function ensureR2BucketExists(bucketName) {
 }
 
 /**
+ * Gets the project name from wrangler.toml
+ * @param {string} projectRoot - The project root directory
+ * @returns {string} The project name
+ */
+export function getProjectName(projectRoot) {
+  const wranglerPath = path.join(projectRoot, 'wrangler.toml');
+  try {
+    const wranglerContent = fs.readFileSync(wranglerPath, 'utf8');
+    const nameMatch = wranglerContent.match(/^name\s*=\s*"([^"]+)"/m);
+    if (nameMatch && nameMatch[1]) {
+      return nameMatch[1];
+    }
+    throw new Error('Project name not found in wrangler.toml');
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      throw new Error(`wrangler.toml not found at ${wranglerPath}`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Prompts the user for input
+ * @param {string} question - The question to ask
+ * @returns {Promise<string>} The user's input
+ */
+export function promptUser(question) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
+ * Ensures cloudflare_worker_url is set in .shopworker.json
+ * @param {string} cliDirname - The directory where cli.js is located
+ * @returns {Promise<string>} The cloudflare_worker_url
+ */
+export async function ensureWorkerUrl(cliDirname) {
+  const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
+  
+  let shopworkerData = {};
+  if (fs.existsSync(shopworkerFilePath)) {
+    shopworkerData = JSON.parse(fs.readFileSync(shopworkerFilePath, 'utf8'));
+  }
+
+  // Check if cloudflare_worker_url exists
+  if (!shopworkerData.cloudflare_worker_url) {
+    console.log('\nCloudflare worker URL not found in .shopworker.json');
+    const projectName = getProjectName(cliDirname);
+    console.log(`Project name from wrangler.toml: ${projectName}`);
+    console.log('\nPlease enter your Cloudflare subdomain');
+    console.log('(e.g., your-subdomain.workers.dev or just your-subdomain)');
+    
+    const input = await promptUser('Subdomain: ');
+    
+    let workerUrl;
+    
+    // Check if user entered full URL
+    if (input.startsWith('https://')) {
+      // Validate full URL format
+      if (!input.match(/^https:\/\/[^.]+\.[^.]+\.workers\.dev$/)) {
+        throw new Error('Invalid worker URL format. Expected format: https://project-name.subdomain.workers.dev');
+      }
+      workerUrl = input;
+    } else if (input.endsWith('.workers.dev')) {
+      // User entered subdomain.workers.dev
+      workerUrl = `https://${projectName}.${input}`;
+    } else {
+      // User entered just the subdomain
+      workerUrl = `https://${projectName}.${input}.workers.dev`;
+    }
+    
+    // Save to .shopworker.json
+    shopworkerData.cloudflare_worker_url = workerUrl;
+    fs.writeFileSync(shopworkerFilePath, JSON.stringify(shopworkerData, null, 2), 'utf8');
+    console.log(`Worker URL saved to .shopworker.json: ${workerUrl}`);
+  }
+  
+  return shopworkerData.cloudflare_worker_url;
+}
+
+/**
  * Updates the .shopworker.json file with the new deployed commit
  * @param {string} cliDirname - The directory where cli.js is located
  * @param {string} currentCommit - The current commit hash
@@ -219,32 +311,19 @@ export async function ensureR2BucketExists(bucketName) {
 export function updateShopworkerFile(cliDirname, currentCommit) {
   const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
 
-  // Preserve existing content in .shopworker.json when updating the lastDeployedCommit
-  const newShopworkerData = fs.existsSync(shopworkerFilePath)
-    ? { ...JSON.parse(fs.readFileSync(shopworkerFilePath, 'utf8')), lastDeployedCommit: currentCommit }
-    : { lastDeployedCommit: currentCommit };
-
-  fs.writeFileSync(shopworkerFilePath, JSON.stringify(newShopworkerData, null, 2), 'utf8');
-  console.log(`Updated .shopworker with new deployed commit: ${currentCommit}`);
-}
-
-/**
- * Executes a git push to the remote repository
- * @returns {Promise<boolean>} Whether the git push was successful
- */
-export async function executeGitPush() {
-  try {
-    const { execSync } = await import('child_process');
-    console.log('Pushing changes to remote Git repository...');
-    execSync('git push origin master', { stdio: 'inherit', encoding: 'utf8' });
-    console.log('Successfully pushed to remote Git repository.');
-    return true;
-  } catch (error) {
-    console.error('Error pushing to Git repository:', error.message);
-    console.warn('Cloudflare deployment was successful, but Git push failed.');
-    return false;
+  // Preserve existing content in .shopworker.json when updating
+  let shopworkerData = {};
+  if (fs.existsSync(shopworkerFilePath)) {
+    shopworkerData = JSON.parse(fs.readFileSync(shopworkerFilePath, 'utf8'));
   }
+
+  // Update with new values
+  shopworkerData.lastDeployedCommit = currentCommit;
+
+  fs.writeFileSync(shopworkerFilePath, JSON.stringify(shopworkerData, null, 2), 'utf8');
+  console.log(`Updated .shopworker.json with deployed commit: ${currentCommit}`);
 }
+
 
 /**
  * Handle Cloudflare deployment logic
@@ -254,6 +333,20 @@ export async function executeGitPush() {
 export async function handleCloudflareDeployment(cliDirname) {
   // Preparation phase
   await checkGitStatus();
+
+  // Ensure cloudflare_worker_url is set
+  await ensureWorkerUrl(cliDirname);
+
+  // Check if secrets need to be pushed
+  if (needsSecretsPush(cliDirname)) {
+    console.log('\nDetected changes to secrets that need to be pushed...');
+    const secretsSuccess = await executePutSecrets(cliDirname);
+    if (!secretsSuccess) {
+      console.error('Failed to push secrets. Aborting deployment.');
+      return false;
+    }
+    console.log('');
+  }
 
   const lastDeployedCommit = getLastDeployedCommit(cliDirname);
   const currentCommit = await getCurrentCommit();
@@ -287,21 +380,12 @@ export async function handleCloudflareDeployment(cliDirname) {
 
   try {
     // Execution phase
-    if (currentCommit !== lastDeployedCommit) {
-      console.log(`Current commit (${currentCommit}) differs from last deployed commit (${lastDeployedCommit || 'None'}).`);
-      console.log('Deploying to Cloudflare via Wrangler...');
+    console.log('Deploying to Cloudflare via Wrangler...');
 
-      deploymentSuccess = await executeCloudflareDeployment();
+    deploymentSuccess = await executeCloudflareDeployment();
 
-      if (deploymentSuccess) {
-        updateShopworkerFile(cliDirname, currentCommit);
-
-        // Execute git push after successful deployment
-        await executeGitPush();
-      }
-    } else {
-      console.log(`Current commit (${currentCommit}) matches last deployed commit. No new deployment needed.`);
-      deploymentSuccess = true;
+    if (deploymentSuccess) {
+      updateShopworkerFile(cliDirname, currentCommit);
     }
   } finally {
     // Always restore symlink, regardless of deployment success
