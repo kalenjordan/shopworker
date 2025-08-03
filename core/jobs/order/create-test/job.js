@@ -1,6 +1,6 @@
-import GetRecentProducts from "../../../graphql/GetRecentProducts.js";
-import GetRecentCustomers from "../../../graphql/GetRecentCustomers.js";
-import CreateOrder from "../../../graphql/CreateOrder.js";
+import GetRecentProducts from "../../graphql/productsGetRecent.js";
+import GetRecentCustomers from "../../graphql/customersGetRecent.js";
+import CreateOrder from "../../graphql/orderCreate.js";
 
 /**
  * Creates an order with a random customer and product

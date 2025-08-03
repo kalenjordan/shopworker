@@ -8,9 +8,9 @@ import {
   displayWebhookDetails,
   displayOrphanedWebhooksWarning
 } from './cli-formatting.js';
-import WEBHOOK_CREATE_MUTATION from '../../graphql/webhookSubscriptionCreate.js';
-import WEBHOOK_DELETE_MUTATION from '../../graphql/webhookSubscriptionDelete.js';
-import GET_WEBHOOKS_QUERY from '../../graphql/getWebhooks.js';
+import WEBHOOK_CREATE_MUTATION from '../graphql/webhookSubscriptionCreate.js';
+import WEBHOOK_DELETE_MUTATION from '../graphql/webhookSubscriptionDelete.js';
+import GET_WEBHOOKS_QUERY from '../graphql/webhooksGet.js';
 import chalk from 'chalk';
 
 // ===================================================================

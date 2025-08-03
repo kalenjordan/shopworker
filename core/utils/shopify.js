@@ -5,6 +5,9 @@
 import fs from 'fs';
 import path from 'path';
 
+// Track if we've already logged the API version
+let apiVersionLogged = false;
+
 /**
  * Recursively search for userErrors in a GraphQL response
  * @param {Object} obj - Object to search
@@ -62,7 +65,11 @@ function truncateQuery(query) {
  * @returns {Object} A Shopify client with GraphQL capabilities
  */
 export function createShopifyClient({ shop, accessToken, apiVersion = '2025-04', retries = 3, timeout = 30000 }) {
-  console.log("Using shopify API version " + apiVersion);
+  // Log API version only once
+  if (!apiVersionLogged) {
+    console.log("Using shopify API version " + apiVersion);
+    apiVersionLogged = true;
+  }
   // Format shop name (remove .myshopify.com if present)
   const shopName = shop.replace('.myshopify.com', '');
   const graphqlUrl = `https://${shopName}.myshopify.com/admin/api/${apiVersion}/graphql.json`;

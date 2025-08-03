@@ -1,4 +1,4 @@
-import OrderUpdate from "../../../graphql/OrderUpdate.js";
+import OrderUpdate from "../../graphql/orderUpdate.js";
 
 /**
  * Process an order to tag it with the SKUs from its line items
