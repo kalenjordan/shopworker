@@ -66,7 +66,7 @@ export async function getCurrentCommit() {
 export async function replaceSymlinkWithCopy(projectRoot) {
   const localPath = path.join(projectRoot, 'local');
   const tempPath = path.join(projectRoot, 'local-temp');
-  
+
   try {
     // Check if 'local' exists and is a symlink
     const stats = fs.lstatSync(localPath);
@@ -74,22 +74,22 @@ export async function replaceSymlinkWithCopy(projectRoot) {
       console.log("'local' is not a symlink, proceeding with deployment as-is.");
       return true;
     }
-    
+
     // Get the target of the symlink
     const symlinkTarget = fs.readlinkSync(localPath);
     const absoluteTarget = path.resolve(projectRoot, symlinkTarget);
-    
+
     console.log(`Temporarily replacing symlink with directory copy...`);
-    
+
     // Rename symlink to local-temp
     fs.renameSync(localPath, tempPath);
-    
+
     // Copy the target directory to 'local'
-    execSync(`cp -R "${absoluteTarget}" "${localPath}"`, { 
-      stdio: 'pipe', 
-      encoding: 'utf8' 
+    execSync(`cp -R "${absoluteTarget}" "${localPath}"`, {
+      stdio: 'pipe',
+      encoding: 'utf8'
     });
-    
+
     console.log('Successfully replaced symlink with directory copy.');
     return true;
   } catch (error) {
@@ -110,27 +110,27 @@ export async function replaceSymlinkWithCopy(projectRoot) {
 export async function restoreSymlink(projectRoot) {
   const localPath = path.join(projectRoot, 'local');
   const tempPath = path.join(projectRoot, 'local-temp');
-  
+
   try {
     // Check if local-temp exists (our backed up symlink)
     if (!fs.existsSync(tempPath)) {
       console.log("No symlink backup found, skipping restoration.");
       return true;
     }
-    
+
     console.log('Restoring symlink...');
-    
+
     // Remove the copied directory
     if (fs.existsSync(localPath)) {
-      execSync(`rm -rf "${localPath}"`, { 
-        stdio: 'pipe', 
-        encoding: 'utf8' 
+      execSync(`rm -rf "${localPath}"`, {
+        stdio: 'pipe',
+        encoding: 'utf8'
       });
     }
-    
+
     // Rename local-temp back to local
     fs.renameSync(tempPath, localPath);
-    
+
     console.log('Successfully restored symlink.');
     return true;
   } catch (error) {
@@ -156,24 +156,26 @@ export async function executeCloudflareDeployment() {
 }
 
 /**
- * Gets the project name from wrangler.toml
+ * Gets the R2 bucket name from wrangler.toml
  * @param {string} projectRoot - The project root directory
- * @returns {string} The project name
+ * @returns {string|null} The bucket name or null if not found
  */
-export function getProjectName(projectRoot) {
-  const wranglerPath = path.join(projectRoot, 'wrangler.toml');
+export function getR2BucketName(projectRoot) {
   try {
+    const wranglerPath = path.join(projectRoot, 'wrangler.toml');
     const wranglerContent = fs.readFileSync(wranglerPath, 'utf8');
-    const nameMatch = wranglerContent.match(/^name\s*=\s*"([^"]+)"/m);
-    if (nameMatch && nameMatch[1]) {
-      return nameMatch[1];
+
+    // Look for bucket_name in the wrangler.toml
+    const bucketMatch = wranglerContent.match(/bucket_name\s*=\s*"([^"]+)"/);
+    if (bucketMatch && bucketMatch[1]) {
+      return bucketMatch[1];
     }
-    throw new Error('Project name not found in wrangler.toml');
+
+    console.warn('Could not find bucket_name in wrangler.toml');
+    return null;
   } catch (error) {
-    if (error.code === 'ENOENT') {
-      throw new Error(`wrangler.toml not found at ${wranglerPath}`);
-    }
-    throw error;
+    console.error('Error reading wrangler.toml:', error.message);
+    return null;
   }
 }
 
@@ -187,7 +189,7 @@ export async function ensureR2BucketExists(bucketName) {
     // First check if bucket exists
     console.log(`Checking if R2 bucket '${bucketName}' exists...`);
     try {
-      execSync(`npx wrangler r2 bucket list | grep -q "name:\\s*${bucketName}"`, { 
+      execSync(`npx wrangler r2 bucket list | grep -q "name:\\s*${bucketName}"`, {
         encoding: 'utf8',
         stdio: 'pipe'
       });
@@ -196,9 +198,9 @@ export async function ensureR2BucketExists(bucketName) {
     } catch (checkError) {
       // Bucket doesn't exist, create it
       console.log(`R2 bucket '${bucketName}' not found. Creating...`);
-      execSync(`npx wrangler r2 bucket create ${bucketName}`, { 
-        stdio: 'inherit', 
-        encoding: 'utf8' 
+      execSync(`npx wrangler r2 bucket create ${bucketName}`, {
+        stdio: 'inherit',
+        encoding: 'utf8'
       });
       console.log(`Successfully created R2 bucket '${bucketName}'.`);
       return true;
@@ -260,9 +262,14 @@ export async function handleCloudflareDeployment(cliDirname) {
     return false;
   }
 
+  // Get R2 bucket name from wrangler.toml
+  const bucketName = getR2BucketName(cliDirname);
+  if (!bucketName) {
+    console.error('Could not determine R2 bucket name from wrangler.toml. Aborting deployment.');
+    return false;
+  }
+
   // Ensure R2 bucket exists
-  const projectName = getProjectName(cliDirname);
-  const bucketName = `${projectName}--data`;
   const bucketCreated = await ensureR2BucketExists(bucketName);
   if (!bucketCreated) {
     console.error('Failed to ensure R2 bucket exists. Aborting deployment.');
@@ -277,7 +284,7 @@ export async function handleCloudflareDeployment(cliDirname) {
   }
 
   let deploymentSuccess = false;
-  
+
   try {
     // Execution phase
     if (currentCommit !== lastDeployedCommit) {
