@@ -7,7 +7,6 @@ import chalk from 'chalk';
 export const COLUMN_WIDTHS = {
   status: 13,
   path: 40,
-  shop: 18,
   job: 35,
   topic: 20
 };
@@ -41,12 +40,11 @@ export function displayJobsTable(jobDisplayInfos, printHeader = true) {
   if (printHeader) {
     console.log('\n' +
       cropAndPad('STATUS', COLUMN_WIDTHS.status) +
-      cropAndPad('SHOP', COLUMN_WIDTHS.shop) +
       cropAndPad('PATH', COLUMN_WIDTHS.path) +
       cropAndPad('JOB', COLUMN_WIDTHS.job) +
       cropAndPad('WEBHOOK TOPIC', COLUMN_WIDTHS.topic)
     );
-    console.log('-'.repeat(COLUMN_WIDTHS.status + COLUMN_WIDTHS.shop + COLUMN_WIDTHS.path + COLUMN_WIDTHS.job + COLUMN_WIDTHS.topic));
+    console.log('-'.repeat(COLUMN_WIDTHS.status + COLUMN_WIDTHS.path + COLUMN_WIDTHS.job + COLUMN_WIDTHS.topic));
   }
 
   for (const info of jobDisplayInfos) {
@@ -54,7 +52,6 @@ export function displayJobsTable(jobDisplayInfos, printHeader = true) {
 
     console.log(
       formatStatusColumn(info.statusMsg, isDisabled) +
-      (info.shop ? chalk.magenta(cropAndPad(info.shop, COLUMN_WIDTHS.shop)) : cropAndPad('N/A', COLUMN_WIDTHS.shop)) +
       applyColorIfDisabled(cropAndPad(info.jobPath, COLUMN_WIDTHS.path), isDisabled) +
       applyColorIfDisabled(chalk.blue(cropAndPad(info.displayName, COLUMN_WIDTHS.job)), isDisabled) +
       applyColorIfDisabled(cropAndPad(info.displayTopic, COLUMN_WIDTHS.topic), isDisabled)
@@ -86,14 +83,7 @@ export function sortJobDisplayInfos(jobDisplayInfos) {
     const statusDiff = getStatusPriority(a.statusMsg) - getStatusPriority(b.statusMsg);
     if (statusDiff !== 0) return statusDiff;
 
-    // Then by shop name
-    if (a.shop !== b.shop) {
-      if (!a.shop) return 1;
-      if (!b.shop) return -1;
-      return a.shop.localeCompare(b.shop);
-    }
-
-    // Finally by job name
+    // Then by job name
     return a.displayName.localeCompare(b.displayName);
   });
 }

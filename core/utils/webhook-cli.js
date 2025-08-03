@@ -296,6 +296,15 @@ export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false
     return;
   }
 
+  // Get shop domain from config
+  try {
+    const { getShopDomain } = await import('./config-helpers.js');
+    const shopDomain = getShopDomain(cliDirname, null);
+    console.log(chalk.magenta(`Shop: ${shopDomain}`));
+  } catch (error) {
+    // If we can't get shop domain, just continue
+  }
+
   console.log(chalk.blue(`Fetching webhook status for ${jobDirs.length} jobs...`));
 
   try {
