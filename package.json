@@ -3,21 +3,20 @@
   "version": "1.0.0",
   "description": "Shopify worker CLI tool",
   "type": "module",
-  "main": "cli.js",
+  "main": "core/cli.js",
   "bin": {
-    "shopworker": "./cli.js"
+    "shopworker": "./core/cli.js"
   },
   "scripts": {
-    "test": "node cli.js test",
-    "enable": "node cli.js enable",
-    "disable": "node cli.js disable",
-    "status": "node cli.js status",
-    "deploy": "node cli.js deploy",
-    "remote-test": "node cli.js remote-test",
-    "all-webhooks": "node cli.js all-webhooks",
-    "delete-webhook": "node cli.js delete-webhook",
-    "put-secrets": "node cli.js put-secrets",
-    "generate-structure": "node tools/generate-codebase-structure.js",
+    "test": "node core/cli.js test",
+    "enable": "node core/cli.js enable",
+    "disable": "node core/cli.js disable",
+    "status": "node core/cli.js status",
+    "deploy": "node core/cli.js deploy",
+    "remote-test": "node core/cli.js remote-test",
+    "all-webhooks": "node core/cli.js all-webhooks",
+    "delete-webhook": "node core/cli.js delete-webhook",
+    "put-secrets": "node core/cli.js put-secrets",
     "lint": "eslint ."
   },
   "dependencies": {
