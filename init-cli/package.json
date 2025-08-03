@@ -1,0 +1,31 @@
+{
+  "name": "create-shopworker",
+  "version": "1.0.0",
+  "description": "CLI to create and set up Shopworker instances with git worktrees",
+  "main": "index.js",
+  "bin": {
+    "create-shopworker": "./cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "node index.js"
+  },
+  "keywords": [
+    "shopworker",
+    "shopify",
+    "cli",
+    "setup"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^11.0.0",
+    "chalk": "^5.3.0",
+    "ora": "^7.0.1",
+    "prompts": "^2.4.2",
+    "execa": "^8.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

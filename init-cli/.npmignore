@@ -1,0 +1,9 @@
+# Development files
+.git/
+.gitignore
+node_modules/
+*.log
+
+# Keep template directory
+!template/
+!template/**/*

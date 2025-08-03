@@ -1,0 +1,17 @@
+{
+  "name": "{REPO_NAME}",
+  "version": "1.0.0",
+  "description": "Shopworker instance for {ACCOUNT_NAME}",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "cd shopworker-main && npm test",
+    "deploy": "cd shopworker-main && npm run deploy",
+    "status": "cd shopworker-main && npm run status",
+    "enable": "cd shopworker-main && npm run enable",
+    "disable": "cd shopworker-main && npm run disable",
+    "lint": "cd shopworker-main && npm run lint",
+    "put-secrets": "cd shopworker-main && npm run put-secrets",
+    "remote-test": "cd shopworker-main && npm run remote-test"
+  }
+}
