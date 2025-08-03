@@ -156,6 +156,28 @@ export async function executeCloudflareDeployment() {
 }
 
 /**
+ * Gets the project name from wrangler.toml
+ * @param {string} projectRoot - The project root directory
+ * @returns {string} The project name
+ */
+export function getProjectName(projectRoot) {
+  const wranglerPath = path.join(projectRoot, 'wrangler.toml');
+  try {
+    const wranglerContent = fs.readFileSync(wranglerPath, 'utf8');
+    const nameMatch = wranglerContent.match(/^name\s*=\s*"([^"]+)"/m);
+    if (nameMatch && nameMatch[1]) {
+      return nameMatch[1];
+    }
+    throw new Error('Project name not found in wrangler.toml');
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      throw new Error(`wrangler.toml not found at ${wranglerPath}`);
+    }
+    throw error;
+  }
+}
+
+/**
  * Creates R2 bucket if it doesn't exist
  * @param {string} bucketName - The name of the R2 bucket
  * @returns {Promise<boolean>} Whether the bucket creation was successful
@@ -165,7 +187,7 @@ export async function ensureR2BucketExists(bucketName) {
     // First check if bucket exists
     console.log(`Checking if R2 bucket '${bucketName}' exists...`);
     try {
-      execSync(`npx wrangler r2 bucket list | grep -q "^${bucketName}$"`, { 
+      execSync(`npx wrangler r2 bucket list | grep -q "name:\\s*${bucketName}"`, { 
         encoding: 'utf8',
         stdio: 'pipe'
       });
@@ -239,7 +261,9 @@ export async function handleCloudflareDeployment(cliDirname) {
   }
 
   // Ensure R2 bucket exists
-  const bucketCreated = await ensureR2BucketExists('shopworker-job-data');
+  const projectName = getProjectName(cliDirname);
+  const bucketName = `${projectName}--data`;
+  const bucketCreated = await ensureR2BucketExists(bucketName);
   if (!bucketCreated) {
     console.error('Failed to ensure R2 bucket exists. Aborting deployment.');
     return false;
