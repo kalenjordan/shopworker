@@ -16,13 +16,13 @@ import { updateJobManifest } from './job-manifest.js';
  * @returns {Promise<{record: Object, recordName: string, shopify: Object, triggerConfig: Object, jobConfig: Object}>}
  * The sample record and related configuration
  */
-async function findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam) {
+export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam) {
   const jobConfig = loadJobConfig(jobPath);
   if (!jobConfig.trigger) {
     throw new Error(`Job ${jobPath} doesn't have a trigger defined`);
   }
   const triggerConfig = loadTriggerConfig(jobConfig.trigger);
-  
+
   // If shopParam is provided, create a copy of jobConfig with the shop override
   let configToUse = jobConfig;
   if (shopParam) {
@@ -37,9 +37,9 @@ async function findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam
     configToUse = { ...jobConfig, shop: shopConfig.name };
     console.log(chalk.yellow(`Overriding shop with: ${shopConfig.name} (${shopConfig.shopify_domain})`));
   }
-  
+
   const shopify = initShopify(cliDirname, jobPath, shopParam);
-  
+
   if (jobConfig.trigger === 'manual') {
     return {
       record: {},
@@ -49,7 +49,7 @@ async function findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam
       jobConfig: configToUse
     };
   }
-  
+
   // Check if this is a webhook job and validate required test configuration
   if (jobConfig.trigger === 'webhook') {
     if (!jobConfig.test) {
@@ -59,7 +59,7 @@ async function findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam
       throw new Error(`Job ${jobPath} has trigger 'webhook' but is missing 'test.webhookPayload' file path in config.json`);
     }
   }
-  
+
   // Check if this is a webhook payload test
   if (jobConfig.trigger === 'webhook' && jobConfig.test && jobConfig.test.webhookPayload) {
     console.log("Loading webhook payload from fixtures...");
@@ -84,35 +84,35 @@ async function findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam
       throw new Error(`Failed to load webhook payload from ${payloadPath}: ${error.message}`);
     }
   }
-  
+
   if (!triggerConfig.test || !triggerConfig.test.query) {
     throw new Error(`Trigger ${jobConfig.trigger} doesn't have a test query defined`);
   }
-  
+
   const queryModulePath = pathToFileURL(path.resolve(cliDirname, `core/graphql/${triggerConfig.test.query}.js`)).href;
   const queryModule = await import(queryModulePath);
   const query = queryModule.default;
-  
+
   console.log("Populating sample record into job from CLI...");
   const variables = { first: 1 };
   if (queryParam) {
     console.log(`Using query filter: ${queryParam}`);
     variables.query = queryParam;
   }
-  
+
   const response = await shopify.graphql(query, variables);
-  
+
   const topLevelKey = Object.keys(response).find(key =>
     response[key] && typeof response[key] === 'object' && response[key].edges
   );
-  
+
   if (!topLevelKey || !response[topLevelKey].edges || response[topLevelKey].edges.length === 0) {
     throw new Error(`No ${topLevelKey || 'data'} found in response for job ${jobPath}. Query: ${triggerConfig.test.query}`);
   }
-  
+
   const record = response[topLevelKey].edges[0].node;
   const recordName = record.name || record.title || record.id;
-  
+
   return {
     record,
     recordName,
@@ -132,12 +132,12 @@ async function findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam
 export async function runJobTest(cliDirname, jobPath, options) {
   // Generate job manifest before running test
   updateJobManifest(cliDirname);
-  
+
   const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobPath, options.query, options.shop);
-  
+
   // Start with the base job config
   let configToUse = jobConfig;
-  
+
   // Override the limit in job config if provided
   if (options.limit && options.limit >= 1) {
     configToUse = {
@@ -149,7 +149,7 @@ export async function runJobTest(cliDirname, jobPath, options) {
     };
     console.log(chalk.yellow(`Overriding job config limit with: ${options.limit}`));
   }
-  
+
   // Override the dryRun in job config if provided
   if (options.dryRun !== undefined) {
     configToUse = {
@@ -161,27 +161,27 @@ export async function runJobTest(cliDirname, jobPath, options) {
     };
     console.log(chalk.yellow(`Overriding job config dryRun with: ${options.dryRun}`));
   }
-  
+
   // Get shop configuration from .shopworker.json
   const shopConfig = getShopConfig(cliDirname, configToUse.shop);
-  
+
   // Load secrets from .secrets directory
   const secrets = loadSecrets(cliDirname);
-  
+
   // Log shop domain in purple using chalk
   console.log(chalk.magenta(`Processing for shop: ${shopConfig.shopify_domain}`));
-  
+
   // Use path.resolve with pathToFileURL to ensure proper module resolution
   // First try local jobs directory
   let jobModulePath = path.resolve(cliDirname, 'local', 'jobs', jobPath, 'job.js');
-  
+
   if (!fs.existsSync(jobModulePath)) {
     // If not found in local, try core jobs directory
     jobModulePath = path.resolve(cliDirname, 'core', 'jobs', jobPath, 'job.js');
   }
-  
+
   const jobModule = await import(pathToFileURL(jobModulePath).href);
-  
+
   // Create a mock step object for CLI execution
   const step = {
     do: async (name, callback) => {
@@ -196,7 +196,7 @@ export async function runJobTest(cliDirname, jobPath, options) {
       }
     }
   };
-  
+
   // Pass process.env as env, shopConfig as shopConfig, and secrets for consistency with worker environment
   await jobModule.process({
     payload: record,
@@ -207,6 +207,6 @@ export async function runJobTest(cliDirname, jobPath, options) {
     secrets: secrets,    // Pass secrets to the process function
     step: step          // Pass the mock step object
   });
-  
+
   console.log('Processing complete!');
 }

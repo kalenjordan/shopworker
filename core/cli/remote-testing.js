@@ -4,7 +4,7 @@ import path from 'path';
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { hmacSha256 } from '../shared/crypto.js';
 import { getShopConfigWithSecret } from '../shared/config-helpers.js';
-import { findSampleRecordForJob } from './job-management.js';
+import { findSampleRecordForJob } from './test-command.js';
 
 /**
  * Validates and retrieves the worker URL for remote testing
