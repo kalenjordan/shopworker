@@ -15,9 +15,41 @@ const __dirname = path.dirname(__filename);
 
 async function checkCommand(command) {
   try {
-    await execa(command, ['--version']);
-    return true;
-  } catch {
+    // Enhanced PATH to ensure homebrew and common locations are included
+    const enhancedPath = [
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      '/usr/bin',
+      '/bin',
+      process.env.PATH
+    ].join(':');
+    
+    // First try the command directly with enhanced PATH
+    const result = await execa(command, ['--version'], {
+      reject: false,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        PATH: enhancedPath
+      },
+      timeout: 5000 // 5 second timeout
+    });
+    
+    if (result && result.exitCode === 0) return true;
+    
+    // If that fails, try to find it with which
+    const whichResult = await execa('which', [command], {
+      reject: false,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        PATH: enhancedPath
+      }
+    });
+    
+    return whichResult && whichResult.exitCode === 0;
+  } catch (error) {
+    console.error(chalk.gray(`Error checking ${command}: ${error.message}`));
     return false;
   }
 }
@@ -25,8 +57,23 @@ async function checkCommand(command) {
 async function createShopworkerInstance() {
   console.log(chalk.blue.bold('\n🛍️  Create Shopworker Instance\n'));
 
+  // Check if current directory is valid
+  try {
+    process.cwd();
+  } catch (error) {
+    console.log(chalk.red('\n❌ Error: Current directory is invalid.'));
+    console.log(chalk.yellow('This usually happens after deleting and recreating the directory you\'re in.'));
+    console.log(chalk.yellow('\nPlease run: cd "$(pwd)" to refresh your shell\'s directory.\n'));
+    process.exit(1);
+  }
+
   // Check prerequisites
   const spinner = ora('Checking prerequisites...').start();
+
+  // Add PATH debugging
+  if (process.env.DEBUG) {
+    console.log(chalk.gray(`\nPATH: ${process.env.PATH}`));
+  }
 
   const hasGit = await checkCommand('git');
   const hasGh = await checkCommand('gh');
@@ -34,9 +81,24 @@ async function createShopworkerInstance() {
   if (!hasGit || !hasGh) {
     spinner.fail('Missing prerequisites');
     console.log(chalk.red('\nRequired tools missing:'));
-    if (!hasGit) console.log(chalk.red('  - git'));
-    if (!hasGh) console.log(chalk.red('  - gh (GitHub CLI)'));
+    if (!hasGit) {
+      console.log(chalk.red('  - git'));
+      // Try to show where git might be
+      try {
+        const { stdout } = await execa('which', ['git'], { reject: false });
+        if (stdout) console.log(chalk.gray(`    (which git: ${stdout})`));
+      } catch {}
+    }
+    if (!hasGh) {
+      console.log(chalk.red('  - gh (GitHub CLI)'));
+      // Try to show where gh might be
+      try {
+        const { stdout } = await execa('which', ['gh'], { reject: false });
+        if (stdout) console.log(chalk.gray(`    (which gh: ${stdout})`));
+      } catch {}
+    }
     console.log(chalk.yellow('\nPlease install missing tools and try again.'));
+    console.log(chalk.gray('If tools are installed, try running with DEBUG=1 to see PATH'));
     process.exit(1);
   }
 
@@ -215,8 +277,11 @@ async function createShopworkerInstance() {
 
   // Set up local directory with account repository
   const setupLocalSpinner = ora('Setting up local account directory...').start();
+  console.log(chalk.gray(`\nStarting local directory setup...`));
   try {
     const accountRepoUrl = `https://github.com/${ghUser}/${repoName}.git`;
+    console.log(chalk.gray(`Account repo URL: ${accountRepoUrl}`));
+    console.log(chalk.gray(`Local directory path: ${localDir}`));
 
     // Check if local directory already exists
     const localDirExists = await fs.access(localDir).then(() => true).catch(() => false);
@@ -250,10 +315,41 @@ async function createShopworkerInstance() {
           process.exit(1);
         }
       } else if (action === 'use') {
-        // Skip the repository setup and just use existing directory
+        // Use existing directory but ensure template files are copied
         setupLocalSpinner.succeed('Using existing local directory');
+        
+        // Copy template files to ensure they exist
+        console.log(chalk.gray('Ensuring template files are present...'));
+        const templateDir = path.join(__dirname, 'template');
+        await copyTemplateFiles(templateDir, localDir, { accountName: ghUser, repoName });
+        
+        // Check if there are changes to commit
+        const cwd = process.cwd();
+        process.chdir(localDir);
+        
+        try {
+          const { stdout: gitStatus } = await execa('git', ['status', '--porcelain']);
+          if (gitStatus) {
+            console.log(chalk.gray('Committing template files...'));
+            await execa('git', ['add', '.']);
+            await execa('git', ['commit', '-m', 'Add template files']);
+            
+            // Try to push
+            try {
+              await execa('gh', ['auth', 'setup-git']);
+              await execa('git', ['push']);
+            } catch (pushError) {
+              console.log(chalk.yellow('Could not push changes. You may need to push manually.'));
+            }
+          }
+        } catch (gitError) {
+          // If git operations fail, continue anyway
+          console.log(chalk.gray('Git operations skipped'));
+        }
+        
+        process.chdir(cwd);
 
-        // Skip to symlink creation
+        // Now create symlink
         const symlinkSpinner = ora('Creating symlink...').start();
         try {
           // Ensure we're in the main directory
@@ -362,19 +458,36 @@ async function createShopworkerInstance() {
       setupLocalSpinner.succeed('Account repository initialized');
     } else {
       // Existing repository - try to clone it
+      console.log(chalk.gray('\nExisting repository detected, attempting to clone...'));
       try {
-        await execa('git', ['clone', accountRepoUrl, localDir]);
+        // First ensure git is set up with gh auth
+        console.log(chalk.gray('Setting up git authentication...'));
+        await execa('gh', ['auth', 'setup-git']);
+        
+        console.log(chalk.gray(`Running: git clone ${accountRepoUrl} ${localDir}`));
+        await execa('git', ['clone', accountRepoUrl, localDir], {
+          timeout: 30000, // 30 second timeout
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+        });
+        console.log(chalk.gray('Clone successful'));
         setupLocalSpinner.succeed('Using existing account repository');
         
         // Always copy template files to ensure they're up to date
+        console.log(chalk.gray('Copying template files...'));
         const templateDir = path.join(__dirname, 'template');
         await copyTemplateFiles(templateDir, localDir, { accountName: ghUser, repoName });
+        console.log(chalk.gray('Template files copied'));
         
         // Check if there are any changes to commit
+        console.log(chalk.gray('Checking for changes...'));
         const cwd = process.cwd();
+        console.log(chalk.gray(`Current dir: ${cwd}`));
+        console.log(chalk.gray(`Changing to: ${localDir}`));
         process.chdir(localDir);
         
+        console.log(chalk.gray('Running: git status --porcelain'));
         const { stdout: gitStatus } = await execa('git', ['status', '--porcelain']);
+        console.log(chalk.gray(`Git status result: ${gitStatus ? 'Changes detected' : 'No changes'}`));
         if (gitStatus) {
           console.log(chalk.gray('Template files updated, committing changes...'));
           await execa('git', ['add', '.']);
@@ -394,25 +507,41 @@ async function createShopworkerInstance() {
         process.chdir(cwd);
       } catch (cloneError) {
         // Repository exists but might be empty, initialize it
-        console.log(chalk.gray('Clone failed, initializing new repository...'));
+        console.log(chalk.gray(`\nClone failed with error: ${cloneError.message}`));
+        if (cloneError.stderr) console.log(chalk.gray(`Stderr: ${cloneError.stderr}`));
+        console.log(chalk.gray('Initializing new repository...'));
         
+        console.log(chalk.gray(`Creating directory: ${localDir}`));
         await fs.mkdir(localDir, { recursive: true });
         const cwd = process.cwd();
+        console.log(chalk.gray(`Current dir: ${cwd}`));
+        console.log(chalk.gray(`Changing to: ${localDir}`));
         process.chdir(localDir);
         
         try {
           await execa('git', ['init']);
           await execa('git', ['remote', 'add', 'origin', accountRepoUrl]);
           
+          // Set up git auth before fetching
+          console.log(chalk.gray('Setting up git authentication...'));
+          await execa('gh', ['auth', 'setup-git']);
+          
           // Try to fetch existing content first
           try {
             console.log(chalk.gray('Checking for existing remote content...'));
-            await execa('git', ['fetch', 'origin']);
+            await execa('git', ['fetch', 'origin'], {
+              timeout: 30000,
+              env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+            });
             // If fetch succeeds, try to pull
-            await execa('git', ['pull', 'origin', 'master', '--allow-unrelated-histories']);
+            await execa('git', ['pull', 'origin', 'master', '--allow-unrelated-histories'], {
+              timeout: 30000,
+              env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+            });
           } catch (fetchError) {
             // No existing content or branch, that's fine
             console.log(chalk.gray('No existing remote content found'));
+            console.log(chalk.gray(`Fetch error: ${fetchError.message}`));
           }
 
           // Copy template files
@@ -476,7 +605,9 @@ async function createShopworkerInstance() {
     }
   } catch (error) {
     setupLocalSpinner.fail('Failed to set up local account directory');
-    console.error(chalk.red(error.message));
+    console.error(chalk.red('Error:'), error.message);
+    if (error.stderr) console.error(chalk.red('Stderr:'), error.stderr);
+    if (error.stack) console.error(chalk.red('Stack:'), error.stack);
     process.exit(1);
   }
 
