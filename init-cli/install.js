@@ -89,6 +89,7 @@ async function createShopworkerInstance() {
       type: 'text',
       name: 'shopifyDomain',
       message: 'Shopify domain (e.g., my-store.myshopify.com):',
+      initial: 'shopworker-demo.myshopify.com',
       validate: value => {
         // Allow just the store name or full domain
         if (value.match(/^[a-z0-9-]+$/)) {
@@ -110,12 +111,14 @@ async function createShopworkerInstance() {
       type: 'text',
       name: 'shopifyToken',
       message: 'Shopify access token (shpat_...):',
+      initial: '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',
       validate: value => value.startsWith('shpat_') ? true : 'Access token should start with shpat_'
     },
     {
       type: 'text',
       name: 'shopifyApiSecret',
       message: 'Shopify API secret key:',
+      initial: 'fd0274e316de8e86c0466047a7b4b413',
       validate: value => value.length > 0 ? true : 'API secret key is required'
     }
   ];
@@ -325,15 +328,35 @@ async function createShopworkerInstance() {
 
       // Copy template files
       const templateDir = path.join(__dirname, 'template');
-      await copyTemplateFiles(templateDir, localDir, { accountName: repoName, repoName });
+      await copyTemplateFiles(templateDir, localDir, { accountName: ghUser, repoName });
+
+      // Verify files were copied
+      const copiedFiles = await fs.readdir(localDir);
+      console.log(chalk.gray(`Files copied to local directory: ${copiedFiles.join(', ')}`));
 
       // Commit template files
       const cwd = process.cwd();
       process.chdir(localDir);
       await execa('git', ['add', '.']);
+      
+      // Check git status before commit
+      const { stdout: gitStatus } = await execa('git', ['status', '--porcelain']);
+      if (!gitStatus) {
+        console.log(chalk.yellow('Warning: No files staged for commit'));
+      }
+      
       await execa('git', ['commit', '-m', 'Initial commit']);
       await execa('git', ['branch', '-M', 'master']);
-      await execa('git', ['push', '-u', 'origin', 'master']);
+      
+      try {
+        await execa('git', ['push', '-u', 'origin', 'master'], {
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+        });
+      } catch (pushError) {
+        console.log(chalk.gray('Initial push failed, trying gh auth setup...'));
+        await execa('gh', ['auth', 'setup-git']);
+        await execa('git', ['push', '-u', 'origin', 'master']);
+      }
       process.chdir(cwd);
 
       setupLocalSpinner.succeed('Account repository initialized');
@@ -342,25 +365,113 @@ async function createShopworkerInstance() {
       try {
         await execa('git', ['clone', accountRepoUrl, localDir]);
         setupLocalSpinner.succeed('Using existing account repository');
+        
+        // Always copy template files to ensure they're up to date
+        const templateDir = path.join(__dirname, 'template');
+        await copyTemplateFiles(templateDir, localDir, { accountName: ghUser, repoName });
+        
+        // Check if there are any changes to commit
+        const cwd = process.cwd();
+        process.chdir(localDir);
+        
+        const { stdout: gitStatus } = await execa('git', ['status', '--porcelain']);
+        if (gitStatus) {
+          console.log(chalk.gray('Template files updated, committing changes...'));
+          await execa('git', ['add', '.']);
+          await execa('git', ['commit', '-m', 'Update template files']);
+          
+          try {
+            await execa('git', ['push'], {
+              env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+            });
+          } catch (pushError) {
+            console.log(chalk.gray('Push failed, trying gh auth setup...'));
+            await execa('gh', ['auth', 'setup-git']);
+            await execa('git', ['push']);
+          }
+        }
+        
+        process.chdir(cwd);
       } catch (cloneError) {
         // Repository exists but might be empty, initialize it
+        console.log(chalk.gray('Clone failed, initializing new repository...'));
+        
         await fs.mkdir(localDir, { recursive: true });
         const cwd = process.cwd();
         process.chdir(localDir);
-        await execa('git', ['init']);
-        await execa('git', ['remote', 'add', 'origin', accountRepoUrl]);
+        
+        try {
+          await execa('git', ['init']);
+          await execa('git', ['remote', 'add', 'origin', accountRepoUrl]);
+          
+          // Try to fetch existing content first
+          try {
+            console.log(chalk.gray('Checking for existing remote content...'));
+            await execa('git', ['fetch', 'origin']);
+            // If fetch succeeds, try to pull
+            await execa('git', ['pull', 'origin', 'master', '--allow-unrelated-histories']);
+          } catch (fetchError) {
+            // No existing content or branch, that's fine
+            console.log(chalk.gray('No existing remote content found'));
+          }
 
-        // Copy template files
-        const templateDir = path.join(__dirname, 'template');
-        await copyTemplateFiles(templateDir, localDir, { accountName: repoName, repoName });
+          // Copy template files
+          const templateDir = path.join(__dirname, 'template');
+          await copyTemplateFiles(templateDir, localDir, { accountName: ghUser, repoName });
 
-        await execa('git', ['add', '.']);
-        await execa('git', ['commit', '-m', 'Initial commit']);
-        await execa('git', ['branch', '-M', 'master']);
-        await execa('git', ['push', '-u', 'origin', 'master']);
-        process.chdir(cwd);
+          // Verify files were copied
+          const copiedFiles2 = await fs.readdir(localDir);
+          console.log(chalk.gray(`Files copied to local directory: ${copiedFiles2.join(', ')}`));
 
-        setupLocalSpinner.succeed('Account repository initialized');
+          await execa('git', ['add', '.']);
+          
+          // Check git status before commit
+          const { stdout: gitStatus2 } = await execa('git', ['status', '--porcelain']);
+          if (!gitStatus2) {
+            console.log(chalk.yellow('Warning: No files staged for commit'));
+          }
+          
+          await execa('git', ['commit', '-m', 'Initial commit']);
+          await execa('git', ['branch', '-M', 'master']);
+          
+          console.log(chalk.gray('Pushing to remote repository...'));
+          try {
+            // First check if we have the right remote URL
+            const { stdout: remoteUrl } = await execa('git', ['remote', 'get-url', 'origin']);
+            console.log(chalk.gray(`Remote URL: ${remoteUrl.trim()}`));
+            
+            // Try to push
+            const pushResult = await execa('git', ['push', '-u', 'origin', 'master'], {
+              env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+            });
+            console.log(chalk.gray('Push successful'));
+          } catch (pushError) {
+            console.error(chalk.red('Push failed:'), pushError.message);
+            if (pushError.stderr) {
+              console.error(chalk.red('Error details:'), pushError.stderr);
+            }
+            
+            // Try using gh to set up authentication
+            console.log(chalk.gray('Attempting to configure git with gh auth...'));
+            try {
+              await execa('gh', ['auth', 'setup-git']);
+              console.log(chalk.gray('Retrying push...'));
+              await execa('git', ['push', '-u', 'origin', 'master']);
+              console.log(chalk.gray('Push successful after auth setup'));
+            } catch (retryError) {
+              console.error(chalk.red('Push still failed after auth setup'));
+              throw retryError;
+            }
+          }
+          
+          process.chdir(cwd);
+          setupLocalSpinner.succeed('Account repository initialized');
+        } catch (gitError) {
+          process.chdir(cwd);
+          setupLocalSpinner.fail('Failed to initialize repository');
+          console.error(chalk.red('Git error:'), gitError.message);
+          throw gitError;
+        }
       }
     }
   } catch (error) {
