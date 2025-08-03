@@ -332,6 +332,7 @@ async function createShopworkerInstance() {
       process.chdir(localDir);
       await execa('git', ['add', '.']);
       await execa('git', ['commit', '-m', 'Initial commit']);
+      await execa('git', ['branch', '-M', 'master']);
       await execa('git', ['push', '-u', 'origin', 'master']);
       process.chdir(cwd);
 
@@ -355,6 +356,7 @@ async function createShopworkerInstance() {
 
         await execa('git', ['add', '.']);
         await execa('git', ['commit', '-m', 'Initial commit']);
+        await execa('git', ['branch', '-M', 'master']);
         await execa('git', ['push', '-u', 'origin', 'master']);
         process.chdir(cwd);
 
