@@ -1,7 +1,9 @@
 /**
  * Worker-specific job loading utilities
- * These functions handle dynamic imports in the Cloudflare Worker environment
+ * These functions handle dynamic imports using the pre-generated job manifest
  */
+
+import manifest from '../../job-manifest.json';
 
 /**
  * Load job configuration in the worker environment
@@ -9,20 +11,14 @@
  * @returns {Promise<Object>} The job configuration
  */
 export async function loadJobConfig(jobPath) {
-  // First try to load from local jobs directory
-  try {
-    const configModule = await import(`../../local/jobs/${jobPath}/config.json`);
-    return configModule.default;
-  } catch (localError) {
-    // If not found in local, try core jobs directory
-    try {
-      const configModule = await import(`../jobs/${jobPath}/config.json`);
-      return configModule.default;
-    } catch (coreError) {
-      console.error(`Failed to load job config for ${jobPath} from both local and core directories`);
-      throw new Error(`Job config not found for: ${jobPath}`);
-    }
+  const jobInfo = manifest.jobs[jobPath];
+  
+  if (!jobInfo) {
+    throw new Error(`Job not found in manifest: ${jobPath}`);
   }
+  
+  // Use the config from the manifest directly
+  return jobInfo.config;
 }
 
 /**
@@ -31,19 +27,14 @@ export async function loadJobConfig(jobPath) {
  * @returns {Promise<Object>} The job module
  */
 export async function loadJobModule(jobPath) {
-  let jobModule;
+  const jobInfo = manifest.jobs[jobPath];
   
-  // Try to load from local jobs directory first
-  try {
-    jobModule = await import(`../../local/jobs/${jobPath}/job.js`);
-  } catch (localError) {
-    // If not found in local, try core jobs directory
-    try {
-      jobModule = await import(`../jobs/${jobPath}/job.js`);
-    } catch (coreError) {
-      throw new Error(`Job module not found for ${jobPath} in either local or core directories`);
-    }
+  if (!jobInfo) {
+    throw new Error(`Job not found in manifest: ${jobPath}`);
   }
+  
+  // Use the exact import path from the manifest
+  const jobModule = await import(jobInfo.jobPath);
   
   if (!jobModule.process) {
     throw new Error(`Job ${jobPath} does not export a process function`);

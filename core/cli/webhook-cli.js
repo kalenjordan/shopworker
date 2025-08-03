@@ -1,6 +1,6 @@
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { initShopify } from '../shared/shopify.js';
-import { getAvailableJobDirs, loadAndValidateWebhookConfigs } from './cli-helpers.js';
+import { getAvailableJobDirs, loadAndValidateWebhookConfigs } from './job-management.js';
 import {
   displayJobsTable,
   sortJobDisplayInfos,

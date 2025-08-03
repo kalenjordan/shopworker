@@ -21,6 +21,14 @@ CURRENT_DIR=$(pwd)
 CURRENT_DIR_NAME=$(basename "$CURRENT_DIR")
 PARENT_DIR=$(dirname "$CURRENT_DIR")
 
+# Safety check: ensure we're in a shopworker-* directory
+if [[ ! "$CURRENT_DIR_NAME" =~ ^shopworker- ]]; then
+    echo -e "${RED}\n❌  ERROR: This script must be run from a 'shopworker-*' directory.${NC}"
+    echo -e "${GRAY}Current directory: $CURRENT_DIR_NAME${NC}"
+    echo -e "${GRAY}Expected pattern: shopworker-<something>${NC}\n"
+    exit 1
+fi
+
 # Check if we're in a shopworker directory by looking for README with shopworker content
 IS_SHOPWORKER_DIR=false
 if [ -f "README.md" ]; then

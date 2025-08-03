@@ -3,6 +3,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import readline from 'readline';
 import { needsSecretsPush, executePutSecrets } from './secrets.js';
+import { updateJobManifest } from './job-manifest.js';
 
 /**
  * Checks Git repository status before deployment
@@ -70,6 +71,12 @@ export async function replaceSymlinkWithCopy(projectRoot) {
   const tempPath = path.join(projectRoot, 'local-temp');
 
   try {
+    // Check if 'local' exists at all
+    if (!fs.existsSync(localPath)) {
+      console.log("'local' directory not found, proceeding with deployment without it.");
+      return true;
+    }
+
     // Check if 'local' exists and is a symlink
     const stats = fs.lstatSync(localPath);
     if (!stats.isSymbolicLink()) {
@@ -104,6 +111,7 @@ export async function replaceSymlinkWithCopy(projectRoot) {
   }
 }
 
+
 /**
  * Restores the 'local' symlink after deployment
  * @param {string} projectRoot - The project root directory
@@ -116,7 +124,11 @@ export async function restoreSymlink(projectRoot) {
   try {
     // Check if local-temp exists (our backed up symlink)
     if (!fs.existsSync(tempPath)) {
-      console.log("No symlink backup found, skipping restoration.");
+      // No backup means either:
+      // 1. local directory didn't exist originally
+      // 2. local was not a symlink
+      // 3. symlink replacement wasn't performed
+      // In all cases, nothing to restore
       return true;
     }
 
@@ -261,7 +273,7 @@ export function promptUser(question) {
  */
 export async function ensureWorkerUrl(cliDirname) {
   const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
-  
+
   let shopworkerData = {};
   if (fs.existsSync(shopworkerFilePath)) {
     shopworkerData = JSON.parse(fs.readFileSync(shopworkerFilePath, 'utf8'));
@@ -274,11 +286,11 @@ export async function ensureWorkerUrl(cliDirname) {
     console.log(`Project name from wrangler.toml: ${projectName}`);
     console.log('\nPlease enter your Cloudflare subdomain');
     console.log('(e.g., your-subdomain.workers.dev or just your-subdomain)');
-    
+
     const input = await promptUser('Subdomain: ');
-    
+
     let workerUrl;
-    
+
     // Check if user entered full URL
     if (input.startsWith('https://')) {
       // Validate full URL format
@@ -293,13 +305,13 @@ export async function ensureWorkerUrl(cliDirname) {
       // User entered just the subdomain
       workerUrl = `https://${projectName}.${input}.workers.dev`;
     }
-    
+
     // Save to .shopworker.json
     shopworkerData.cloudflare_worker_url = workerUrl;
     fs.writeFileSync(shopworkerFilePath, JSON.stringify(shopworkerData, null, 2), 'utf8');
     console.log(`Worker URL saved to .shopworker.json: ${workerUrl}`);
   }
-  
+
   return shopworkerData.cloudflare_worker_url;
 }
 
@@ -368,6 +380,9 @@ export async function handleCloudflareDeployment(cliDirname) {
     console.error('Failed to ensure R2 bucket exists. Aborting deployment.');
     return false;
   }
+
+  // Generate job manifest before deployment
+  updateJobManifest(cliDirname);
 
   // Replace symlink with directory copy
   const symlinkReplaced = await replaceSymlinkWithCopy(cliDirname);

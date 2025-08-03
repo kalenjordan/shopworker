@@ -1,11 +1,7 @@
 {
   "lastDeployedCommit": "f089461dad4ba5c052d5ea9ecfc65c744ecb2387",
   "cloudflare_worker_url": "https://shopworker.your0cloudflare-subdomain.workers.dev",
-  "shops": [
-    {
-      "name": "arbitrary-shop-name",
-      "shopify_domain": "shopify-subdomain.myshopify.com",
-      "shopify_token": "shpat_abc123xxxxxxxxxxxxxxxxxxx"
-    }
-  ]
+  "shopify_domain": "shopify-subdomain.myshopify.com",
+  "shopify_token": "shpat_abc123xxxxxxxxxxxxxxxxxxx",
+  "shopify_api_secret_key": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }

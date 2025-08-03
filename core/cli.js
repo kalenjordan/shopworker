@@ -5,16 +5,25 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
-// Import utility functions from our new consolidated module
+// Import from job management
 import {
   detectJobDirectory,
-  ensureAndResolveJobName,
-  getWorkerUrl,
-  runJobTest,
-  runJobRemoteTest,
-  handleCloudflareDeployment
-} from './cli/cli-helpers.js';
+  ensureAndResolveJobName
+} from './cli/job-management.js';
 
+// Import from test command
+import { runJobTest } from './cli/test-command.js';
+
+// Import from remote testing
+import { runJobRemoteTest } from './cli/remote-testing.js';
+
+// Import from deployment
+import { handleCloudflareDeployment } from './cli/deployment.js';
+
+// Import from config helpers
+import { getWorkerUrl } from './shared/config-helpers.js';
+
+// Import from secrets
 import { executePutSecrets } from './cli/secrets.js';
 
 import {
