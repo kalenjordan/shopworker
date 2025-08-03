@@ -10,3 +10,6 @@ Thumbs.db
 
 # Node
 node_modules/
+
+# Account-specific local directory (symlink)
+/local

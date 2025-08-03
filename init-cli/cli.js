@@ -89,7 +89,22 @@ async function createShopworkerInstance() {
       type: 'text',
       name: 'shopifyDomain',
       message: 'Shopify domain (e.g., my-store.myshopify.com):',
-      validate: value => value.match(/^[a-z0-9-]+\.myshopify\.com$/) ? true : 'Invalid domain format. Use: store-name.myshopify.com'
+      validate: value => {
+        // Allow just the store name or full domain
+        if (value.match(/^[a-z0-9-]+$/)) {
+          return true; // Just store name
+        } else if (value.match(/^[a-z0-9-]+\.myshopify\.com$/)) {
+          return true; // Full domain
+        }
+        return 'Invalid domain format. Use: store-name or store-name.myshopify.com';
+      },
+      format: value => {
+        // If just store name provided, append .myshopify.com
+        if (value.match(/^[a-z0-9-]+$/) && !value.includes('.myshopify.com')) {
+          return `${value}.myshopify.com`;
+        }
+        return value;
+      }
     },
     {
       type: 'text',
@@ -252,25 +267,7 @@ async function createShopworkerInstance() {
           process.exit(1);
         }
 
-        // Continue to gitignore update
-        const gitignoreSpinner = ora('Updating .gitignore...').start();
-        try {
-          let gitignoreContent = '';
-          try {
-            gitignoreContent = await fs.readFile('.gitignore', 'utf8');
-          } catch (error) {
-            // .gitignore doesn't exist, that's ok
-          }
-
-          if (!gitignoreContent.includes('/local')) {
-            gitignoreContent += '\n# Account-specific local directory (symlink)\n/local\n';
-            await fs.writeFile('.gitignore', gitignoreContent);
-          }
-
-          gitignoreSpinner.succeed('.gitignore updated');
-        } catch (error) {
-          gitignoreSpinner.warn('Failed to update .gitignore');
-        }
+        // .gitignore already includes /local from the template, no need to update it
 
         // Create .shopworker.json file
         const configSpinner2 = ora('Creating .shopworker.json...').start();
@@ -371,25 +368,7 @@ async function createShopworkerInstance() {
     process.exit(1);
   }
 
-  // Update .gitignore to exclude local directory
-  const gitignoreSpinner = ora('Updating .gitignore...').start();
-  try {
-    let gitignoreContent = '';
-    try {
-      gitignoreContent = await fs.readFile('.gitignore', 'utf8');
-    } catch (error) {
-      // .gitignore doesn't exist, that's ok
-    }
-
-    if (!gitignoreContent.includes('/local')) {
-      gitignoreContent += '\n# Account-specific local directory (symlink)\n/local\n';
-      await fs.writeFile('.gitignore', gitignoreContent);
-    }
-
-    gitignoreSpinner.succeed('.gitignore updated');
-  } catch (error) {
-    gitignoreSpinner.warn('Failed to update .gitignore');
-  }
+  // .gitignore already includes /local from the template, no need to update it
 
   // Create .shopworker.json file
   const configSpinner = ora('Creating .shopworker.json...').start();
