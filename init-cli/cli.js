@@ -27,10 +27,10 @@ async function createShopworkerInstance() {
 
   // Check prerequisites
   const spinner = ora('Checking prerequisites...').start();
-  
+
   const hasGit = await checkCommand('git');
   const hasGh = await checkCommand('gh');
-  
+
   if (!hasGit || !hasGh) {
     spinner.fail('Missing prerequisites');
     console.log(chalk.red('\nRequired tools missing:'));
@@ -39,14 +39,14 @@ async function createShopworkerInstance() {
     console.log(chalk.yellow('\nPlease install missing tools and try again.'));
     process.exit(1);
   }
-  
+
   spinner.succeed('Prerequisites checked');
 
   // Check if current directory is empty
   const currentDir = process.cwd();
   const currentDirName = path.basename(currentDir);
   let isEmptyDir = false;
-  
+
   try {
     const files = await fs.readdir(currentDir);
     // Consider directory empty if it only has hidden files like .git, .DS_Store
@@ -136,12 +136,12 @@ async function createShopworkerInstance() {
     // Use current directory for main repo
     mainDir = currentDir;
     localDir = path.join(path.dirname(currentDir), `${currentDirName}-local`);
-    
+
     // Clone main Shopworker repository contents into current directory
     const cloneMainSpinner = ora('Cloning main Shopworker repository...').start();
     try {
       // Git clone directly into current directory from coreRefactor branch
-      await execa('git', ['clone', '-b', 'coreRefactor', mainRepoUrl, '.']);
+      await execa('git', ['clone', '-b', 'master', mainRepoUrl, '.']);
       cloneMainSpinner.succeed('Main Shopworker repository cloned');
     } catch (error) {
       cloneMainSpinner.fail('Failed to clone main repository');
@@ -152,7 +152,7 @@ async function createShopworkerInstance() {
     // Create new directories
     mainDir = path.join(currentDir, directory);
     localDir = path.join(currentDir, `${directory}-local`);
-    
+
     // Check if directory already exists
     const dirExists = await fs.access(mainDir).then(() => true).catch(() => false);
     if (dirExists) {
@@ -164,7 +164,7 @@ async function createShopworkerInstance() {
     // Clone main Shopworker repository
     const cloneMainSpinner = ora('Cloning main Shopworker repository...').start();
     try {
-      await execa('git', ['clone', '-b', 'coreRefactor', mainRepoUrl, mainDir]);
+      await execa('git', ['clone', '-b', 'master', mainRepoUrl, mainDir]);
       cloneMainSpinner.succeed('Main Shopworker repository cloned');
     } catch (error) {
       cloneMainSpinner.fail('Failed to clone main repository');
@@ -199,12 +199,12 @@ async function createShopworkerInstance() {
   const setupLocalSpinner = ora('Setting up local account directory...').start();
   try {
     const accountRepoUrl = `https://github.com/${ghUser}/${repoName}.git`;
-    
+
     // Check if local directory already exists
     const localDirExists = await fs.access(localDir).then(() => true).catch(() => false);
     if (localDirExists) {
       setupLocalSpinner.warn(`Directory "${path.basename(localDir)}" already exists`);
-      
+
       // Ask user what to do
       const { action } = await prompts({
         type: 'select',
@@ -234,17 +234,17 @@ async function createShopworkerInstance() {
       } else if (action === 'use') {
         // Skip the repository setup and just use existing directory
         setupLocalSpinner.succeed('Using existing local directory');
-        
+
         // Skip to symlink creation
         const symlinkSpinner = ora('Creating symlink...').start();
         try {
           // Ensure we're in the main directory
           process.chdir(mainDir);
-          
+
           // Create relative symlink
           const relativePath = path.relative(mainDir, localDir);
           await fs.symlink(relativePath, 'local', 'dir');
-          
+
           symlinkSpinner.succeed('Symlink created');
         } catch (error) {
           symlinkSpinner.fail('Failed to create symlink');
@@ -261,28 +261,28 @@ async function createShopworkerInstance() {
           } catch (error) {
             // .gitignore doesn't exist, that's ok
           }
-          
+
           if (!gitignoreContent.includes('/local')) {
             gitignoreContent += '\n# Account-specific local directory (symlink)\n/local\n';
             await fs.writeFile('.gitignore', gitignoreContent);
           }
-          
+
           gitignoreSpinner.succeed('.gitignore updated');
         } catch (error) {
           gitignoreSpinner.warn('Failed to update .gitignore');
         }
-        
+
         // Create .shopworker.json file
         const configSpinner2 = ora('Creating .shopworker.json...').start();
         try {
           process.chdir(mainDir);
-          
+
           const shopworkerConfig = {
             shopify_domain: shopifyDomain,
             shopify_token: shopifyToken,
             shopify_api_secret_key: shopifyApiSecret
           };
-          
+
           await fs.writeFile('.shopworker.json', JSON.stringify(shopworkerConfig, null, 2));
           configSpinner2.succeed('.shopworker.json created');
         } catch (error) {
@@ -309,11 +309,11 @@ async function createShopworkerInstance() {
     if (!repoExists) {
       // New repository - clone and add template files
       await execa('git', ['clone', accountRepoUrl, localDir]);
-      
+
       // Copy template files
       const templateDir = path.join(__dirname, 'template');
       await copyTemplateFiles(templateDir, localDir, { accountName: repoName, repoName });
-      
+
       // Commit template files
       const cwd = process.cwd();
       process.chdir(localDir);
@@ -321,7 +321,7 @@ async function createShopworkerInstance() {
       await execa('git', ['commit', '-m', 'Initial commit']);
       await execa('git', ['push', '-u', 'origin', 'master']);
       process.chdir(cwd);
-      
+
       setupLocalSpinner.succeed('Account repository initialized');
     } else {
       // Existing repository - try to clone it
@@ -335,16 +335,16 @@ async function createShopworkerInstance() {
         process.chdir(localDir);
         await execa('git', ['init']);
         await execa('git', ['remote', 'add', 'origin', accountRepoUrl]);
-        
+
         // Copy template files
         const templateDir = path.join(__dirname, 'template');
         await copyTemplateFiles(templateDir, localDir, { accountName: repoName, repoName });
-        
+
         await execa('git', ['add', '.']);
         await execa('git', ['commit', '-m', 'Initial commit']);
         await execa('git', ['push', '-u', 'origin', 'master']);
         process.chdir(cwd);
-        
+
         setupLocalSpinner.succeed('Account repository initialized');
       }
     }
@@ -359,11 +359,11 @@ async function createShopworkerInstance() {
   try {
     // Ensure we're in the main directory
     process.chdir(mainDir);
-    
+
     // Create relative symlink
     const relativePath = path.relative(mainDir, localDir);
     await fs.symlink(relativePath, 'local', 'dir');
-    
+
     symlinkSpinner.succeed('Symlink created');
   } catch (error) {
     symlinkSpinner.fail('Failed to create symlink');
@@ -380,12 +380,12 @@ async function createShopworkerInstance() {
     } catch (error) {
       // .gitignore doesn't exist, that's ok
     }
-    
+
     if (!gitignoreContent.includes('/local')) {
       gitignoreContent += '\n# Account-specific local directory (symlink)\n/local\n';
       await fs.writeFile('.gitignore', gitignoreContent);
     }
-    
+
     gitignoreSpinner.succeed('.gitignore updated');
   } catch (error) {
     gitignoreSpinner.warn('Failed to update .gitignore');
@@ -395,13 +395,13 @@ async function createShopworkerInstance() {
   const configSpinner = ora('Creating .shopworker.json...').start();
   try {
     process.chdir(mainDir);
-    
+
     const shopworkerConfig = {
       shopify_domain: shopifyDomain,
       shopify_token: shopifyToken,
       shopify_api_secret_key: shopifyApiSecret
     };
-    
+
     await fs.writeFile('.shopworker.json', JSON.stringify(shopworkerConfig, null, 2));
     configSpinner.succeed('.shopworker.json created');
   } catch (error) {
@@ -442,11 +442,11 @@ function showSuccessMessage(isEmptyDir, currentDirName, directory, mainDir, loca
     console.log(chalk.white(`    ├── triggers/`));
     console.log(chalk.white(`    └── connectors/\n`));
   }
-  
+
   console.log(chalk.cyan('Configuration:'));
   console.log(chalk.white(`  ✓ .shopworker.json created with credentials for ${shopifyDomain}`));
   console.log(chalk.white(`  ✓ Dependencies installed\n`));
-  
+
   console.log(chalk.cyan('Next steps:'));
   if (!isEmptyDir) {
     console.log(chalk.white(`  1. cd ${directory}`));
@@ -458,7 +458,7 @@ function showSuccessMessage(isEmptyDir, currentDirName, directory, mainDir, loca
     console.log(chalk.white('  2. Create your custom jobs in local/jobs/'));
     console.log(chalk.white('  3. Deploy with: npm run deploy\n'));
   }
-  
+
   console.log(chalk.gray(`Main repository: ${mainRepoUrl}`));
   console.log(chalk.gray(`Account repository: https://github.com/${ghUser}/${repoName}`));
   console.log(chalk.gray(`Local directory: ${path.basename(localDir)}`));
@@ -466,22 +466,22 @@ function showSuccessMessage(isEmptyDir, currentDirName, directory, mainDir, loca
 
 async function copyTemplateFiles(src, dest, replacements) {
   const entries = await readdir(src, { withFileTypes: true });
-  
+
   for (const entry of entries) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
-    
+
     if (entry.isDirectory()) {
       await fs.mkdir(destPath, { recursive: true });
       await copyTemplateFiles(srcPath, destPath, replacements);
     } else {
       let content = await fs.readFile(srcPath, 'utf8');
-      
+
       // Replace placeholders
       for (const [key, value] of Object.entries(replacements)) {
         content = content.replace(new RegExp(`\\{${key.toUpperCase()}\\}`, 'g'), value);
       }
-      
+
       await fs.writeFile(destPath, content);
     }
   }
