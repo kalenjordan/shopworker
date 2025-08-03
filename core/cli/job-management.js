@@ -3,23 +3,22 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import chalk from 'chalk';
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
-import { initShopify } from './shopify.js';
-import { getShopConfig, loadSecrets } from './config-helpers.js';
+import { initShopify } from '../shared/shopify.js';
+import { getShopConfig, loadSecrets } from '../shared/config-helpers.js';
 
 /**
  * Get all available job directories
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} [currentDir] - If provided, only return jobs under this directory
- * @returns {Array<string>} List of job directory paths relative to jobs/
+ * @returns {Array<string>} List of job directory paths relative to jobs/ (e.g., 'hello-world', 'order/fetch')
  */
 export const getAvailableJobDirs = (cliDirname, currentDir = null) => {
-  const jobsDir = path.join(cliDirname, 'core', 'jobs');
-  if (!fs.existsSync(jobsDir)) return [];
-
-  const jobDirs = [];
+  const jobDirs = new Set(); // Use Set to avoid duplicates
 
   // Helper function to recursively find directories with config.json
   const findJobDirs = (dir, relativePath = '') => {
+    if (!fs.existsSync(dir)) return;
+    
     const entries = fs.readdirSync(dir);
 
     for (const entry of entries) {
@@ -29,7 +28,7 @@ export const getAvailableJobDirs = (cliDirname, currentDir = null) => {
       if (fs.statSync(fullPath).isDirectory()) {
         // Check if this directory contains a config.json file
         if (fs.existsSync(path.join(fullPath, 'config.json'))) {
-          jobDirs.push(entryRelativePath);
+          jobDirs.add(entryRelativePath);
         }
 
         // Recursively search subdirectories
@@ -38,23 +37,37 @@ export const getAvailableJobDirs = (cliDirname, currentDir = null) => {
     }
   };
 
-  findJobDirs(jobsDir);
+  // Search in both local and core job directories (local first for priority)
+  const localJobsDir = path.join(cliDirname, 'local', 'jobs');
+  const coreJobsDir = path.join(cliDirname, 'core', 'jobs');
+  
+  findJobDirs(localJobsDir);
+  findJobDirs(coreJobsDir);
+
+  const jobDirsArray = Array.from(jobDirs);
 
   // If currentDir is provided, filter the results to only include jobs under that directory
   if (currentDir) {
-    const relativeCurrentDir = path.relative(jobsDir, currentDir);
-
-    // Only filter if the current directory is a subdirectory of jobsDir
-    if (!relativeCurrentDir.startsWith('..') && relativeCurrentDir !== '') {
-      return jobDirs.filter(jobDir =>
-        // Include the job if it's directly in the current directory or in a subdirectory
-        jobDir === relativeCurrentDir ||
-        jobDir.startsWith(relativeCurrentDir + path.sep)
+    const relativeToCoreDir = path.relative(coreJobsDir, currentDir);
+    const relativeToLocalDir = path.relative(localJobsDir, currentDir);
+    
+    // Determine which relative path to use for filtering
+    let relativeDir = null;
+    if (!relativeToCoreDir.startsWith('..') && relativeToCoreDir !== '') {
+      relativeDir = relativeToCoreDir;
+    } else if (!relativeToLocalDir.startsWith('..') && relativeToLocalDir !== '') {
+      relativeDir = relativeToLocalDir;
+    }
+    
+    if (relativeDir) {
+      return jobDirsArray.filter(jobDir =>
+        jobDir === relativeDir ||
+        jobDir.startsWith(relativeDir + path.sep)
       );
     }
   }
 
-  return jobDirs;
+  return jobDirsArray;
 };
 
 /**
@@ -77,23 +90,40 @@ export function listAvailableJobs(cliDirname, messagePrefix = 'Could not detect 
  * Detect the job directory from various possible locations
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} [specifiedDir] - An explicitly specified directory
- * @returns {string|null} The job name or path or null if not determined
+ * @returns {string|null} The job name or path (e.g., 'hello-world', 'order/fetch') or null if not determined
  */
 export function detectJobDirectory(cliDirname, specifiedDir) {
   if (specifiedDir) return specifiedDir;
   const initCwd = process.env.INIT_CWD || process.cwd();
   const currentDir = process.cwd();
   const dirsToCheck = [initCwd, currentDir];
-  const jobsDir = path.join(cliDirname, 'core', 'jobs');
-  if (!fs.existsSync(jobsDir)) return null;
+  const coreJobsDir = path.join(cliDirname, 'core', 'jobs');
+  const localJobsDir = path.join(cliDirname, 'local', 'jobs');
   const validJobDirs = getAvailableJobDirs(cliDirname);
 
   for (const dir of dirsToCheck) {
-    // Check if we're in a job directory
-    const relPath = path.relative(jobsDir, dir);
-    if (!relPath.startsWith('..') && relPath !== '') {
+    // Check if we're in a local job directory first (higher priority)
+    const relPathLocal = path.relative(localJobsDir, dir);
+    if (!relPathLocal.startsWith('..') && relPathLocal !== '') {
       // Find the closest parent directory that contains a config.json
-      let currentRelPath = relPath;
+      let currentRelPath = relPathLocal;
+      let pathParts = currentRelPath.split(path.sep);
+
+      while (pathParts.length > 0) {
+        const potentialJobPath = pathParts.join(path.sep);
+        if (validJobDirs.includes(potentialJobPath)) {
+          return potentialJobPath;
+        }
+        // Remove the last segment and try again
+        pathParts.pop();
+      }
+    }
+    
+    // Check if we're in a core job directory
+    const relPathCore = path.relative(coreJobsDir, dir);
+    if (!relPathCore.startsWith('..') && relPathCore !== '') {
+      // Find the closest parent directory that contains a config.json
+      let currentRelPath = relPathCore;
       let pathParts = currentRelPath.split(path.sep);
 
       while (pathParts.length > 0) {
@@ -134,6 +164,7 @@ export async function ensureAndResolveJobName(cliDirname, jobNameArg, dirOption,
     console.error('Please specify the job name (e.g., my-job), use the -d <jobDirectory> option, or run from within the job directory.');
     return null;
   }
+  
   return resolvedJobName;
 }
 
@@ -306,8 +337,15 @@ export async function runJobTest(cliDirname, jobPath, options) {
   console.log(chalk.magenta(`Processing for shop: ${shopConfig.shopify_domain}`));
 
   // Use path.resolve with pathToFileURL to ensure proper module resolution
-  const jobModulePath = pathToFileURL(path.resolve(cliDirname, `core/jobs/${jobPath}/job.js`)).href;
-  const jobModule = await import(jobModulePath);
+  // First try local jobs directory
+  let jobModulePath = path.resolve(cliDirname, 'local', 'jobs', jobPath, 'job.js');
+  
+  if (!fs.existsSync(jobModulePath)) {
+    // If not found in local, try core jobs directory
+    jobModulePath = path.resolve(cliDirname, 'core', 'jobs', jobPath, 'job.js');
+  }
+  
+  const jobModule = await import(pathToFileURL(jobModulePath).href);
 
   // Create a mock step object for CLI execution
   const step = {

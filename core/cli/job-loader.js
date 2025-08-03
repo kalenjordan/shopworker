@@ -13,11 +13,18 @@ const rootDir = path.join(__dirname, '..', '..');  // Go up two levels to get to
 
 /**
  * Load the configuration for a specific job
- * @param {string} jobPath - The path of the job relative to jobs/
+ * @param {string} jobPath - The path of the job (e.g., 'hello-world', 'order/fetch')
  * @returns {Object} The job configuration
  */
 export function loadJobConfig(jobPath) {
-  const configPath = path.join(rootDir, 'core', 'jobs', jobPath, 'config.json');
+  // First try local jobs directory
+  let configPath = path.join(rootDir, 'local', 'jobs', jobPath, 'config.json');
+  
+  if (!fs.existsSync(configPath)) {
+    // If not found in local, try core jobs directory
+    configPath = path.join(rootDir, 'core', 'jobs', jobPath, 'config.json');
+  }
+  
   try {
     const configData = fs.readFileSync(configPath, 'utf8');
     const config = JSON.parse(configData);
@@ -61,30 +68,55 @@ export function loadTriggerConfig(triggerName) {
  * @returns {Object} Map of job paths to their configurations
  */
 export async function loadJobsConfig() {
-  const jobsDir = path.join(rootDir, 'core', 'jobs');
   const jobs = {};
 
-  try {
-    const jobPaths = fs.readdirSync(jobsDir)
-      .filter(dir => fs.statSync(path.join(jobsDir, dir)).isDirectory())
+  // Helper function to scan a job directory
+  const scanJobDirectory = (baseDir) => {
+    if (!fs.existsSync(baseDir)) return [];
+    
+    return fs.readdirSync(baseDir)
+      .filter(dir => fs.statSync(path.join(baseDir, dir)).isDirectory())
       .flatMap(dir => {
         // Check if this is a job directory (has config.json)
-        if (fs.existsSync(path.join(jobsDir, dir, 'config.json'))) {
+        if (fs.existsSync(path.join(baseDir, dir, 'config.json'))) {
           return [dir];
         }
 
         // Check for nested job directories
-        const nestedDir = path.join(jobsDir, dir);
+        const nestedDir = path.join(baseDir, dir);
         return fs.readdirSync(nestedDir)
           .filter(subdir => fs.statSync(path.join(nestedDir, subdir)).isDirectory())
           .filter(subdir => fs.existsSync(path.join(nestedDir, subdir, 'config.json')))
           .map(subdir => path.join(dir, subdir));
       });
+  };
 
-    for (const jobPath of jobPaths) {
+  try {
+    // Scan both local and core job directories
+    const localJobsDir = path.join(rootDir, 'local', 'jobs');
+    const coreJobsDir = path.join(rootDir, 'core', 'jobs');
+    
+    // Use a Set to handle potential duplicates (local takes priority)
+    const processedJobs = new Set();
+    
+    // Process local jobs first (higher priority)
+    const localJobPaths = scanJobDirectory(localJobsDir);
+    for (const jobPath of localJobPaths) {
       const config = loadJobConfig(jobPath);
       if (config) {
         jobs[jobPath] = config;
+        processedJobs.add(jobPath);
+      }
+    }
+    
+    // Process core jobs (skip if already processed from local)
+    const coreJobPaths = scanJobDirectory(coreJobsDir);
+    for (const jobPath of coreJobPaths) {
+      if (!processedJobs.has(jobPath)) {
+        const config = loadJobConfig(jobPath);
+        if (config) {
+          jobs[jobPath] = config;
+        }
       }
     }
 

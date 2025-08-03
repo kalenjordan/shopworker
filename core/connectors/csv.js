@@ -3,7 +3,7 @@
  * Compatible with Cloudflare Workers environment
  */
 
-import { isCliEnvironment } from '../utils/env.js';
+import { isCliEnvironment } from '../shared/env.js';
 import Papa from 'papaparse';
 
 /**

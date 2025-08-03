@@ -15,7 +15,7 @@ export {
   getShopConfig,
   getShopDomain,
   getShopConfigWithSecret
-} from './config-helpers.js';
+} from '../shared/config-helpers.js';
 
 // Re-export functions from remote testing module
 export {
@@ -38,4 +38,4 @@ export {
 } from './deployment.js';
 
 // Re-export environment utilities
-export { logToCli, runJob } from './env.js';
+export { logToCli, runJob } from '../shared/env.js';

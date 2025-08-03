@@ -2,8 +2,9 @@
  * Cloudflare Worker entry point for Shopify webhooks
  */
 
-import { createShopifyClient } from "./utils/shopify.js";
-import { hmacSha256 } from "./utils/crypto.js";
+import { createShopifyClient } from "./shared/shopify.js";
+import { hmacSha256 } from "./shared/crypto.js";
+import { loadJobConfig as workerLoadJobConfig, loadJobModule } from "./worker/job-loader.js";
 
 // Constants
 const PAYLOAD_SIZE_THRESHOLD = 1024 * 1024; // 1MB
@@ -55,14 +56,7 @@ async function verifyShopifyWebhook(req, body, env, shopConfig) {
  * Dynamically load a job config
  */
 async function loadJobConfig(jobPath) {
-  try {
-    // Import the config.json file from the job directory
-    const configModule = await import(`./jobs/${jobPath}/config.json`);
-    return configModule.default;
-  } catch (error) {
-    console.error(`Failed to load job config for ${jobPath}:`, error.message);
-    throw new Error(`Job config not found for: ${jobPath}`);
-  }
+  return workerLoadJobConfig(jobPath);
 }
 
 /**
@@ -317,9 +311,7 @@ export class JobDispatcher extends WorkflowEntrypoint {
     // Step 2: Load job configuration
     const finalJobConfig = await step.do("load-job-config", async () => {
       try {
-        // Load job config
-        const jobConfigModule = await import(`./jobs/${jobPath}/config.json`);
-        let config = jobConfigModule.default;
+        let config = await workerLoadJobConfig(jobPath);
 
         // Check for config overrides in the payload
         if (jobData._configOverrides) {
@@ -351,10 +343,7 @@ export class JobDispatcher extends WorkflowEntrypoint {
     });
 
     // Step 4: Load job module (not a workflow step, just load the module)
-    const jobModule = await import(`./jobs/${jobPath}/job.js`);
-    if (!jobModule.process) {
-      throw new Error(`Job ${jobPath} does not export a process function`);
-    }
+    const jobModule = await loadJobModule(jobPath);
 
     // Execute the job directly - let it create its own workflow steps
     const result = await jobModule.process({

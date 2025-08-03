@@ -13,9 +13,9 @@ import {
   runJobTest,
   runJobRemoteTest,
   handleCloudflareDeployment
-} from './utils/cli-helpers.js';
+} from './cli/cli-helpers.js';
 
-import { executePutSecrets } from './utils/secrets.js';
+import { executePutSecrets } from './cli/secrets.js';
 
 import {
   handleAllJobsStatus,
@@ -23,7 +23,7 @@ import {
   enableJobWebhook,
   disableJobWebhook,
   deleteWebhookById
-} from './utils/webhook-cli.js';
+} from './cli/webhook-cli.js';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);

@@ -1,7 +1,7 @@
 import GetProductById from "../../../graphql/productGetById.js";
 import * as GoogleSheets from "../../../connectors/google-sheets";
 import chalk from "chalk";
-import { logToCli, logToWorker } from "../../../utils/env.js";
+import { logToCli, logToWorker } from "../../../shared/env.js";
 
 // -----------------------------------------------------------------------------
 // CONFIGURATION
