@@ -4,6 +4,6 @@
     "topic": "products/create"
   },
   "test": {
-    "query": "GetRecentProducts"
+    "query": "productsGetRecent"
   }
 }

@@ -4,6 +4,6 @@
     "topic": "products/update"
   },
   "test": {
-    "query": "GetRecentProducts"
+    "query": "productsGetRecent"
   }
 }

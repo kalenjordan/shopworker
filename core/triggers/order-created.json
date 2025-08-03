@@ -4,6 +4,6 @@
     "topic": "orders/create"
   },
   "test": {
-    "query": "GetRecentOrders"
+    "query": "ordersGetRecent"
   }
 }

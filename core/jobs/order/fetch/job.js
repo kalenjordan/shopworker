@@ -1,4 +1,4 @@
-import GetOrderById from "../../graphql/orderGetById.js";
+import GetOrderById from "../../../graphql/orderGetById.js";
 /**
  * Process an order to tag it with the SKUs from its line items
  * @param {Object} params - Parameters for the job
@@ -7,6 +7,7 @@ import GetOrderById from "../../graphql/orderGetById.js";
  * @param {Object} [params.env] - Environment variables (not used by this job)
  */
 export async function process({ payload, shopify }) {
+  console.log("payload", payload);
   // Convert ID to GID format and fetch full order
   const orderId = shopify.toGid(payload.id, "Order");
   const { order } = await shopify.graphql(GetOrderById, { id: orderId });

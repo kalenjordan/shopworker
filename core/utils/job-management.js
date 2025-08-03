@@ -227,7 +227,7 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
     throw new Error(`Trigger ${jobConfig.trigger} doesn't have a test query defined`);
   }
 
-  const queryModulePath = pathToFileURL(path.resolve(cliDirname, `graphql/${triggerConfig.test.query}.js`)).href;
+  const queryModulePath = pathToFileURL(path.resolve(cliDirname, `core/graphql/${triggerConfig.test.query}.js`)).href;
   const queryModule = await import(queryModulePath);
   const query = queryModule.default;
 

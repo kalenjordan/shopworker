@@ -4,6 +4,6 @@
     "topic": "reviews/create"
   },
   "test": {
-    "query": "GetRecentOrders"
+    "query": "ordersGetRecent"
   }
 }
