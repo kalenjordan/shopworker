@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
 import { hmacSha256 } from '../shared/crypto.js';
-import { getShopConfigWithSecret, getShopDomain } from '../shared/config-helpers.js';
+import { getShopConfigWithSecret } from '../shared/config-helpers.js';
 import { findSampleRecordForJob } from './job-management.js';
 
 /**
@@ -246,8 +246,12 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   let payload;
   let isShopworkerWebhook = false;
 
-  // Check if this is a Shopworker webhook trigger
-  if (configToUse.trigger === 'webhook') {
+  // Check trigger type and prepare appropriate payload
+  if (configToUse.trigger === 'manual') {
+    // For manual triggers, create an empty payload
+    payload = {};
+    console.log(chalk.yellow("Using empty payload for manual trigger job"));
+  } else if (configToUse.trigger === 'webhook') {
     // For Shopworker webhook triggers, load the fixture data
     payload = await loadShopworkerWebhookFixture(cliDirname, jobPath, configToUse);
     isShopworkerWebhook = true;
