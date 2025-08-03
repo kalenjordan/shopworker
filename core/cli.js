@@ -2,7 +2,6 @@
 
 import { Command } from 'commander';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 // Import from job management
@@ -19,6 +18,7 @@ import { runJobRemoteTest } from './cli/remote-testing.js';
 
 // Import from deployment
 import { handleCloudflareDeployment } from './cli/deployment.js';
+import { isDeploymentNeeded } from './cli/deployment-hash.js';
 
 // Import from config helpers
 import { getWorkerUrl } from './shared/config-helpers.js';
@@ -72,8 +72,9 @@ program
   .description('Enable a job by registering webhooks with Shopify after ensuring the latest code is deployed')
   .option('-d, --dir <jobDirectory>', 'Job directory name')
   .option('-w, --worker <workerUrl>', 'Cloudflare worker URL (overrides .shopworker.json)')
+  .option('-f, --force', 'Force deployment even if no changes detected')
   .action(async (jobNameArg, options) => {
-    const deploymentSuccessful = await handleCloudflareDeployment(projectRoot);
+    const deploymentSuccessful = await handleCloudflareDeployment(projectRoot, options.force);
     if (!deploymentSuccessful) {
       console.error("Halting 'enable' command due to deployment issues.");
       return;
@@ -169,9 +170,10 @@ program
 program
   .command('deploy')
   .description('Deploy the current state to Cloudflare and record the commit hash.')
-  .action(async () => {
+  .option('-f, --force', 'Force deployment even if no changes detected')
+  .action(async (options) => {
     console.log('Starting Cloudflare deployment process...');
-    const success = await handleCloudflareDeployment(projectRoot);
+    const success = await handleCloudflareDeployment(projectRoot, options.force);
     if (success) {
       console.log('Deployment process completed successfully.');
     } else {
@@ -209,6 +211,22 @@ program
       if (!workerUrl) {
         console.error("Worker URL is required for remote testing. Please provide with -w or set cloudflare_worker_url in .shopworker.json.");
         return;
+      }
+
+      // Check if deployment is needed before remote test
+      const { getStateData } = await import('./cli/state-management.js');
+      const stateData = getStateData(projectRoot);
+      const lastDeploymentHash = stateData.lastDeploymentHash;
+      const { needed } = await isDeploymentNeeded(projectRoot, lastDeploymentHash);
+      
+      if (needed) {
+        console.log('\nDetected changes since last deployment. Deploying to Cloudflare...');
+        const deploymentSuccessful = await handleCloudflareDeployment(projectRoot);
+        if (!deploymentSuccessful) {
+          console.error("Deployment failed. Aborting remote test.");
+          return;
+        }
+        console.log(''); // Add blank line after deployment
       }
 
       // Pass the workerUrl in the options

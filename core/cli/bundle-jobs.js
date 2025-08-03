@@ -101,7 +101,6 @@ export function generateJobLoader() {
   const loaderContent = `/**
  * Auto-generated job loader for Cloudflare Workers
  * This file statically imports all jobs to ensure they're bundled at build time
- * Generated at: ${new Date().toISOString()}
  */
 
 ${imports.join('\n')}

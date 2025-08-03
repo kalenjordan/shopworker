@@ -3,6 +3,7 @@ node_modules
 /wrangler.toml
 .wrangler
 .shopworker.json
+.shopworker-state.json
 google-sheets-credentials.json
 docs/codebase-structure.md
 .secrets/

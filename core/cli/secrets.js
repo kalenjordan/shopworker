@@ -2,9 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import crypto from 'crypto';
+import { getStateData, updateStateData } from './state-management.js';
 
 /**
- * Updates the lastSecretsPush timestamp in .shopworker.json
+ * Updates the lastSecretsPush timestamp in state file
  * @param {string} projectRoot - The project root directory
  */
 export function updateLastSecretsPush(projectRoot) {
@@ -15,14 +16,13 @@ export function updateLastSecretsPush(projectRoot) {
     shopworkerData = JSON.parse(fs.readFileSync(shopworkerPath, 'utf8'));
   }
   
-  // Update lastSecretsPush to current timestamp
-  shopworkerData.lastSecretsPush = new Date().toISOString();
+  // Store the content hash and timestamp in state file
+  updateStateData(projectRoot, {
+    lastSecretsPush: new Date().toISOString(),
+    lastSecretsPushContentHash: getSecretsContentHash(shopworkerData)
+  });
   
-  // Store the content hash (using the same function for consistency)
-  shopworkerData.lastSecretsPushContentHash = getSecretsContentHash(shopworkerData);
-  
-  fs.writeFileSync(shopworkerPath, JSON.stringify(shopworkerData, null, 2), 'utf8');
-  console.log('Updated lastSecretsPush timestamp in .shopworker.json');
+  console.log('Updated lastSecretsPush timestamp in state file');
 }
 
 /**
@@ -31,11 +31,8 @@ export function updateLastSecretsPush(projectRoot) {
  * @returns {string} A hash representing the secrets content
  */
 function getSecretsContentHash(shopworkerData) {
-  // Create a copy without the tracking fields
-  const { lastSecretsPush, lastSecretsPushContentHash, ...relevantData } = shopworkerData;
-  
-  // Create a SHA-256 hash of the relevant content
-  const content = JSON.stringify(relevantData);
+  // Since state fields are now in separate file, just hash the entire shopworker data
+  const content = JSON.stringify(shopworkerData);
   const hash = crypto.createHash('sha256');
   hash.update(content);
   return hash.digest('hex');
@@ -54,18 +51,20 @@ export function needsSecretsPush(projectRoot) {
   }
   
   const shopworkerData = JSON.parse(fs.readFileSync(shopworkerPath, 'utf8'));
-  const lastSecretsPush = shopworkerData.lastSecretsPush ? new Date(shopworkerData.lastSecretsPush) : null;
+  const stateData = getStateData(projectRoot);
+  
+  const lastSecretsPush = stateData.lastSecretsPush ? new Date(stateData.lastSecretsPush) : null;
   
   // If never pushed, we need to push
   if (!lastSecretsPush) {
     return true;
   }
   
-  // Store the content hash when we last pushed
-  const lastPushContentHash = shopworkerData.lastSecretsPushContentHash;
+  // Compare content hashes
+  const lastPushContentHash = stateData.lastSecretsPushContentHash;
   const currentContentHash = getSecretsContentHash(shopworkerData);
   
-  // Check if content (excluding lastSecretsPush) has changed
+  // Check if content has changed
   if (lastPushContentHash !== currentContentHash) {
     return true;
   }

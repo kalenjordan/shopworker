@@ -3,6 +3,8 @@ import path from 'path';
 import { execSync } from 'child_process';
 import readline from 'readline';
 import { needsSecretsPush, executePutSecrets } from './secrets.js';
+import { calculateDeploymentHash, isDeploymentNeeded } from './deployment-hash.js';
+import { getStateData, updateStateData } from './state-management.js';
 
 /**
  * Checks Git repository status before deployment
@@ -25,24 +27,13 @@ export async function checkGitStatus() {
 }
 
 /**
- * Gets the last deployed commit from the .shopworker.json file
+ * Gets the last deployed commit from the state file
  * @param {string} cliDirname - The directory where cli.js is located
  * @returns {string|null} The last deployed commit hash or null if not found
  */
 export function getLastDeployedCommit(cliDirname) {
-  const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
-  let lastDeployedCommit = null;
-
-  if (fs.existsSync(shopworkerFilePath)) {
-    try {
-      const shopworkerData = JSON.parse(fs.readFileSync(shopworkerFilePath, 'utf8'));
-      lastDeployedCommit = shopworkerData?.lastDeployedCommit;
-    } catch (error) {
-      console.warn('Warning: Could not read or parse .shopworker file. Will proceed as if no previous deployment was made.', error.message);
-    }
-  }
-
-  return lastDeployedCommit;
+  const stateData = getStateData(cliDirname);
+  return stateData.lastDeployedCommit || null;
 }
 
 /**
@@ -315,33 +306,28 @@ export async function ensureWorkerUrl(cliDirname) {
 }
 
 /**
- * Updates the .shopworker.json file with the new deployed commit
+ * Updates the state file with the new deployed commit and hash
  * @param {string} cliDirname - The directory where cli.js is located
  * @param {string} currentCommit - The current commit hash
+ * @param {string} deploymentHash - The deployment hash
  */
-export function updateShopworkerFile(cliDirname, currentCommit) {
-  const shopworkerFilePath = path.join(cliDirname, '.shopworker.json');
-
-  // Preserve existing content in .shopworker.json when updating
-  let shopworkerData = {};
-  if (fs.existsSync(shopworkerFilePath)) {
-    shopworkerData = JSON.parse(fs.readFileSync(shopworkerFilePath, 'utf8'));
-  }
-
-  // Update with new values
-  shopworkerData.lastDeployedCommit = currentCommit;
-
-  fs.writeFileSync(shopworkerFilePath, JSON.stringify(shopworkerData, null, 2), 'utf8');
-  console.log(`Updated .shopworker.json with deployed commit: ${currentCommit}`);
+export function updateShopworkerFile(cliDirname, currentCommit, deploymentHash) {
+  updateStateData(cliDirname, {
+    lastDeployedCommit: currentCommit,
+    lastDeploymentHash: deploymentHash
+  });
+  console.log(`Updated deployment state with commit: ${currentCommit}`);
+  console.log(`Updated deployment state with hash: ${deploymentHash}`);
 }
 
 
 /**
  * Handle Cloudflare deployment logic
  * @param {string} cliDirname - The directory where cli.js is located (project root)
+ * @param {boolean} force - Force deployment even if no changes detected
  * @returns {Promise<boolean>} Whether the deployment was successful
  */
-export async function handleCloudflareDeployment(cliDirname) {
+export async function handleCloudflareDeployment(cliDirname, force = false) {
   // Preparation phase
   await checkGitStatus();
 
@@ -359,7 +345,6 @@ export async function handleCloudflareDeployment(cliDirname) {
     console.log('');
   }
 
-  const lastDeployedCommit = getLastDeployedCommit(cliDirname);
   const currentCommit = await getCurrentCommit();
 
   if (!currentCommit) {
@@ -401,15 +386,34 @@ export async function handleCloudflareDeployment(cliDirname) {
   }
 
   let deploymentSuccess = false;
+  let currentHash = null;
 
   try {
+    // Check if deployment is needed based on hash
+    if (!force) {
+      const stateData = getStateData(cliDirname);
+      const lastDeploymentHash = stateData.lastDeploymentHash;
+      const { needed, currentHash: calculatedHash } = await isDeploymentNeeded(cliDirname, lastDeploymentHash);
+      currentHash = calculatedHash;
+      
+      if (!needed) {
+        console.log('No changes detected since last deployment. Skipping deployment.');
+        console.log('Use --force flag to force deployment.');
+        return true; // Return true since nothing needs to be done
+      }
+    } else {
+      // If forcing, still calculate hash for storing
+      currentHash = await calculateDeploymentHash(cliDirname);
+      console.log('Forcing deployment (--force flag used)...');
+    }
+
     // Execution phase
     console.log('Deploying to Cloudflare via Wrangler...');
 
     deploymentSuccess = await executeCloudflareDeployment();
 
     if (deploymentSuccess) {
-      updateShopworkerFile(cliDirname, currentCommit);
+      updateShopworkerFile(cliDirname, currentCommit, currentHash);
     }
   } finally {
     // Always restore symlink, regardless of deployment success
