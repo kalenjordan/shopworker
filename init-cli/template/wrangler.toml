@@ -1,0 +1,29 @@
+name = "{REPONAME}"
+main = "core/worker.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[build]
+command = ""
+
+[vars]
+# Environment variables your worker needs
+
+[observability]
+enabled = true
+head_sampling_rate = 1 # optional. default = 1.
+
+# Workflows configuration
+[[workflows]]
+binding = "JOB_DISPATCHER"
+name = "job-dispatcher"
+class_name = "JobDispatcher"
+
+# R2 bucket for storing large job payloads
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "{REPONAME}--data"
+
+# Optional: Increase CPU limit for longer-running jobs
+[limits]
+cpu_ms = 300000  # 5 minutes (default is 30 seconds)
