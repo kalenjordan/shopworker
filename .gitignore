@@ -7,3 +7,6 @@ google-sheets-credentials.json
 docs/codebase-structure.md
 .secrets/
 fixtures/
+
+# Account-specific local directory (symlink)
+/local
