@@ -1,6 +1,0 @@
-name = "shopworker"
-main = "worker.js"
-compatibility_date = "2023-06-01"
-
-[vars]
-# Environment variables your worker needs

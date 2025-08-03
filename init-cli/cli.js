@@ -269,6 +269,22 @@ async function createShopworkerInstance() {
 
         // .gitignore already includes /local from the template, no need to update it
 
+        // Create wrangler.toml file
+        const wranglerSpinner2 = ora('Creating wrangler.toml...').start();
+        try {
+          const wranglerTemplatePath = path.join(__dirname, 'template', 'wrangler.toml');
+          let wranglerContent = await fs.readFile(wranglerTemplatePath, 'utf8');
+          
+          // Replace placeholders
+          wranglerContent = wranglerContent.replace(/\{REPONAME\}/g, repoName);
+          
+          await fs.writeFile(path.join(mainDir, 'wrangler.toml'), wranglerContent);
+          wranglerSpinner2.succeed('wrangler.toml created');
+        } catch (error) {
+          wranglerSpinner2.fail('Failed to create wrangler.toml');
+          console.error(chalk.red(error.message));
+        }
+
         // Create .shopworker.json file
         const configSpinner2 = ora('Creating .shopworker.json...').start();
         try {
@@ -370,6 +386,22 @@ async function createShopworkerInstance() {
 
   // .gitignore already includes /local from the template, no need to update it
 
+  // Create wrangler.toml file
+  const wranglerSpinner = ora('Creating wrangler.toml...').start();
+  try {
+    const wranglerTemplatePath = path.join(__dirname, 'template', 'wrangler.toml');
+    let wranglerContent = await fs.readFile(wranglerTemplatePath, 'utf8');
+    
+    // Replace placeholders
+    wranglerContent = wranglerContent.replace(/\{REPONAME\}/g, repoName);
+    
+    await fs.writeFile('wrangler.toml', wranglerContent);
+    wranglerSpinner.succeed('wrangler.toml created');
+  } catch (error) {
+    wranglerSpinner.fail('Failed to create wrangler.toml');
+    console.error(chalk.red(error.message));
+  }
+
   // Create .shopworker.json file
   const configSpinner = ora('Creating .shopworker.json...').start();
   try {
@@ -424,16 +456,17 @@ function showSuccessMessage(isEmptyDir, currentDirName, directory, mainDir, loca
 
   console.log(chalk.cyan('Configuration:'));
   console.log(chalk.white(`  ✓ .shopworker.json created with credentials for ${shopifyDomain}`));
+  console.log(chalk.white(`  ✓ wrangler.toml created with name: ${repoName}`));
   console.log(chalk.white(`  ✓ Dependencies installed\n`));
 
   console.log(chalk.cyan('Next steps:'));
   if (!isEmptyDir) {
     console.log(chalk.white(`  1. cd ${directory}`));
-    console.log(chalk.white('  2. Set up .env with your Cloudflare credentials'));
+    console.log(chalk.white('  2. Create .env file with CLOUDFLARE_ACCOUNT_ID'));
     console.log(chalk.white('  3. Create your custom jobs in local/jobs/'));
     console.log(chalk.white('  4. Deploy with: npm run deploy\n'));
   } else {
-    console.log(chalk.white('  1. Set up .env with your Cloudflare credentials'));
+    console.log(chalk.white('  1. Create .env file with CLOUDFLARE_ACCOUNT_ID'));
     console.log(chalk.white('  2. Create your custom jobs in local/jobs/'));
     console.log(chalk.white('  3. Deploy with: npm run deploy\n'));
   }
