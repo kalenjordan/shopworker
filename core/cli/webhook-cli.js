@@ -132,7 +132,8 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
     jobConfig = loadJobConfig(jobPath);
   } catch (e) {
     return {
-      jobPath,
+      jobId: jobPath,
+      fullPath: null,
       displayName: jobPath,
       displayTopic: 'CONFIG ERROR',
       statusMsg: '⚠️ ERROR',
@@ -149,6 +150,8 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
   let includeFields = null;
   // Use either the job config name or the jobPath for display
   const displayName = jobConfig.name || jobPath;
+  const fullPath = jobConfig.fullPath;
+  const jobId = jobPath;
 
   // Get includeFields from job config
   if (jobConfig.webhook?.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
@@ -157,7 +160,8 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
 
   if (!jobConfig.trigger) {
     return {
-      jobPath,
+      jobId,
+      fullPath,
       displayName,
       displayTopic,
       statusMsg,
@@ -173,7 +177,8 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
     triggerConfig = loadTriggerConfig(jobConfig.trigger);
   } catch(e) {
     return {
-      jobPath,
+      jobId,
+      fullPath,
       displayName,
       displayTopic: jobConfig.trigger,
       statusMsg: '⚠️ TRIGGER CONFIG ERROR',
@@ -187,7 +192,8 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
   // If no webhook topic in trigger, return early
   if (!triggerConfig.webhook?.topic) {
     return {
-      jobPath,
+      jobId,
+      fullPath,
       displayName,
       displayTopic,
       statusMsg,
@@ -224,7 +230,8 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
   }
 
   return {
-    jobPath,
+    jobId,
+    fullPath,
     displayName,
     displayTopic,
     statusMsg,
@@ -390,7 +397,8 @@ export async function getAllJobDisplayInfo(cliDirname, jobDirs) {
       .catch(error => {
         console.error(`Error getting info for ${jobPath}:`, error);
         return {
-          jobPath,
+          jobId: jobPath,
+          fullPath: null,
           displayName: jobPath,
           displayTopic: 'ERROR',
           statusMsg: '⚠️ ERROR',

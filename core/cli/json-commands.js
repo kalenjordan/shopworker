@@ -84,7 +84,8 @@ export async function handleAllJobsStatusJSON(projectRoot, filterByCurrentDir = 
       shop: shopDomain,
       totalJobs: jobInfos.length,
       jobs: jobInfos.map(job => ({
-        path: job.jobPath,
+        id: job.jobId,
+        path: job.fullPath,
         name: job.displayName,
         status: job.statusMsg,
         webhookTopic: job.displayTopic,
@@ -128,7 +129,8 @@ export async function handleSingleJobStatusJSON(projectRoot, jobPath) {
     const jsonOutput = {
       shop: shopDomain,
       job: {
-        path: jobInfo.jobPath,
+        id: jobInfo.jobId,
+        path: jobInfo.fullPath,
         name: jobInfo.displayName,
         status: jobInfo.statusMsg,
         webhookTopic: jobInfo.displayTopic,

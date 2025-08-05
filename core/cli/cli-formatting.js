@@ -52,7 +52,7 @@ export function displayJobsTable(jobDisplayInfos, printHeader = true) {
 
     console.log(
       formatStatusColumn(info.statusMsg, isDisabled) +
-      applyColorIfDisabled(cropAndPad(info.jobPath, COLUMN_WIDTHS.path), isDisabled) +
+      applyColorIfDisabled(cropAndPad(info.fullPath || info.jobId, COLUMN_WIDTHS.path), isDisabled) +
       applyColorIfDisabled(chalk.blue(cropAndPad(info.displayName, COLUMN_WIDTHS.job)), isDisabled) +
       applyColorIfDisabled(cropAndPad(info.displayTopic, COLUMN_WIDTHS.topic), isDisabled)
     );

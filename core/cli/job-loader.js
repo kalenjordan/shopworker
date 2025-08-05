@@ -19,18 +19,21 @@ const rootDir = path.join(__dirname, '..', '..');  // Go up two levels to get to
 export function loadJobConfig(jobPath) {
   // First try local jobs directory
   let configPath = path.join(rootDir, 'local', 'jobs', jobPath, 'config.json');
+  let jobLocation = 'local';
   
   if (!fs.existsSync(configPath)) {
     // If not found in local, try core jobs directory
     configPath = path.join(rootDir, 'core', 'jobs', jobPath, 'config.json');
+    jobLocation = 'core';
   }
   
   try {
     const configData = fs.readFileSync(configPath, 'utf8');
     const config = JSON.parse(configData);
 
-    // Add the jobPath to the config for reference
+    // Add the jobPath and full path to the config for reference
     config.jobPath = jobPath;
+    config.fullPath = path.join(jobLocation, 'jobs', jobPath);
 
     // If there's a trigger, load its information too
     if (config.trigger) {
