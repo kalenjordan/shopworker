@@ -150,6 +150,16 @@ program
   });
 
 program
+  .command('json-status [jobNameArg]')
+  .description('Get the status of webhooks in JSON format')
+  .option('-d, --dir <jobDirectory>', 'Job directory name')
+  .option('-a, --all', 'Show status of all jobs, ignoring current directory context')
+  .action(async (jobNameArg, options) => {
+    const { handleJsonStatusCommand } = await import('./cli/json-commands.js');
+    await handleJsonStatusCommand(projectRoot, jobNameArg, options);
+  });
+
+program
   .command('runtest')
   .description('Run test for the current job directory (or specified with -d)')
   .option('-d, --dir <jobDirectory>', 'Job directory name (if not running from within job dir)')

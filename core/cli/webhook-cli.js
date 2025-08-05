@@ -298,7 +298,7 @@ export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false
 
   // Get shop domain from config
   try {
-    const { getShopDomain } = await import('./config-helpers.js');
+    const { getShopDomain } = await import('../shared/config-helpers.js');
     const shopDomain = getShopDomain(cliDirname, null);
     console.log(chalk.magenta(`Shop: ${shopDomain}`));
   } catch (error) {
@@ -384,7 +384,7 @@ async function checkForOrphanedWebhooks(cliDirname, jobDirs) {
  * @param {Array<string>} jobDirs - List of job directories
  * @returns {Promise<Array<Object>>} Array of job display info objects
  */
-async function getAllJobDisplayInfo(cliDirname, jobDirs) {
+export async function getAllJobDisplayInfo(cliDirname, jobDirs) {
   const jobInfoPromises = jobDirs.map(jobPath =>
     getJobDisplayInfo(cliDirname, jobPath)
       .catch(error => {

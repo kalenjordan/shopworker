@@ -12,6 +12,7 @@
     "enable": "node core/cli.js enable",
     "disable": "node core/cli.js disable",
     "status": "node core/cli.js status",
+    "json-status": "node core/cli.js json-status",
     "deploy": "node core/cli.js deploy",
     "remote-test": "node core/cli.js remote-test",
     "all-webhooks": "node core/cli.js all-webhooks",
