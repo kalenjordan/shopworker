@@ -139,7 +139,7 @@ export function loadSecrets(cliDirname) {
   const secrets = {};
 
   if (!fs.existsSync(secretsDir)) {
-    console.warn('Warning: .secrets directory not found. No secrets will be loaded.');
+    // Silently return empty secrets object if .secrets directory doesn't exist
     return secrets;
   }
 
