@@ -1,11 +1,32 @@
 import OrderUpdate from "../../../graphql/orderUpdate.js";
 
 /**
- * Process an order to tag it with the SKUs from its line items
+ * Tags orders with SKUs from their line items when orders are created.
+ * 
+ * This job automatically extracts unique SKU values from all line items in a newly created order
+ * and adds them as tags to the order. It prevents duplicate SKU tags and only performs updates
+ * when new SKUs need to be added.
+ * 
+ * Workflow:
+ * 1. Extracts SKUs from order line items (checks both variant.sku and item.sku)
+ * 2. Filters out duplicate SKUs within the order
+ * 3. Checks existing order tags to avoid re-adding SKUs that are already tagged
+ * 4. Updates the order with new SKU tags using Shopify's OrderUpdate mutation
+ * 5. Logs the operation results for monitoring and debugging
+ * 
+ * Use Cases:
+ * - Inventory tracking and reporting by SKU
+ * - Order filtering and search by product SKUs
+ * - Automated tagging for fulfillment workflows
+ * - Analytics and reporting on product performance
+ * 
  * @param {Object} params - Parameters for the job
- * @param {Object} params.order - The order object from Shopify GraphQL API
- * @param {Object} params.shopify - Shopify API client
+ * @param {Object} params.payload - The order object from Shopify webhook (order-created trigger)
+ * @param {Object} params.shopify - Shopify GraphQL API client for making mutations
  * @param {Object} [params.env] - Environment variables (not used by this job)
+ * 
+ * @throws {Error} When OrderUpdate mutation fails with user errors
+ * @throws {Error} When update response is missing expected order data
  */
 export async function process({ payload: order, shopify }) {
   // Extract SKUs from line items

@@ -1,6 +1,68 @@
 import { getAvailableJobDirs, ensureAndResolveJobName, detectJobDirectory } from './job-management.js';
 import { getAllJobDisplayInfo } from './webhook-cli.js';
 import { getShopDomain } from '../shared/config-helpers.js';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+/**
+ * Extract description from JSDoc comment above the process function
+ * @param {string} projectRoot - The project root directory 
+ * @param {string} jobPath - The job path (e.g., "local/jobs/hello-world")
+ * @returns {string|null} The description or null if not found
+ */
+export function extractJobDescription(projectRoot, jobPath) {
+  try {
+    const jobFilePath = join(projectRoot, jobPath, 'job.js');
+    const fileContent = readFileSync(jobFilePath, 'utf-8');
+    
+    // Look for JSDoc comment followed by export async function process
+    const jsdocPattern = /\/\*\*[\s\S]*?\*\/[\s]*export\s+async\s+function\s+process/;
+    const match = fileContent.match(jsdocPattern);
+    
+    if (!match) {
+      return null;
+    }
+    
+    // Extract just the JSDoc block
+    const jsdocBlock = match[0].substring(0, match[0].indexOf('export'));
+    
+    // Parse the JSDoc content - look for the description (first non-empty line after /**)
+    const lines = jsdocBlock.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
+      
+      // Skip opening /**
+      if (line === '/**' || line === '/*') {
+        continue;
+      }
+      
+      // Skip closing */ 
+      if (line === '*/' || line === '*/') {
+        break;
+      }
+      
+      // Remove leading * and whitespace
+      if (line.startsWith('*')) {
+        line = line.substring(1).trim();
+      }
+      
+      // Skip @param, @returns, etc.
+      if (line.startsWith('@')) {
+        break;
+      }
+      
+      // If we have a non-empty line, this is our description
+      if (line.length > 0) {
+        return line;
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    // If file doesn't exist or can't be read, return null
+    return null;
+  }
+}
 
 /**
  * Main handler for json-status command
@@ -87,6 +149,7 @@ export async function handleAllJobsStatusJSON(projectRoot, filterByCurrentDir = 
         id: job.jobId,
         path: job.fullPath,
         name: job.displayName,
+        description: extractJobDescription(projectRoot, job.fullPath),
         status: job.statusMsg,
         webhookTopic: job.displayTopic,
         webhookId: job.webhookIdSuffix,
@@ -132,6 +195,7 @@ export async function handleSingleJobStatusJSON(projectRoot, jobPath) {
         id: jobInfo.jobId,
         path: jobInfo.fullPath,
         name: jobInfo.displayName,
+        description: extractJobDescription(projectRoot, jobPath),
         status: jobInfo.statusMsg,
         webhookTopic: jobInfo.displayTopic,
         webhookId: jobInfo.webhookIdSuffix,
