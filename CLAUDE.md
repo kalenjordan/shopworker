@@ -4,26 +4,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-### Development Commands
-- `npm test` - Test a job with recent data from the current directory
-- `npm run test -- [job-name]` - Test a specific job
-- `npm run test -- [job-name] --query "created_at:>2023-01-01"` - Test with filtered data
-- `npm run lint` - Run ESLint on the codebase
-
-### Job Management
-- `npm run status` - View status of all jobs (MANUAL, ENABLED, NOT CONFIGURED, DISABLED)
-- `npm run enable -- [job-name]` - Enable a job by registering its webhook (deploys to Cloudflare first)
-- `npm run disable -- [job-name]` - Disable a job by removing its webhook
-- `npm run remote-test -- [job-name]` - Test a job against the deployed Cloudflare worker
-
-### Deployment
-- `npm run deploy` - Deploy to Cloudflare Workers
-- `npm run put-secrets` - Upload .shopworker.json and .secrets/* to Cloudflare as secrets
-
-### Utilities
-- `npm run all-webhooks` - List all webhooks in the store
-- `npm run delete-webhook -- [webhook-id]` - Delete a specific webhook
-- `npm run generate-structure` - Generate codebase structure documentation
 
 ## Architecture
 
@@ -50,7 +30,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Critical Workflow State Management Rule:** NEVER store accumulated state in variables at the workflow level. Cloudflare Workflows can hibernate between steps, causing workflow-level variables to be lost. ALL state must be stored in and retrieved from step return values. Each step should return the complete state needed for subsequent steps.
 
-**Job Documentation Format:** Each job's `process` method should include a JSDoc comment block with:
+**Job Documentation Format:** Each job file should include a JSDoc comment block at the top of the file with:
 1. **Title** (first line): A concise title for the job
 2. **Description** (second paragraph after blank line): A more detailed description of what the job does
 
@@ -58,13 +38,14 @@ Example:
 ```javascript
 /**
  * Order Fulfillment Processor
- * 
+ *
  * Automatically processes fulfilled orders by updating inventory levels,
  * sending notification emails to customers, and syncing fulfillment
  * data with external warehouse management systems.
- * 
- * @param {Object} context - The job context
  */
+
+import { someHelper } from '../helpers.js';
+
 export async function process(context) {
   // Job implementation
 }
@@ -78,17 +59,17 @@ export async function process({ shopify, payload, shopConfig, jobConfig, env, se
     // Step logic here
     return { /* All state that needs to persist */ };
   });
-  
+
   // For iterative processes, pass state through steps:
   let currentState = await step.do("initial-step", async () => {
     return { count: 0, items: [] };
   });
-  
+
   currentState = await step.do("next-step", async () => {
     // Use currentState from previous step
     return { count: currentState.count + 1, items: [...currentState.items, newItem] };
   });
-  
+
   // Access Shopify API via shopify.graphql()
   // Access webhook payload via payload
   // Access secrets via secrets object

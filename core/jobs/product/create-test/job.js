@@ -1,7 +1,17 @@
 /**
- * Product Create Job
- * Creates a new product with a random name
- */
+ * Random Product Generator for Testing
+ *
+ * Automatically creates test products in Shopify with randomly generated attributes
+ * to facilitate development testing and store population. This job generates unique
+ * product names by combining curated lists of adjectives and nouns (e.g., "Vintage Chair",
+ * "Modern Lamp"), assigns random product types from predefined categories (Furniture,
+ * Home Decor, Lighting, etc.), and creates appropriate HTML descriptions. The products
+ * are created with ACTIVE status and "Shopify Worker" as the vendor. This is particularly
+ * useful for testing product creation workflows, webhook handlers, inventory management
+ * systems, and populating development stores with realistic sample data for UI testing
+ * and demonstrations.
+ *
+*/
 
 import productCreateMutation from '../../../graphql/productCreate.js';
 
@@ -42,14 +52,6 @@ function generateRandomProductType() {
   return productTypes[Math.floor(Math.random() * productTypes.length)];
 }
 
-/**
- * Process function called by both the CLI and worker
- * Creates a new product with random attributes.
- * @param {Object} params - Parameters for the job
- * @param {Object} params.data - Trigger data (not typically used for this manual job)
- * @param {Object} params.shopify - Shopify API client
- * @param {Object} [params.env] - Environment variables (not used by this job)
- */
 export async function process({ shopify }) {
   // Generate a random product name
   const productName = generateRandomProductName();
