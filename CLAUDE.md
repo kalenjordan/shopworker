@@ -50,6 +50,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Critical Workflow State Management Rule:** NEVER store accumulated state in variables at the workflow level. Cloudflare Workflows can hibernate between steps, causing workflow-level variables to be lost. ALL state must be stored in and retrieved from step return values. Each step should return the complete state needed for subsequent steps.
 
+**Job Documentation Format:** Each job's `process` method should include a JSDoc comment block with:
+1. **Title** (first line): A concise title for the job
+2. **Description** (second paragraph after blank line): A more detailed description of what the job does
+
+Example:
+```javascript
+/**
+ * Order Fulfillment Processor
+ * 
+ * Automatically processes fulfilled orders by updating inventory levels,
+ * sending notification emails to customers, and syncing fulfillment
+ * data with external warehouse management systems.
+ * 
+ * @param {Object} context - The job context
+ */
+export async function process(context) {
+  // Job implementation
+}
+```
+
 Jobs follow this pattern:
 ```javascript
 export async function process({ shopify, payload, shopConfig, jobConfig, env, secrets, step }) {
