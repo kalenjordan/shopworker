@@ -12,3 +12,5 @@ core/worker/job-loader-generated.js
 
 # Account-specific local directory (symlink)
 /local
+
+/logs
