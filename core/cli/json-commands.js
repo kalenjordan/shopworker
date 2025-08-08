@@ -1,17 +1,32 @@
 import { getAvailableJobDirs, ensureAndResolveJobName, detectJobDirectory } from './job-management.js';
 import { getAllJobDisplayInfo } from './webhook-cli.js';
 import { getShopDomain } from '../shared/config-helpers.js';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 /**
- * Extract description from JSDoc comment above the process function
+ * Extract description from config.json or JSDoc comment above the process function
  * @param {string} projectRoot - The project root directory 
  * @param {string} jobPath - The job path (e.g., "local/jobs/hello-world")
  * @returns {string|null} The description or null if not found
  */
 export function extractJobDescription(projectRoot, jobPath) {
   try {
+    // First try to get description from config.json
+    const configPath = join(projectRoot, jobPath, 'config.json');
+    if (existsSync(configPath)) {
+      try {
+        const configContent = readFileSync(configPath, 'utf-8');
+        const config = JSON.parse(configContent);
+        if (config.description) {
+          return config.description;
+        }
+      } catch (e) {
+        // If config.json exists but can't be parsed, continue to JSDoc
+      }
+    }
+    
+    // Fall back to JSDoc in job.js
     const jobFilePath = join(projectRoot, jobPath, 'job.js');
     const fileContent = readFileSync(jobFilePath, 'utf-8');
     

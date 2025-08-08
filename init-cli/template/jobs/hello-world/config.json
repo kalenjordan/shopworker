@@ -1,4 +1,5 @@
 {
   "trigger": "manual",
-  "description": "A simple hello world job example"
+  "title": "Hello World",
+  "description": "A simple hello world job example - try editing me with a prompt."
 }
