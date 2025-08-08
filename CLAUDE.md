@@ -53,7 +53,12 @@ The `process()` function receives:
 - Don't test jobs via prompts. The user can test jobs via the test feature.
 
 ## Available Triggers
-Check **core/triggers/** for webhook topics you can use in config.json. If you need to create a new trigger, do it under **local/triggers** following the pattern of core triggers.
+Check **core/triggers/** and **local/triggers/** for webhook topics you can use in config.json.
+
+If you need a trigger not listed above:
+1. Create it under **local/triggers/** following the existing pattern
+2. Refer to https://shopify.dev/docs/api/webhooks?reference=toml for the complete list of Shopify webhook topics
+3. Use the exact webhook topic name from Shopify's documentation
 
 ## Reference Existing Jobs
 Always examine similar jobs in **jobs/** directory before creating new ones to ensure consistency with existing patterns.
