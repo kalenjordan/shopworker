@@ -1,99 +1,59 @@
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# CLAUDE.md - ShopWorker Job Development Guide
 
-## Commands
+This file helps Claude Code assist with creating and editing ShopWorker jobs.
 
+## CRITICAL: Directory Restrictions
 
-## Architecture
+**ONLY modify files in the `local/` directory.** The `core/` directory contains the ShopWorker framework and is READ-ONLY. Never create, edit, or delete any files in `core/`.
 
-### Core Components
+- ✅ **local/** - Create and modify all your custom jobs here
+- ❌ **core/** - Framework files - READ ONLY, use for reference only
+- ❌ **core/jobs/** - Production jobs - READ ONLY, use as examples only
 
-1. **CLI Tool (`cli.js`)** - Command-line interface for managing jobs
-   - Uses Commander.js for CLI structure
-   - Delegates to utility modules in `utils/`
+## Quick Start for Job Creation
 
-2. **Cloudflare Worker (`worker.js`)** - Webhook handler and job orchestrator
-   - Receives Shopify webhooks
-   - Implements Cloudflare Workflows for job processing
-   - Handles large payloads via R2 storage
-   - Verifies webhook signatures
+When asked to create a new job, follow these steps:
+1. Check **jobs/** directory for similar existing jobs to use as reference
+2. Create a new directory under **local/** with a descriptive name
+3. Add `config.json` defining the trigger (see **core/triggers/** for available types)
+4. Create `job.js` with the process function implementation
+5. Test using `npm test` in the job directory
 
-3. **Job System** - Modular job architecture
-   - Each job in `jobs/` with `config.json` and `job.js`
-   - Jobs export `process()` function receiving context object
-   - Jobs can use workflow steps for reliability
+## Job Structure Requirements
 
-### Job Structure
+### Critical Rules
+- **ALWAYS use `step.do()`** for any operation that modifies data or makes API calls
+- **NEVER store state in workflow-level variables** - they will be lost between steps
+- **ALL state must be passed through step return values**
 
-**Important:** When creating new jobs or modifying existing ones, always use the `step.do()` pattern for workflow steps. This ensures atomic, retriable operations and proper error handling. Some older jobs may not use this pattern yet and need refactoring, but all new work should follow this approach.
+### Job File Template
+Every job needs these two files:
 
-**Critical Workflow State Management Rule:** NEVER store accumulated state in variables at the workflow level. Cloudflare Workflows can hibernate between steps, causing workflow-level variables to be lost. ALL state must be stored in and retrieved from step return values. Each step should return the complete state needed for subsequent steps.
+1. **config.json** - Reference existing jobs in **jobs/** for patterns
+2. **job.js** - Must export a `process()` function with JSDoc documentation
 
-**Job Documentation Format:** Each job file should include a JSDoc comment block at the top of the file with:
-1. **Title** (first line): A concise title for the job
-2. **Description** (second paragraph after blank line): A more detailed description of what the job does
+### Available Context in Jobs
 
-Example:
-```javascript
-/**
- * Order Fulfillment Processor
- *
- * Automatically processes fulfilled orders by updating inventory levels,
- * sending notification emails to customers, and syncing fulfillment
- * data with external warehouse management systems.
- */
+The `process()` function receives:
+- `shopify` - GraphQL client for Shopify API calls
+- `payload` - Webhook payload data
+- `step` - Workflow step manager (MUST use for all operations)
+- `shopConfig` - Shop-specific configuration
+- `env` - Environment variables
+- `secrets` - Secret values from `.secrets/` directory
 
-import { someHelper } from '../helpers.js';
+## Common Job Patterns
 
-export async function process(context) {
-  // Job implementation
-}
-```
+### GraphQL Queries
+- Use existing queries from **core/graphql/** when possible
+- Follow naming convention: `resourceAction.js` (e.g., `orderUpdate.js`)
 
-Jobs follow this pattern:
-```javascript
-export async function process({ shopify, payload, shopConfig, jobConfig, env, secrets, step }) {
-  // Use step.do() for workflow steps
-  const result = await step.do("step-name", async () => {
-    // Step logic here
-    return { /* All state that needs to persist */ };
-  });
+### Testing Jobs
+- Don't test jobs via prompts. The user can test jobs via the test feature.
 
-  // For iterative processes, pass state through steps:
-  let currentState = await step.do("initial-step", async () => {
-    return { count: 0, items: [] };
-  });
+## Available Triggers
+Check **core/triggers/** for webhook topics you can use in config.json. If you need to create a new trigger, do it under **local/triggers** following the pattern of core triggers.
 
-  currentState = await step.do("next-step", async () => {
-    // Use currentState from previous step
-    return { count: currentState.count + 1, items: [...currentState.items, newItem] };
-  });
-
-  // Access Shopify API via shopify.graphql()
-  // Access webhook payload via payload
-  // Access secrets via secrets object
-}
-```
-
-### Configuration
-
-- `.shopworker.json` - Multi-shop configuration with API tokens
-- `.env` - Local development configuration
-- `wrangler.toml` - Cloudflare Workers configuration
-- Job-specific `config.json` - Trigger type, shop override, test settings
-
-### Key Patterns
-
-1. **GraphQL Queries** - Stored in `core/graphql/` directory as `.js` files with template literals, imported by jobs. Follow naming conventions like `productsGetRecent.js`, `orderUpdate.js`
-2. **Workflow Steps** - Use `step.do()` for atomic, retriable operations
-3. **Large Payload Handling** - Automatic R2 storage for payloads >1MB
-4. **Multi-Shop Support** - Configure multiple shops in `.shopworker.json`
-5. **Secret Management** - Store secrets in `.secrets/` directory, access via `secrets` object
-
-### Testing Approach
-
-- Use `npm test` in a job directory to test with recent Shopify data
-- Test filters available: `--query`, `--limit`, `--dry-run`
-- Remote testing available via `npm run remote-test` to test deployed workers
-- No unit test framework configured - testing is integration-based using real Shopify data
+## Reference Existing Jobs
+Always examine similar jobs in **jobs/** directory before creating new ones to ensure consistency with existing patterns.
