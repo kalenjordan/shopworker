@@ -33,6 +33,36 @@ Every job needs these two files:
 1. **config.json** - Reference existing jobs in **jobs/** for patterns
 2. **job.js** - Must export a `process()` function with JSDoc documentation
 
+### JSDoc Documentation Requirements
+
+The JSDoc block for the `process()` function must explain the job's functionality at a level that a non-technical user can understand. Focus on:
+
+- **What the job does** - Describe the business logic and outcome
+- **How it works** - Explain the approach without technical implementation details
+- **Key requirements** - Note any specific conditions needed (e.g., "requires subscription tags on orders")
+- **Configuration needed** - Mention any setup requirements in plain language
+
+Example of good documentation:
+```javascript
+/**
+ * Processes the third order in a subscription sequence
+ * 
+ * This job identifies when a customer places their third subscription order
+ * by checking for specific subscription tags on the order. When detected,
+ * it can trigger special promotions, loyalty rewards, or milestone notifications.
+ * 
+ * Requirements:
+ * - Orders must have subscription tags indicating their sequence number
+ * - The subscription app must tag orders with "subscription_order_3" for third orders
+ */
+```
+
+Avoid:
+- Technical implementation details
+- Code-level explanations
+- Developer-focused terminology
+- Internal function descriptions
+
 ### Available Context in Jobs
 
 The `process()` function receives:
