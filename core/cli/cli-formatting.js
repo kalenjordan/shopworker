@@ -6,8 +6,9 @@ import chalk from 'chalk';
 
 export const COLUMN_WIDTHS = {
   status: 13,
-  path: 40,
-  job: 35,
+  type: 7,
+  id: 40,
+  title: 35,
   topic: 20
 };
 

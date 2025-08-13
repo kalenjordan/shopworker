@@ -286,17 +286,25 @@ function findOrphanedWebhooks(webhooks, jobPaths) {
  * @param {string} cliDirname - The directory where cli.js is located
  * @param {boolean|string} filterByCurrentDir - Whether to only show jobs in the current directory (boolean)
  *                                           or path to directory to filter by (string)
+ * @param {boolean} includeCore - Whether to include core jobs in the output (default: false)
  */
-export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false) {
+export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false, includeCore = false) {
   // Convert boolean to directory path if needed
   const currentDir = typeof filterByCurrentDir === 'string' ? filterByCurrentDir :
                       filterByCurrentDir === true ? process.cwd() : null;
 
-  const jobDirs = getAvailableJobDirs(cliDirname, currentDir);
+  let jobDirs = getAvailableJobDirs(cliDirname, currentDir);
+
+  // Filter out core jobs unless explicitly requested
+  if (!includeCore) {
+    jobDirs = jobDirs.filter(jobPath => !jobPath.startsWith('core/jobs/'));
+  }
 
   if (jobDirs.length === 0) {
     if (currentDir) {
       console.log('No jobs found in the current directory.');
+    } else if (!includeCore) {
+      console.log('No local jobs found. Use -c flag to include core jobs.');
     } else {
       console.log('No jobs found.');
     }
@@ -312,7 +320,7 @@ export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false
     // If we can't get shop domain, just continue
   }
 
-  console.log(chalk.blue(`Fetching webhook status for ${jobDirs.length} jobs...`));
+  console.log(chalk.blue(`Fetching webhook status for ${jobDirs.length} ${includeCore ? '' : 'local '}jobs...`));
 
   try {
     const jobInfos = await getAllJobDisplayInfo(cliDirname, jobDirs);
@@ -320,7 +328,9 @@ export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false
     displayJobsTable(sortedJobInfos);
 
     // Get all webhooks for all shops to check for orphaned ones
-    await checkForOrphanedWebhooks(cliDirname, jobDirs);
+    // Always check all jobs for orphaned webhooks, regardless of includeCore setting
+    const allJobDirs = getAvailableJobDirs(cliDirname, currentDir);
+    await checkForOrphanedWebhooks(cliDirname, allJobDirs);
   } catch (error) {
     console.error('Error retrieving webhook status:', error);
   }
