@@ -37,8 +37,30 @@ export const getAvailableJobDirs = (cliDirname, currentDir = null) => {
   const localJobsDir = path.join(cliDirname, 'local', 'jobs');
   const coreJobsDir = path.join(cliDirname, 'core', 'jobs');
 
-  findJobDirs(localJobsDir, 'local/jobs');
-  findJobDirs(coreJobsDir, 'core/jobs');
+  // Helper function to recursively find directories with config.json, with correct prefixing
+  const findJobDirsWithPrefix = (dir, prefix) => {
+    if (!fs.existsSync(dir)) return;
+
+    const entries = fs.readdirSync(dir);
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry);
+      const entryRelativePath = prefix ? path.join(prefix, entry) : entry;
+
+      if (fs.statSync(fullPath).isDirectory()) {
+        // Check if this directory contains a config.json file
+        if (fs.existsSync(path.join(fullPath, 'config.json'))) {
+          jobDirs.add(entryRelativePath);
+        }
+
+        // Recursively search subdirectories
+        findJobDirsWithPrefix(fullPath, entryRelativePath);
+      }
+    }
+  };
+
+  findJobDirsWithPrefix(localJobsDir, 'local/jobs');
+  findJobDirsWithPrefix(coreJobsDir, 'core/jobs');
 
   const jobDirsArray = Array.from(jobDirs);
 
@@ -76,7 +98,11 @@ export function listAvailableJobs(cliDirname, messagePrefix = 'Could not detect 
   const jobDirs = getAvailableJobDirs(cliDirname);
   if (jobDirs.length > 0) {
     console.error('Available jobs:');
-    jobDirs.forEach(dir => console.error(`  ${dir}`));
+    jobDirs.forEach(dir => {
+      // Extract just the job ID part (remove the "local/jobs/" or "core/jobs/" prefix)
+      const jobId = dir.replace(/^(local|core)\/jobs\//, '');
+      console.error(`  ${jobId}`);
+    });
   } else {
     console.error('No jobs found in the jobs/ directory.');
   }
