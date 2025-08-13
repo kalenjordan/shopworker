@@ -150,8 +150,8 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
   let includeFields = null;
   // Extract just the job ID part (remove the "local/jobs/" or "core/jobs/" prefix)
   const jobId = jobPath.replace(/^(local|core)\/jobs\//, '');
-  // Use either the job config title, name, or show "missing title"
-  const displayName = jobConfig.title || jobConfig.name || '(missing title)';
+  // Use the job config title or show "missing title"
+  const displayName = jobConfig.title || '(missing title)';
   const fullPath = jobConfig.fullPath;
 
   // Get includeFields from job config
