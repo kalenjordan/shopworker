@@ -15,7 +15,8 @@ import {
   registerDeployCommand,
   registerPutSecretsCommand,
   registerRemoteTestCommand,
-  registerDeleteWebhookCommand
+  registerDeleteWebhookCommand,
+  registerWebhooksCommand
 } from './core/cli/commands/index.js';
 
 // Get directory name in ESM
@@ -44,5 +45,6 @@ registerDeployCommand(program, projectRoot);
 registerPutSecretsCommand(program, projectRoot);
 registerRemoteTestCommand(program, projectRoot);
 registerDeleteWebhookCommand(program, projectRoot);
+registerWebhooksCommand(program, projectRoot);
 
 program.parse(process.argv);

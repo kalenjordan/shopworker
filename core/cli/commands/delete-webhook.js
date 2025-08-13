@@ -37,7 +37,7 @@ function getFullWebhookId(webhookId) {
 
 export function registerDeleteWebhookCommand(program, projectRoot) {
   program
-    .command('delete-webhook')
+    .command('webhook:delete')
     .description('Delete a webhook by its ID')
     .argument('<webhookId>', 'ID of the webhook to delete')
     .action(async (webhookId) => {

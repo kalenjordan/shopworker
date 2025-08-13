@@ -57,9 +57,22 @@ function isWebhookForJob(webhook, graphqlTopic, jobPath) {
   try {
     const url = new URL(webhook.endpoint.callbackUrl);
     const urlJobParam = url.searchParams.get('job');
+    
+    if (!urlJobParam) return false;
 
-    // Handle URL encoding differences by comparing the decoded values
-    return decodeURIComponent(urlJobParam) === decodeURIComponent(jobPath);
+    // Decode both values
+    const decodedUrlJob = decodeURIComponent(urlJobParam);
+    const decodedJobPath = decodeURIComponent(jobPath);
+    
+    // Strip the "local/jobs/" or "core/jobs/" prefix for comparison
+    const cleanUrlJob = decodedUrlJob.replace(/^(local|core)\/jobs\//, '');
+    const cleanJobPath = decodedJobPath.replace(/^(local|core)\/jobs\//, '');
+    
+    // Match either the full path or the clean path
+    return decodedUrlJob === decodedJobPath || 
+           cleanUrlJob === decodedJobPath || 
+           decodedUrlJob === cleanJobPath ||
+           cleanUrlJob === cleanJobPath;
   } catch (e) {
     return false;
   }
@@ -256,10 +269,23 @@ function isOrphanedWebhook(webhookUrl, validJobPaths) {
     // If there's no job parameter, it's not an orphaned webhook
     if (!jobPath) return false;
 
-    // If the job path exists in our valid job paths, it's not orphaned
-    return !validJobPaths.some(validPath =>
-      decodeURIComponent(validPath) === decodeURIComponent(jobPath)
-    );
+    // Decode the job path from the URL
+    const decodedJobPath = decodeURIComponent(jobPath);
+
+    // Check if the job path exists in our valid job paths
+    // Match either the full path or just the job ID part
+    return !validJobPaths.some(validPath => {
+      const decodedValidPath = decodeURIComponent(validPath);
+      // Strip the "local/jobs/" or "core/jobs/" prefix for comparison
+      const cleanValidPath = decodedValidPath.replace(/^(local|core)\/jobs\//, '');
+      const cleanJobPath = decodedJobPath.replace(/^(local|core)\/jobs\//, '');
+      
+      // Match either the full path or the clean path
+      return decodedValidPath === decodedJobPath || 
+             cleanValidPath === decodedJobPath || 
+             decodedValidPath === cleanJobPath ||
+             cleanValidPath === cleanJobPath;
+    });
   } catch (e) {
     // If we can't parse the URL, it's not considered orphaned
     return false;
@@ -304,8 +330,6 @@ export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false
   if (jobDirs.length === 0) {
     if (currentDir) {
       console.log('No jobs found in the current directory.');
-    } else if (!includeCore) {
-      console.log('No local jobs found. Use -c flag to include core jobs.');
     } else {
       console.log('No jobs found.');
     }
@@ -321,7 +345,7 @@ export async function handleAllJobsStatus(cliDirname, filterByCurrentDir = false
     // If we can't get shop domain, just continue
   }
 
-  console.log(chalk.blue(`Fetching webhook status for ${jobDirs.length} ${includeCore ? '' : 'local '}jobs...`));
+  console.log(chalk.blue(`Fetching webhook status for ${jobDirs.length} job${jobDirs.length === 1 ? '' : 's'}...`));
 
   try {
     const jobInfos = await getAllJobDisplayInfo(cliDirname, jobDirs);

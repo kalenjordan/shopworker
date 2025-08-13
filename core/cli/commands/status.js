@@ -4,10 +4,9 @@ import { handleAllJobsStatus, handleSingleJobStatus } from '../webhook-cli.js';
 export function registerStatusCommand(program, projectRoot) {
   program
     .command('status [jobNameArg]')
-    .description('Check the status of webhooks for a job or all jobs (local jobs only by default)')
+    .description('Check the status of webhooks for a job or all jobs')
     .option('-d, --dir <jobDirectory>', 'Job directory name')
-    .option('-a, --all', 'Show status of all jobs, ignoring current directory context')
-    .option('-c, --include-core', 'Include core jobs in the status output')
+    .option('-a, --all', 'Show status of all jobs (both local and core)')
     .action(async (jobNameArg, options) => {
       // Determine the actual working directory - when run via npm, INIT_CWD contains the real directory
       const actualWorkingDir = process.env.INIT_CWD || process.cwd();
@@ -33,14 +32,15 @@ export function registerStatusCommand(program, projectRoot) {
         // We detected a specific job directory
         await handleSingleJobStatus(projectRoot, jobName);
       } else {
-        // We're not in a specific job directory, show filtered or all jobs
-        const filterByCurrentDir = !options.all;
+        // Show all jobs based on the --all flag
+        const includeCore = options.all;  // --all means include core jobs
+        const filterByCurrentDir = !options.all;  // Only filter by current dir if not showing all
 
         // When filtering by current dir, explicitly pass the actual working directory
         if (filterByCurrentDir) {
-          await handleAllJobsStatus(projectRoot, actualWorkingDir, options.includeCore);
+          await handleAllJobsStatus(projectRoot, actualWorkingDir, includeCore);
         } else {
-          await handleAllJobsStatus(projectRoot, false, options.includeCore);
+          await handleAllJobsStatus(projectRoot, false, includeCore);
         }
       }
     });

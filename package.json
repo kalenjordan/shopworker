@@ -8,16 +8,16 @@
     "shopworker": "./core/cli.js"
   },
   "scripts": {
-    "test": "node core/cli.js test",
-    "enable": "node core/cli.js enable",
-    "disable": "node core/cli.js disable",
-    "status": "node core/cli.js status",
-    "json-status": "node core/cli.js json-status",
-    "deploy": "node core/cli.js deploy",
-    "remote-test": "node core/cli.js remote-test",
-    "all-webhooks": "node core/cli.js all-webhooks",
-    "delete-webhook": "node core/cli.js delete-webhook",
-    "put-secrets": "node core/cli.js put-secrets",
+    "test": "node cli.js test",
+    "enable": "node cli.js enable",
+    "disable": "node cli.js disable",
+    "status": "node cli.js status",
+    "json-status": "node cli.js json-status",
+    "deploy": "node cli.js deploy",
+    "remote-test": "node cli.js remote-test",
+    "webhook:list": "node cli.js webhook:list",
+    "webhook:delete": "node cli.js webhook:delete",
+    "put-secrets": "node cli.js put-secrets",
     "lint": "eslint ."
   },
   "dependencies": {
