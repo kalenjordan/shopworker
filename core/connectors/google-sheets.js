@@ -121,7 +121,29 @@ export async function createSheetsClient(credentials, spreadsheetId = null, shee
       };
 
       const response = await fetch(url, fetchOptions);
-      return response.json();
+      const data = await response.json();
+      
+      // Check if the response is not OK
+      if (!response.ok) {
+        console.error(`Google Sheets API error (${response.status}):`, data);
+        
+        // Provide more specific error messages based on status code and context
+        if (response.status === 404) {
+          // Check if this is a spreadsheet access error
+          if (endpoint.includes('spreadsheets/') && this._spreadsheetId) {
+            throw new Error(`Spreadsheet not found with ID: ${this._spreadsheetId}. Please check that the spreadsheet exists and you have access to it.`);
+          }
+          throw new Error(`Google Sheets resource not found: ${data.error?.message || 'The requested entity was not found'}`);
+        } else if (response.status === 403) {
+          throw new Error(`Google Sheets access denied: ${data.error?.message || 'Permission denied'}. Please check that the service account has access to the spreadsheet.`);
+        } else if (response.status === 401) {
+          throw new Error(`Google Sheets authentication failed: ${data.error?.message || 'Invalid credentials'}. Please check your Google Sheets credentials.`);
+        }
+        
+        throw new Error(`Google Sheets API error: ${data.error?.message || response.statusText}`);
+      }
+      
+      return data;
     },
 
     // Initialize headers and store them in the client
@@ -336,6 +358,22 @@ export async function getSheets(sheetsClient) {
   if (!sheetsClient._spreadsheetId) throw new Error("No spreadsheet ID set on client");
 
   const data = await sheetsClient.fetchFromSheets(`spreadsheets/${sheetsClient._spreadsheetId}?fields=sheets.properties`);
+  
+  // Check if the response contains an error
+  if (data.error) {
+    console.error('Google Sheets API error:', data.error);
+    if (data.error.code === 404) {
+      throw new Error(`Spreadsheet not found with ID: ${sheetsClient._spreadsheetId}. Please verify the spreadsheet ID in your config.json`);
+    }
+    throw new Error(`Failed to get sheets: ${data.error.message || 'Unknown error'}`);
+  }
+  
+  // Check if sheets property exists
+  if (!data.sheets) {
+    console.error('Unexpected API response structure:', JSON.stringify(data, null, 2));
+    throw new Error(`No sheets found in spreadsheet ${sheetsClient._spreadsheetId}. The spreadsheet may be empty or inaccessible.`);
+  }
+  
   return data.sheets.map((sheet) => sheet.properties);
 }
 
