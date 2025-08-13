@@ -37,8 +37,8 @@ export const getAvailableJobDirs = (cliDirname, currentDir = null) => {
   const localJobsDir = path.join(cliDirname, 'local', 'jobs');
   const coreJobsDir = path.join(cliDirname, 'core', 'jobs');
 
-  findJobDirs(localJobsDir);
-  findJobDirs(coreJobsDir);
+  findJobDirs(localJobsDir, 'local/jobs');
+  findJobDirs(coreJobsDir, 'core/jobs');
 
   const jobDirsArray = Array.from(jobDirs);
 

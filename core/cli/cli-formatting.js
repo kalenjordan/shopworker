@@ -41,20 +41,23 @@ export function displayJobsTable(jobDisplayInfos, printHeader = true) {
   if (printHeader) {
     console.log('\n' +
       cropAndPad('STATUS', COLUMN_WIDTHS.status) +
-      cropAndPad('PATH', COLUMN_WIDTHS.path) +
-      cropAndPad('JOB', COLUMN_WIDTHS.job) +
+      cropAndPad('TYPE', COLUMN_WIDTHS.type) +
+      cropAndPad('ID', COLUMN_WIDTHS.id) +
+      cropAndPad('TITLE', COLUMN_WIDTHS.title) +
       cropAndPad('WEBHOOK TOPIC', COLUMN_WIDTHS.topic)
     );
-    console.log('-'.repeat(COLUMN_WIDTHS.status + COLUMN_WIDTHS.path + COLUMN_WIDTHS.job + COLUMN_WIDTHS.topic));
+    console.log('-'.repeat(COLUMN_WIDTHS.status + COLUMN_WIDTHS.type + COLUMN_WIDTHS.id + COLUMN_WIDTHS.title + COLUMN_WIDTHS.topic));
   }
 
   for (const info of jobDisplayInfos) {
     const isDisabled = info.statusMsg === 'Disabled';
+    const jobType = info.fullPath && info.fullPath.startsWith('core/jobs/') ? 'Core' : 'Local';
 
     console.log(
       formatStatusColumn(info.statusMsg, isDisabled) +
-      applyColorIfDisabled(cropAndPad(info.fullPath || info.jobId, COLUMN_WIDTHS.path), isDisabled) +
-      applyColorIfDisabled(chalk.blue(cropAndPad(info.displayName, COLUMN_WIDTHS.job)), isDisabled) +
+      applyColorIfDisabled(cropAndPad(jobType, COLUMN_WIDTHS.type), isDisabled) +
+      applyColorIfDisabled(cropAndPad(info.jobId, COLUMN_WIDTHS.id), isDisabled) +
+      applyColorIfDisabled(chalk.blue(cropAndPad(info.displayName, COLUMN_WIDTHS.title)), isDisabled) +
       applyColorIfDisabled(cropAndPad(info.displayTopic, COLUMN_WIDTHS.topic), isDisabled)
     );
   }

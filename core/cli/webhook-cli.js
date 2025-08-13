@@ -148,10 +148,11 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
   let webhookIdSuffix = '-';
   const shop = jobConfig.shop || null;
   let includeFields = null;
-  // Use either the job config name or the jobPath for display
-  const displayName = jobConfig.name || jobPath;
+  // Extract just the job ID part (remove the "local/jobs/" or "core/jobs/" prefix)
+  const jobId = jobPath.replace(/^(local|core)\/jobs\//, '');
+  // Use either the job config title, name, or show "missing title"
+  const displayName = jobConfig.title || jobConfig.name || '(missing title)';
   const fullPath = jobConfig.fullPath;
-  const jobId = jobPath;
 
   // Get includeFields from job config
   if (jobConfig.webhook?.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {

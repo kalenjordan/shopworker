@@ -13,17 +13,20 @@ const rootDir = path.join(__dirname, '..', '..');  // Go up two levels to get to
 
 /**
  * Load the configuration for a specific job
- * @param {string} jobPath - The path of the job (e.g., 'hello-world', 'order/fetch')
+ * @param {string} jobPath - The path of the job (e.g., 'hello-world', 'order/fetch', 'local/jobs/hello-world', 'core/jobs/order/fetch')
  * @returns {Object} The job configuration
  */
 export function loadJobConfig(jobPath) {
-  // First try local jobs directory
-  let configPath = path.join(rootDir, 'local', 'jobs', jobPath, 'config.json');
-  let jobLocation = 'local';
+  // Strip the local/jobs/ or core/jobs/ prefix if present
+  const cleanJobPath = jobPath.replace(/^(local|core)\/jobs\//, '');
   
-  if (!fs.existsSync(configPath)) {
-    // If not found in local, try core jobs directory
-    configPath = path.join(rootDir, 'core', 'jobs', jobPath, 'config.json');
+  // Determine if this is a local or core job based on the original path
+  let jobLocation = 'local';
+  let configPath = path.join(rootDir, 'local', 'jobs', cleanJobPath, 'config.json');
+  
+  // If the original path started with core/ or the local path doesn't exist, try core
+  if (jobPath.startsWith('core/') || !fs.existsSync(configPath)) {
+    configPath = path.join(rootDir, 'core', 'jobs', cleanJobPath, 'config.json');
     jobLocation = 'core';
   }
   
@@ -32,8 +35,8 @@ export function loadJobConfig(jobPath) {
     const config = JSON.parse(configData);
 
     // Add the jobPath and full path to the config for reference
-    config.jobPath = jobPath;
-    config.fullPath = path.join(jobLocation, 'jobs', jobPath);
+    config.jobPath = cleanJobPath;
+    config.fullPath = path.join(jobLocation, 'jobs', cleanJobPath);
 
     // If there's a trigger, load its information too
     if (config.trigger) {

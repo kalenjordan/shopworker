@@ -214,15 +214,18 @@ export function initShopify(cliDir, jobPath, shopParam) {
       throw new Error('jobPath is required to initialize Shopify client.');
     }
 
+    // Strip the local/jobs/ or core/jobs/ prefix if present
+    const cleanJobPath = jobPath.replace(/^(local|core)\/jobs\//, '');
+
     // First try local jobs directory
-    let jobConfigPath = path.join(cliDir, 'local', 'jobs', jobPath, 'config.json');
+    let jobConfigPath = path.join(cliDir, 'local', 'jobs', cleanJobPath, 'config.json');
     
     if (!fs.existsSync(jobConfigPath)) {
       // If not found in local, try core jobs directory
-      jobConfigPath = path.join(cliDir, 'core', 'jobs', jobPath, 'config.json');
+      jobConfigPath = path.join(cliDir, 'core', 'jobs', cleanJobPath, 'config.json');
       
       if (!fs.existsSync(jobConfigPath)) {
-        throw new Error(`Job configuration file not found in either local or core directories for: ${jobPath}`);
+        throw new Error(`Job configuration file not found in either local or core directories for: ${cleanJobPath}`);
       }
     }
     const jobConfigFile = fs.readFileSync(jobConfigPath, 'utf8');
