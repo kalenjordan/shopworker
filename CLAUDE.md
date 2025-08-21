@@ -7,7 +7,8 @@ This file helps Claude Code assist with creating and editing ShopWorker jobs.
 
 **ONLY modify files in the `local/` directory.** The `core/` directory contains the ShopWorker framework and is READ-ONLY. Never create, edit, or delete any files in `core/`.
 
-- ✅ **local/** - Create and modify all your custom jobs here
+- ✅ **local/jobs/** - Create ALL your custom jobs here (in subdirectories)
+- ✅ **local/triggers/** - Create custom triggers here if needed
 - ❌ **core/** - Framework files - READ ONLY, use for reference only
 - ❌ **core/jobs/** - Production jobs - READ ONLY, use as examples only
 
@@ -15,10 +16,12 @@ This file helps Claude Code assist with creating and editing ShopWorker jobs.
 
 When asked to create a new job, follow these steps:
 1. Check **jobs/** directory for similar existing jobs to use as reference
-2. Create a new directory under **local/** with a descriptive name
+2. **Create a new directory under `local/jobs/`** with a descriptive name (NOT directly in `local/`)
 3. Add `config.json` defining the trigger (see **core/triggers/** for available types)
 4. Create `job.js` with the process function implementation
 5. Test using `npm test` in the job directory
+
+**IMPORTANT:** Jobs must be created in `local/jobs/your-job-name/`, not directly in `local/`
 
 ## Job Structure Requirements
 
