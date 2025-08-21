@@ -1,4 +1,4 @@
-import { handleCloudflareDeployment } from '../deployment.js';
+import { handleCloudflareDeployment } from '../deployment-manager.js';
 
 export function registerDeployCommand(program, projectRoot) {
   program

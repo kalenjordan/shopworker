@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import crypto from 'crypto';
-import { getStateData, updateStateData } from './state-management.js';
+import { getStateData, updateStateData } from './state-manager.js';
 
 /**
  * Updates the lastSecretsPush timestamp in state file

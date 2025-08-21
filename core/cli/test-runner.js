@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import chalk from 'chalk';
-import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
+import { loadJobConfig, loadTriggerConfig } from './job-discovery.js';
 import { initShopify } from '../shared/shopify.js';
 import { getShopConfig, loadSecrets } from '../shared/config-helpers.js';
 
@@ -168,12 +168,20 @@ export async function runJobTest(cliDirname, jobPath, options) {
   console.log(chalk.magenta(`Processing for shop: ${shopConfig.shopify_domain}`));
 
   // Use path.resolve with pathToFileURL to ensure proper module resolution
+  // Clean the job path (remove local/jobs or core/jobs prefix if present)
+  const cleanJobPath = jobPath.replace(/^(local|core)\/jobs\//, '');
+  
   // First try local jobs directory
-  let jobModulePath = path.resolve(cliDirname, 'local', 'jobs', jobPath, 'job.js');
+  let jobModulePath = path.resolve(cliDirname, 'local', 'jobs', cleanJobPath, 'job.js');
 
   if (!fs.existsSync(jobModulePath)) {
     // If not found in local, try core jobs directory
-    jobModulePath = path.resolve(cliDirname, 'core', 'jobs', jobPath, 'job.js');
+    jobModulePath = path.resolve(cliDirname, 'core', 'jobs', cleanJobPath, 'job.js');
+  }
+  
+  // If still not found, maybe the path already includes local/jobs or core/jobs
+  if (!fs.existsSync(jobModulePath)) {
+    jobModulePath = path.resolve(cliDirname, jobPath, 'job.js');
   }
 
   const jobModule = await import(pathToFileURL(jobModulePath).href);

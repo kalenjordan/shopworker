@@ -1,7 +1,7 @@
-import { ensureAndResolveJobName } from '../job-management.js';
-import { handleCloudflareDeployment } from '../deployment.js';
+import { ensureAndResolveJobName } from '../job-discovery.js';
+import { handleCloudflareDeployment } from '../deployment-manager.js';
 import { getWorkerUrl } from '../../shared/config-helpers.js';
-import { enableJobWebhook } from '../webhook-cli.js';
+import { enableJobWebhook } from '../webhook-manager.js';
 
 export function registerEnableCommand(program, projectRoot) {
   program

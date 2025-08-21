@@ -2,9 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import readline from 'readline';
-import { needsSecretsPush, executePutSecrets } from './secrets.js';
+import { needsSecretsPush, executePutSecrets } from './cloudflare-secrets.js';
 import { calculateDeploymentHash, isDeploymentNeeded } from './deployment-hash.js';
-import { getStateData, updateStateData } from './state-management.js';
+import { getStateData, updateStateData } from './state-manager.js';
 
 /**
  * Checks Git repository status before deployment

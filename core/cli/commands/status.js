@@ -1,5 +1,5 @@
-import { detectJobDirectory, ensureAndResolveJobName } from '../job-management.js';
-import { handleAllJobsStatus, handleSingleJobStatus } from '../webhook-cli.js';
+import { detectJobDirectory, ensureAndResolveJobName } from '../job-discovery.js';
+import { handleAllJobsStatus, handleSingleJobStatus } from '../webhook-manager.js';
 
 export function registerStatusCommand(program, projectRoot) {
   program
@@ -27,7 +27,7 @@ export function registerStatusCommand(program, projectRoot) {
       }
 
       // Otherwise, try to auto-detect current directory context
-      const jobName = detectJobDirectory(projectRoot, null);
+      const jobName = detectJobDirectory(projectRoot, process.cwd());
       if (jobName && !options.all) {
         // We detected a specific job directory
         await handleSingleJobStatus(projectRoot, jobName);

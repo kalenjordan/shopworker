@@ -1,4 +1,4 @@
-import { executePutSecrets } from '../secrets.js';
+import { executePutSecrets } from '../cloudflare-secrets.js';
 
 export function registerPutSecretsCommand(program, projectRoot) {
   program

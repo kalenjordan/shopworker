@@ -1,6 +1,6 @@
-import { ensureAndResolveJobName } from '../job-management.js';
+import { ensureAndResolveJobName } from '../job-discovery.js';
 import { getWorkerUrl } from '../../shared/config-helpers.js';
-import { disableJobWebhook } from '../webhook-cli.js';
+import { disableJobWebhook } from '../webhook-manager.js';
 
 export function registerDisableCommand(program, projectRoot) {
   program

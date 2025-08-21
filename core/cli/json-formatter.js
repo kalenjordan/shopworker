@@ -1,5 +1,5 @@
-import { getAvailableJobDirs, ensureAndResolveJobName, detectJobDirectory } from './job-management.js';
-import { getAllJobDisplayInfo } from './webhook-cli.js';
+import { getAvailableJobDirs, ensureAndResolveJobName, detectJobDirectory } from './job-discovery.js';
+import { getAllJobDisplayInfo } from './webhook-manager.js';
 import { getShopDomain } from '../shared/config-helpers.js';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';

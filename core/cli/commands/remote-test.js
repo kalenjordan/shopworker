@@ -1,6 +1,6 @@
-import { ensureAndResolveJobName } from '../job-management.js';
-import { runJobRemoteTest } from '../remote-testing.js';
-import { handleCloudflareDeployment } from '../deployment.js';
+import { ensureAndResolveJobName } from '../job-discovery.js';
+import { runJobRemoteTest } from '../test-remote.js';
+import { handleCloudflareDeployment } from '../deployment-manager.js';
 import { isDeploymentNeeded } from '../deployment-hash.js';
 import { getWorkerUrl } from '../../shared/config-helpers.js';
 

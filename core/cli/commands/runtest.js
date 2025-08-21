@@ -1,5 +1,5 @@
-import { ensureAndResolveJobName } from '../job-management.js';
-import { runJobTest } from '../test-command.js';
+import { ensureAndResolveJobName } from '../job-discovery.js';
+import { runJobTest } from '../test-runner.js';
 
 export function registerRuntestCommand(program, projectRoot) {
   program

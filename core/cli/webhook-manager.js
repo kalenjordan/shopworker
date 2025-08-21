@@ -1,13 +1,12 @@
-import { loadJobConfig, loadTriggerConfig } from './job-loader.js';
+import { loadJobConfig, loadTriggerConfig, getAvailableJobDirs, loadAndValidateWebhookConfigs } from './job-discovery.js';
 import { initShopify } from '../shared/shopify.js';
-import { getAvailableJobDirs, loadAndValidateWebhookConfigs } from './job-management.js';
 import {
   displayJobsTable,
   sortJobDisplayInfos,
   displayIncludeFieldsInfo,
   displayWebhookDetails,
   displayOrphanedWebhooksWarning
-} from './cli-formatting.js';
+} from './display-formatter.js';
 import WEBHOOK_CREATE_MUTATION from '../graphql/webhookSubscriptionCreate.js';
 import WEBHOOK_DELETE_MUTATION from '../graphql/webhookSubscriptionDelete.js';
 import GET_WEBHOOKS_QUERY from '../graphql/webhooksGet.js';
