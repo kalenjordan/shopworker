@@ -368,7 +368,7 @@ export async function handleCloudflareDeployment(cliDirname, force = false) {
   // Generate the job loader for Cloudflare Workers
   console.log('Generating job loader for Cloudflare Workers...');
   try {
-    execSync('node core/cli/bundle-jobs.js', {
+    execSync('node core/cli/cloudflare-bundler.js', {
       stdio: 'inherit',
       encoding: 'utf8',
       cwd: cliDirname

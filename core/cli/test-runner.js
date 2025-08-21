@@ -62,8 +62,8 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
   // Check if this is a webhook payload test
   if (jobConfig.trigger === 'webhook' && jobConfig.test && jobConfig.test.webhookPayload) {
     console.log("Loading webhook payload from fixtures...");
-    // Use the path specified in jobConfig.test.webhookPayload
-    const payloadPath = path.resolve(cliDirname, jobConfig.test.webhookPayload);
+    // Use the path specified in jobConfig.test.webhookPayload, relative to the job directory
+    const payloadPath = path.resolve(cliDirname, jobPath, jobConfig.test.webhookPayload);
     if (!fs.existsSync(payloadPath)) {
       throw new Error(`Webhook payload file not found: ${payloadPath}. Please ensure the file exists at the path specified in config.json.`);
     }

@@ -190,7 +190,7 @@ export async function handleAllJobsStatusJSON(projectRoot, filterByCurrentDir = 
  */
 export async function handleSingleJobStatusJSON(projectRoot, jobPath) {
   try {
-    const { getJobDisplayInfo } = await import('./webhook-cli.js');
+    const { getJobDisplayInfo } = await import('./webhook-manager.js');
     
     // Get shop domain
     let shopDomain;

@@ -84,7 +84,8 @@ export async function loadShopworkerWebhookFixture(cliDirname, jobPath, jobConfi
     throw new Error(`Job ${jobPath} has trigger 'webhook' but is missing 'test.webhookPayload' file path in config.json`);
   }
 
-  const payloadPath = path.resolve(cliDirname, jobConfig.test.webhookPayload);
+  // Resolve the payload path relative to the job directory
+  const payloadPath = path.resolve(cliDirname, jobPath, jobConfig.test.webhookPayload);
 
   if (!fs.existsSync(payloadPath)) {
     throw new Error(`Shopworker webhook payload file not found: ${payloadPath}. Please ensure the file exists at the path specified in config.json.`);

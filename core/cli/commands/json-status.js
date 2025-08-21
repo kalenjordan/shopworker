@@ -5,7 +5,7 @@ export function registerJsonStatusCommand(program, projectRoot) {
     .option('-d, --dir <jobDirectory>', 'Job directory name')
     .option('-a, --all', 'Show status of all jobs, ignoring current directory context')
     .action(async (jobNameArg, options) => {
-      const { handleJsonStatusCommand } = await import('../json-commands.js');
+      const { handleJsonStatusCommand } = await import('../json-formatter.js');
       await handleJsonStatusCommand(projectRoot, jobNameArg, options);
     });
 }

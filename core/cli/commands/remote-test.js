@@ -27,7 +27,7 @@ export function registerRemoteTestCommand(program, projectRoot) {
         }
 
         // Check if deployment is needed before remote test
-        const { getStateData } = await import('../state-management.js');
+        const { getStateData } = await import('../state-manager.js');
         const stateData = getStateData(projectRoot);
         const lastDeploymentHash = stateData.lastDeploymentHash;
         const { needed } = await isDeploymentNeeded(projectRoot, lastDeploymentHash);
