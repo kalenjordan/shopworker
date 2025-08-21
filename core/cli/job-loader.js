@@ -12,49 +12,75 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.join(__dirname, '..', '..');  // Go up two levels to get to project root
 
 /**
+ * Resolve config path for a job, checking local first then core
+ */
+function resolveJobConfigPath(jobPath) {
+  const cleanJobPath = jobPath.replace(/^(local|core)\/jobs\//, '');
+  
+  const localPath = path.join(rootDir, 'local', 'jobs', cleanJobPath, 'config.json');
+  const corePath = path.join(rootDir, 'core', 'jobs', cleanJobPath, 'config.json');
+  
+  // Check local first unless explicitly requesting core
+  if (!jobPath.startsWith('core/') && fs.existsSync(localPath)) {
+    return { configPath: localPath, location: 'local', cleanPath: cleanJobPath };
+  }
+  
+  if (fs.existsSync(corePath)) {
+    return { configPath: corePath, location: 'core', cleanPath: cleanJobPath };
+  }
+  
+  throw new Error(`Job config not found for ${jobPath}`);
+}
+
+/**
+ * Load trigger information for a job config
+ */
+function loadTriggerInfo(config) {
+  if (!config.trigger) return config;
+  
+  try {
+    const triggerConfig = loadTriggerConfig(config.trigger);
+    if (triggerConfig.webhook?.topic) {
+      config.webhookTopic = triggerConfig.webhook.topic;
+    }
+  } catch (triggerError) {
+    config.triggerError = triggerError.message;
+  }
+  
+  return config;
+}
+
+/**
  * Load the configuration for a specific job
  * @param {string} jobPath - The path of the job (e.g., 'hello-world', 'order/fetch', 'local/jobs/hello-world', 'core/jobs/order/fetch')
  * @returns {Object} The job configuration
  */
 export function loadJobConfig(jobPath) {
-  // Strip the local/jobs/ or core/jobs/ prefix if present
-  const cleanJobPath = jobPath.replace(/^(local|core)\/jobs\//, '');
-  
-  // Determine if this is a local or core job based on the original path
-  let jobLocation = 'local';
-  let configPath = path.join(rootDir, 'local', 'jobs', cleanJobPath, 'config.json');
-  
-  // If the original path started with core/ or the local path doesn't exist, try core
-  if (jobPath.startsWith('core/') || !fs.existsSync(configPath)) {
-    configPath = path.join(rootDir, 'core', 'jobs', cleanJobPath, 'config.json');
-    jobLocation = 'core';
-  }
-  
   try {
+    const { configPath, location, cleanPath } = resolveJobConfigPath(jobPath);
     const configData = fs.readFileSync(configPath, 'utf8');
     const config = JSON.parse(configData);
 
-    // Add the jobPath and full path to the config for reference
-    config.jobPath = cleanJobPath;
-    config.fullPath = path.join(jobLocation, 'jobs', cleanJobPath);
+    // Add metadata to config
+    config.jobPath = cleanPath;
+    config.fullPath = path.join(location, 'jobs', cleanPath);
 
-    // If there's a trigger, load its information too
-    if (config.trigger) {
-      try {
-        const triggerConfig = loadTriggerConfig(config.trigger);
-        if (triggerConfig.webhook && triggerConfig.webhook.topic) {
-          config.webhookTopic = triggerConfig.webhook.topic;
-        }
-      } catch (triggerError) {
-        // Still return the config but with trigger error info
-        config.triggerError = triggerError.message;
-      }
-    }
-
-    return config;
+    return loadTriggerInfo(config);
   } catch (error) {
     console.error(`Error loading job config for ${jobPath}:`, error);
     return null;
+  }
+}
+
+/**
+ * Load trigger configuration with fallback from local to core
+ */
+function loadTriggerFromPath(triggerPath, location, triggerName) {
+  try {
+    const triggerData = fs.readFileSync(triggerPath, 'utf8');
+    return JSON.parse(triggerData);
+  } catch (error) {
+    throw new Error(`Error loading ${location} trigger config for ${triggerName}: ${error.message}`);
   }
 }
 
@@ -65,30 +91,54 @@ export function loadJobConfig(jobPath) {
  * @throws {Error} If trigger configuration cannot be loaded
  */
 export function loadTriggerConfig(triggerName) {
-  // Try loading from local triggers first
-  const localTriggerPath = path.join(rootDir, 'local', 'triggers', `${triggerName}.json`);
-  if (fs.existsSync(localTriggerPath)) {
-    try {
-      const triggerData = fs.readFileSync(localTriggerPath, 'utf8');
-      return JSON.parse(triggerData);
-    } catch (error) {
-      throw new Error(`Error loading local trigger config for ${triggerName}: ${error.message}`);
-    }
+  const localPath = path.join(rootDir, 'local', 'triggers', `${triggerName}.json`);
+  const corePath = path.join(rootDir, 'core', 'triggers', `${triggerName}.json`);
+  
+  if (fs.existsSync(localPath)) {
+    return loadTriggerFromPath(localPath, 'local', triggerName);
   }
   
-  // Fall back to core triggers
-  const coreTriggerPath = path.join(rootDir, 'core', 'triggers', `${triggerName}.json`);
-  if (fs.existsSync(coreTriggerPath)) {
-    try {
-      const triggerData = fs.readFileSync(coreTriggerPath, 'utf8');
-      return JSON.parse(triggerData);
-    } catch (error) {
-      throw new Error(`Error loading core trigger config for ${triggerName}: ${error.message}`);
-    }
+  if (fs.existsSync(corePath)) {
+    return loadTriggerFromPath(corePath, 'core', triggerName);
   }
   
-  // Trigger not found
   throw new Error(`Trigger '${triggerName}' not found in local/triggers/ or core/triggers/`);
+}
+
+/**
+ * Find all job directories in a given base directory
+ */
+function findJobDirectories(baseDir) {
+  if (!fs.existsSync(baseDir)) return [];
+  
+  const dirs = fs.readdirSync(baseDir).filter(dir => 
+    fs.statSync(path.join(baseDir, dir)).isDirectory()
+  );
+  
+  const jobPaths = [];
+  
+  for (const dir of dirs) {
+    const dirPath = path.join(baseDir, dir);
+    
+    // Check if this directory is a job (has config.json)
+    if (fs.existsSync(path.join(dirPath, 'config.json'))) {
+      jobPaths.push(dir);
+      continue;
+    }
+    
+    // Check for nested job directories
+    const nestedJobs = fs.readdirSync(dirPath)
+      .filter(subdir => {
+        const subdirPath = path.join(dirPath, subdir);
+        return fs.statSync(subdirPath).isDirectory() &&
+               fs.existsSync(path.join(subdirPath, 'config.json'));
+      })
+      .map(subdir => path.join(dir, subdir));
+    
+    jobPaths.push(...nestedJobs);
+  }
+  
+  return jobPaths;
 }
 
 /**
@@ -96,39 +146,14 @@ export function loadTriggerConfig(triggerName) {
  * @returns {Object} Map of job paths to their configurations
  */
 export async function loadJobsConfig() {
-  const jobs = {};
-
-  // Helper function to scan a job directory
-  const scanJobDirectory = (baseDir) => {
-    if (!fs.existsSync(baseDir)) return [];
-    
-    return fs.readdirSync(baseDir)
-      .filter(dir => fs.statSync(path.join(baseDir, dir)).isDirectory())
-      .flatMap(dir => {
-        // Check if this is a job directory (has config.json)
-        if (fs.existsSync(path.join(baseDir, dir, 'config.json'))) {
-          return [dir];
-        }
-
-        // Check for nested job directories
-        const nestedDir = path.join(baseDir, dir);
-        return fs.readdirSync(nestedDir)
-          .filter(subdir => fs.statSync(path.join(nestedDir, subdir)).isDirectory())
-          .filter(subdir => fs.existsSync(path.join(nestedDir, subdir, 'config.json')))
-          .map(subdir => path.join(dir, subdir));
-      });
-  };
-
   try {
-    // Scan both local and core job directories
-    const localJobsDir = path.join(rootDir, 'local', 'jobs');
-    const coreJobsDir = path.join(rootDir, 'core', 'jobs');
-    
-    // Use a Set to handle potential duplicates (local takes priority)
+    const jobs = {};
     const processedJobs = new Set();
     
     // Process local jobs first (higher priority)
-    const localJobPaths = scanJobDirectory(localJobsDir);
+    const localJobsDir = path.join(rootDir, 'local', 'jobs');
+    const localJobPaths = findJobDirectories(localJobsDir);
+    
     for (const jobPath of localJobPaths) {
       const config = loadJobConfig(jobPath);
       if (config) {
@@ -137,8 +162,10 @@ export async function loadJobsConfig() {
       }
     }
     
-    // Process core jobs (skip if already processed from local)
-    const coreJobPaths = scanJobDirectory(coreJobsDir);
+    // Process core jobs (skip duplicates)
+    const coreJobsDir = path.join(rootDir, 'core', 'jobs');
+    const coreJobPaths = findJobDirectories(coreJobsDir);
+    
     for (const jobPath of coreJobPaths) {
       if (!processedJobs.has(jobPath)) {
         const config = loadJobConfig(jobPath);

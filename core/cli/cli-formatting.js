@@ -5,71 +5,74 @@ import Table from 'cli-table3';
 // Display Formatting Utilities
 // ===================================================================
 
-export const COLUMN_WIDTHS = {
-  status: 13,
-  type: 7,
-  id: 40,
-  title: 35,
-  topic: 20
+// Status formatting configuration
+const STATUS_CONFIG = {
+  'Enabled': { symbol: '✓', color: chalk.green },
+  'Manual': { symbol: '✓', color: chalk.green },
+  'Disabled': { symbol: '✗', color: chalk.gray }
 };
 
-export function cropAndPad(str, width) {
-  if (!str) return ''.padEnd(width);
-  str = String(str);
-  return str.length > width ? str.slice(0, width - 3) + '...' : str.padEnd(width);
-}
+// Status priority for sorting (lower numbers = higher priority)
+const STATUS_PRIORITY = {
+  '⚠️ ERROR': 1,
+  '⚠️ API ERROR': 2,
+  '⚠️ NO DATA': 3,
+  '⚠️ TRIGGER CONFIG ERROR': 4,
+  '⚠️ TRIGGER MISSING': 4,
+  '⚠️ INVALID TRIGGER': 4,
+  '⚠️ INVALID CONFIG': 4,
+  'Enabled': 5,
+  'Manual': 6,
+  'Disabled': 7
+};
 
-export function formatStatusColumn(status, isDisabled = false) {
-  if (status === 'Enabled') {
-    return chalk.green(cropAndPad('✓ Enabled', COLUMN_WIDTHS.status));
-  } else if (status === 'Disabled') {
-    return chalk.gray(cropAndPad('✗ Disabled', COLUMN_WIDTHS.status));
-  } else if (status === 'Manual') {
-    return chalk.green(cropAndPad('✓ Manual', COLUMN_WIDTHS.status));
-  } else {
-    return cropAndPad(status, COLUMN_WIDTHS.status);
+/**
+ * Format status text with appropriate styling
+ */
+function formatStatus(status) {
+  const config = STATUS_CONFIG[status];
+  if (config) {
+    return config.color(`${config.symbol} ${status}`);
   }
+  
+  // Handle error statuses with red color
+  if (status.includes('⚠️')) {
+    return chalk.red(status);
+  }
+  
+  return status;
 }
 
-export function applyColorIfDisabled(text, isDisabled) {
+/**
+ * Apply disabled styling to text if needed
+ */
+function applyDisabledStyling(text, isDisabled) {
   return isDisabled ? chalk.gray(text) : text;
 }
 
 /**
  * Display a table of jobs and their webhook status
  */
-export function displayJobsTable(jobDisplayInfos, printHeader = true) {
+export function displayJobsTable(jobDisplayInfos) {
   const table = new Table({
     head: ['STATUS', 'TYPE', 'ID', 'TITLE', 'TRIGGER'],
     colWidths: [15, 8, 42, 37, 25],
-    style: {
-      head: ['cyan']
-    }
+    style: { head: ['cyan'] }
   });
 
   for (const info of jobDisplayInfos) {
     const isDisabled = info.statusMsg === 'Disabled';
-    const jobType = info.fullPath && info.fullPath.startsWith('core/jobs/') ? 'Core' : 'Local';
+    const jobType = info.fullPath?.startsWith('core/jobs/') ? 'Core' : 'Local';
     
-    let statusDisplay;
-    if (info.statusMsg === 'Enabled') {
-      statusDisplay = chalk.green('✓ Enabled');
-    } else if (info.statusMsg === 'Disabled') {
-      statusDisplay = chalk.gray('✗ Disabled');
-    } else if (info.statusMsg === 'Manual') {
-      statusDisplay = chalk.green('✓ Manual');
-    } else if (info.statusMsg.includes('⚠️')) {
-      statusDisplay = chalk.red(info.statusMsg);
-    } else {
-      statusDisplay = info.statusMsg;
-    }
+    const row = [
+      formatStatus(info.statusMsg),
+      applyDisabledStyling(jobType, isDisabled),
+      applyDisabledStyling(info.jobId, isDisabled),
+      applyDisabledStyling(isDisabled ? info.displayName : chalk.blue(info.displayName), isDisabled),
+      applyDisabledStyling(info.displayTopic, isDisabled)
+    ];
 
-    const typeDisplay = isDisabled ? chalk.gray(jobType) : jobType;
-    const idDisplay = isDisabled ? chalk.gray(info.jobId) : info.jobId;
-    const titleDisplay = isDisabled ? chalk.gray(info.displayName) : chalk.blue(info.displayName);
-    const triggerDisplay = isDisabled ? chalk.gray(info.displayTopic) : info.displayTopic;
-
-    table.push([statusDisplay, typeDisplay, idDisplay, titleDisplay, triggerDisplay]);
+    table.push(row);
   }
 
   console.log('\n' + table.toString());
@@ -79,30 +82,12 @@ export function displayJobsTable(jobDisplayInfos, printHeader = true) {
  * Sort job display infos by status priority then alphabetically
  */
 export function sortJobDisplayInfos(jobDisplayInfos) {
-  // Define status priority order
-  const getStatusPriority = (status) => {
-    switch(status) {
-      case '⚠️ ERROR': return 1;
-      case '⚠️ API ERROR': return 2;
-      case '⚠️ NO DATA': return 3;
-      case '⚠️ TRIGGER CONFIG ERROR': return 4;
-      case '⚠️ TRIGGER MISSING': return 4;
-      case '⚠️ INVALID TRIGGER': return 4;
-      case '⚠️ INVALID CONFIG': return 4;
-      case 'Enabled': return 5;
-      case 'Manual': return 6;
-      case 'Disabled': return 7; // Make disabled lower priority so it sorts later
-      default: return 8;
-    }
-  };
-
-  // Sort by status priority then alphabetically by job name
   return jobDisplayInfos.sort((a, b) => {
-    // First by status priority (higher priority first)
-    const statusDiff = getStatusPriority(a.statusMsg) - getStatusPriority(b.statusMsg);
-    if (statusDiff !== 0) return statusDiff;
+    // Sort by status priority first
+    const priorityDiff = (STATUS_PRIORITY[a.statusMsg] || 8) - (STATUS_PRIORITY[b.statusMsg] || 8);
+    if (priorityDiff !== 0) return priorityDiff;
 
-    // Then by job name
+    // Then alphabetically by display name
     return a.displayName.localeCompare(b.displayName);
   });
 }

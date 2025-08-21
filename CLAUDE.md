@@ -30,8 +30,10 @@ ShopWorker is a framework for building Shopify webhook-driven automation jobs.
 - **Workflow Steps** - Durable execution context for job operations
 
 ### Testing
-- Individual jobs can be tested using `npm test` in their directory
+- **Note:** `npm test` is only for testing individual jobs within their specific directories (e.g., `cd local/jobs/my-job && npm test`)
+- **There is no general test suite** - do not run `npm test` at the project root
 - Use the CLI for managing webhooks and job deployments
+- To verify code changes, use linting and type checking if available
 
 ## Getting Help
 - Check existing jobs in `core/jobs/` for implementation patterns

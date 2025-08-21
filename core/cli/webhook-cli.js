@@ -28,8 +28,7 @@ function createWebhookUrl(baseUrl, jobPath) {
 }
 
 function getFullWebhookId(webhookId) {
-  if (webhookId.startsWith('gid://')) return webhookId;
-  return `gid://shopify/WebhookSubscription/${webhookId}`;
+  return webhookId.startsWith('gid://') ? webhookId : `gid://shopify/WebhookSubscription/${webhookId}`;
 }
 
 function getWebhookIdSuffix(webhookId) {
@@ -37,59 +36,55 @@ function getWebhookIdSuffix(webhookId) {
 }
 
 function isValidResponse(response, path) {
-  if (!response) return false;
+  return path.split('.').reduce((current, part) => current?.[part], response) != null;
+}
 
-  const parts = path.split('.');
-  let current = response;
+/**
+ * Clean job path by removing directory prefixes
+ */
+function cleanJobPath(jobPath) {
+  return jobPath.replace(/^(local|core)\/jobs\//, '');
+}
 
-  for (const part of parts) {
-    if (!current[part]) return false;
-    current = current[part];
+/**
+ * Parse job parameter from webhook URL
+ */
+function parseJobFromWebhookUrl(webhookUrl) {
+  try {
+    const url = new URL(webhookUrl);
+    const jobParam = url.searchParams.get('job');
+    return jobParam ? decodeURIComponent(jobParam) : null;
+  } catch (e) {
+    return null;
   }
+}
 
-  return true;
+/**
+ * Compare job paths with flexible matching (handles both full and clean paths)
+ */
+function jobPathsMatch(path1, path2) {
+  if (!path1 || !path2) return false;
+  
+  const clean1 = cleanJobPath(decodeURIComponent(path1));
+  const clean2 = cleanJobPath(decodeURIComponent(path2));
+  
+  return path1 === path2 || clean1 === path2 || path1 === clean2 || clean1 === clean2;
 }
 
 function isWebhookForJob(webhook, graphqlTopic, jobPath) {
   if (webhook.topic !== graphqlTopic) return false;
   if (!webhook.endpoint || webhook.endpoint.__typename !== 'WebhookHttpEndpoint') return false;
 
-  try {
-    const url = new URL(webhook.endpoint.callbackUrl);
-    const urlJobParam = url.searchParams.get('job');
-    
-    if (!urlJobParam) return false;
-
-    // Decode both values
-    const decodedUrlJob = decodeURIComponent(urlJobParam);
-    const decodedJobPath = decodeURIComponent(jobPath);
-    
-    // Strip the "local/jobs/" or "core/jobs/" prefix for comparison
-    const cleanUrlJob = decodedUrlJob.replace(/^(local|core)\/jobs\//, '');
-    const cleanJobPath = decodedJobPath.replace(/^(local|core)\/jobs\//, '');
-    
-    // Match either the full path or the clean path
-    return decodedUrlJob === decodedJobPath || 
-           cleanUrlJob === decodedJobPath || 
-           decodedUrlJob === cleanJobPath ||
-           cleanUrlJob === cleanJobPath;
-  } catch (e) {
-    return false;
-  }
+  const webhookJobPath = parseJobFromWebhookUrl(webhook.endpoint.callbackUrl);
+  return webhookJobPath && jobPathsMatch(webhookJobPath, jobPath);
 }
 
 function isWebhookForTopicButNotJob(webhook, graphqlTopic, jobPath) {
   if (webhook.topic !== graphqlTopic) return false;
-
-  if (webhook.endpoint && webhook.endpoint.__typename === 'WebhookHttpEndpoint') {
-    try {
-      const url = new URL(webhook.endpoint.callbackUrl);
-      return url.searchParams.get('job') !== jobPath;
-    } catch (e) {
-      return true;
-    }
+  if (!webhook.endpoint || webhook.endpoint.__typename === 'WebhookHttpEndpoint') {
+    const webhookJobPath = parseJobFromWebhookUrl(webhook.endpoint.callbackUrl);
+    return !jobPathsMatch(webhookJobPath, jobPath);
   }
-
   return true;
 }
 
@@ -99,19 +94,16 @@ function findMatchingWebhooks(webhooks, graphqlTopic, webhookAddress) {
     if (!webhook.endpoint || webhook.endpoint.__typename !== 'WebhookHttpEndpoint') return false;
 
     try {
-      // Compare base URLs (domain and path)
       const storedUrl = new URL(webhook.endpoint.callbackUrl);
       const newUrl = new URL(webhookAddress);
 
-      if (storedUrl.origin !== newUrl.origin || storedUrl.pathname !== newUrl.pathname) {
-        return false;
-      }
-
-      // Compare job parameter specifically
-      const storedJobParam = storedUrl.searchParams.get('job');
-      const newJobParam = newUrl.searchParams.get('job');
-
-      return decodeURIComponent(storedJobParam) === decodeURIComponent(newJobParam);
+      // Compare base URLs and job parameters
+      return storedUrl.origin === newUrl.origin && 
+             storedUrl.pathname === newUrl.pathname &&
+             jobPathsMatch(
+               parseJobFromWebhookUrl(webhook.endpoint.callbackUrl),
+               parseJobFromWebhookUrl(webhookAddress)
+             );
     } catch (e) {
       return false;
     }
@@ -124,13 +116,83 @@ function doFieldConfigsDiffer(configFields, activeFields) {
   const configSet = new Set(configFields);
   const activeSet = new Set(activeFields);
 
-  return configSet.size !== activeSet.size ||
-         ![...configSet].every(field => activeSet.has(field));
+  return configSet.size !== activeSet.size || 
+         !Array.from(configSet).every(field => activeSet.has(field));
 }
 
 // ===================================================================
 // Job Display Information
 // ===================================================================
+
+/**
+ * Create basic job display info from job config
+ */
+function createBaseJobInfo(jobPath, jobConfig) {
+  const jobId = cleanJobPath(jobPath);
+  const displayName = jobConfig?.title || '(missing title)';
+  const fullPath = jobConfig?.fullPath || null;
+  const shop = jobConfig?.shop || null;
+  const includeFields = jobConfig?.webhook?.includeFields || null;
+  
+  return { jobId, displayName, fullPath, shop, includeFields };
+}
+
+/**
+ * Handle job config loading errors
+ */
+function handleJobConfigError(jobPath, error) {
+  const baseInfo = createBaseJobInfo(jobPath, null);
+  return {
+    ...baseInfo,
+    displayName: jobPath,
+    displayTopic: 'CONFIG ERROR',
+    statusMsg: '⚠️ ERROR',
+    webhookIdSuffix: '-'
+  };
+}
+
+/**
+ * Handle trigger configuration errors
+ */
+function handleTriggerError(jobPath, jobConfig, error) {
+  const baseInfo = createBaseJobInfo(jobPath, jobConfig);
+  const errorMsg = error.includes('not found') ? '⚠️ TRIGGER MISSING' : '⚠️ INVALID TRIGGER';
+  
+  return {
+    ...baseInfo,
+    displayTopic: jobConfig.trigger || 'N/A',
+    statusMsg: errorMsg,
+    webhookIdSuffix: '-'
+  };
+}
+
+/**
+ * Get webhook status for a job
+ */
+async function getWebhookStatus(cliDirname, jobPath, triggerConfig, displayName, shop) {
+  const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
+  
+  try {
+    const shopifyForJob = initShopify(cliDirname, jobPath);
+    const response = await shopifyForJob.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
+
+    if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
+      console.warn(`Warning: Could not retrieve webhooks for job ${displayName} (Shop: ${chalk.blue(shop)}). Response format unexpected.`);
+      return { statusMsg: '⚠️ NO DATA', webhookIdSuffix: '-' };
+    }
+
+    const shopWebhooks = response.webhookSubscriptions.nodes;
+    const jobWebhook = shopWebhooks.find(webhook => isWebhookForJob(webhook, graphqlTopic, jobPath));
+
+    return jobWebhook 
+      ? { statusMsg: 'Enabled', webhookIdSuffix: getWebhookIdSuffix(jobWebhook.id) }
+      : { statusMsg: 'Disabled', webhookIdSuffix: '-' };
+      
+  } catch (error) {
+    console.warn(`Warning: Error fetching webhook status for job ${displayName} (Shop: ${chalk.blue(shop)}): ${error.message}`);
+    return { statusMsg: '⚠️ API ERROR', webhookIdSuffix: 'ERR' };
+  }
+}
 
 /**
  * Get display information for a job's webhook status
@@ -144,61 +206,23 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
   try {
     jobConfig = loadJobConfig(jobPath);
   } catch (e) {
-    return {
-      jobId: jobPath,
-      fullPath: null,
-      displayName: jobPath,
-      displayTopic: 'CONFIG ERROR',
-      statusMsg: '⚠️ ERROR',
-      webhookIdSuffix: '-',
-      shop: null
-    };
+    return handleJobConfigError(jobPath, e);
   }
   
-  // Check for trigger loading errors
+  // Check for trigger loading errors from job config
   if (jobConfig.triggerError) {
-    const errorMsg = jobConfig.triggerError.includes('not found') ? '⚠️ TRIGGER MISSING' : '⚠️ INVALID TRIGGER';
-    const jobId = jobPath.replace(/^(local|core)\/jobs\//, '');
-    const displayName = jobConfig.title || '(missing title)';
-    return {
-      jobId,
-      fullPath: jobConfig.fullPath,
-      displayName,
-      displayTopic: jobConfig.trigger || 'N/A',
-      statusMsg: errorMsg,
-      webhookIdSuffix: '-',
-      shop: jobConfig.shop || null
-    };
+    return handleTriggerError(jobPath, jobConfig, jobConfig.triggerError);
   }
 
-  // Set default values
-  let displayTopic = jobConfig.trigger || 'N/A';
-  let statusMsg = 'Manual'; // Default for jobs without trigger or non-webhook triggers
-  let webhookIdSuffix = '-';
-  const shop = jobConfig.shop || null;
-  let includeFields = null;
-  // Extract just the job ID part (remove the "local/jobs/" or "core/jobs/" prefix)
-  const jobId = jobPath.replace(/^(local|core)\/jobs\//, '');
-  // Use the job config title or show "missing title"
-  const displayName = jobConfig.title || '(missing title)';
-  const fullPath = jobConfig.fullPath;
-
-  // Get includeFields from job config
-  if (jobConfig.webhook?.includeFields && Array.isArray(jobConfig.webhook.includeFields)) {
-    includeFields = jobConfig.webhook.includeFields;
-  }
-
-  // Check if trigger field is missing
+  const baseInfo = createBaseJobInfo(jobPath, jobConfig);
+  
+  // Handle missing trigger
   if (!jobConfig.trigger) {
     return {
-      jobId,
-      fullPath,
-      displayName,
+      ...baseInfo,
       displayTopic: 'N/A',
       statusMsg: '⚠️ TRIGGER MISSING',
-      webhookIdSuffix: '-',
-      shop,
-      includeFields
+      webhookIdSuffix: '-'
     };
   }
 
@@ -206,126 +230,56 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
   let triggerConfig;
   try {
     triggerConfig = loadTriggerConfig(jobConfig.trigger);
-  } catch(e) {
-    // Determine if trigger is missing or invalid
-    const errorMsg = e.message.includes('not found') ? '⚠️ TRIGGER MISSING' : '⚠️ INVALID TRIGGER';
-    return {
-      jobId,
-      fullPath,
-      displayName,
-      displayTopic: jobConfig.trigger,
-      statusMsg: errorMsg,
-      webhookIdSuffix: '-',
-      shop,
-      includeFields
-    };
+  } catch (e) {
+    return handleTriggerError(jobPath, jobConfig, e.message);
   }
 
-  displayTopic = triggerConfig.webhook?.topic || jobConfig.trigger;
+  const displayTopic = triggerConfig.webhook?.topic || jobConfig.trigger;
 
-  // If no webhook topic in trigger, return early
+  // For non-webhook triggers, return manual status
   if (!triggerConfig.webhook?.topic) {
     return {
-      jobId,
-      fullPath,
-      displayName,
+      ...baseInfo,
       displayTopic,
-      statusMsg,
-      webhookIdSuffix,
-      shop,
-      includeFields
+      statusMsg: 'Manual',
+      webhookIdSuffix: '-'
     };
   }
 
-  // Check webhook status
-  const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
-  try {
-    const shopifyForJob = initShopify(cliDirname, jobPath);
-    const response = await shopifyForJob.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
-
-    if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
-      console.warn(`Warning: Could not retrieve webhooks for job ${displayName} (Shop: ${chalk.blue(jobConfig.shop)}). Response format unexpected.`);
-      statusMsg = '⚠️ NO DATA';
-    } else {
-      const shopWebhooks = response.webhookSubscriptions.nodes;
-      const jobWebhook = shopWebhooks.find(webhook => isWebhookForJob(webhook, graphqlTopic, jobPath));
-
-      if (jobWebhook) {
-        statusMsg = 'Enabled';
-        webhookIdSuffix = getWebhookIdSuffix(jobWebhook.id);
-      } else {
-        statusMsg = 'Disabled';
-      }
-    }
-  } catch (error) {
-    console.warn(`Warning: Error fetching webhook status for job ${displayName} (Shop: ${chalk.blue(jobConfig.shop)}): ${error.message}`);
-    statusMsg = '⚠️ API ERROR';
-    webhookIdSuffix = 'ERR';
-  }
+  // Get webhook status
+  const webhookStatus = await getWebhookStatus(
+    cliDirname, 
+    jobPath, 
+    triggerConfig, 
+    baseInfo.displayName, 
+    baseInfo.shop
+  );
 
   return {
-    jobId,
-    fullPath,
-    displayName,
+    ...baseInfo,
     displayTopic,
-    statusMsg,
-    webhookIdSuffix,
-    shop,
-    includeFields
+    ...webhookStatus
   };
 }
 
 /**
  * Check if a webhook URL contains a job parameter but points to a non-existent job
- * @param {string} webhookUrl - The webhook URL to check
- * @param {Array<string>} validJobPaths - List of valid job paths
- * @returns {boolean} Whether the webhook is orphaned
  */
 function isOrphanedWebhook(webhookUrl, validJobPaths) {
-  try {
-    const url = new URL(webhookUrl);
-    const jobPath = url.searchParams.get('job');
+  const jobPath = parseJobFromWebhookUrl(webhookUrl);
+  if (!jobPath) return false;
 
-    // If there's no job parameter, it's not an orphaned webhook
-    if (!jobPath) return false;
-
-    // Decode the job path from the URL
-    const decodedJobPath = decodeURIComponent(jobPath);
-
-    // Check if the job path exists in our valid job paths
-    // Match either the full path or just the job ID part
-    return !validJobPaths.some(validPath => {
-      const decodedValidPath = decodeURIComponent(validPath);
-      // Strip the "local/jobs/" or "core/jobs/" prefix for comparison
-      const cleanValidPath = decodedValidPath.replace(/^(local|core)\/jobs\//, '');
-      const cleanJobPath = decodedJobPath.replace(/^(local|core)\/jobs\//, '');
-      
-      // Match either the full path or the clean path
-      return decodedValidPath === decodedJobPath || 
-             cleanValidPath === decodedJobPath || 
-             decodedValidPath === cleanJobPath ||
-             cleanValidPath === cleanJobPath;
-    });
-  } catch (e) {
-    // If we can't parse the URL, it's not considered orphaned
-    return false;
-  }
+  return !validJobPaths.some(validPath => jobPathsMatch(jobPath, validPath));
 }
 
 /**
  * Find orphaned webhooks in a shop
- * @param {Array<Object>} webhooks - List of webhooks from Shopify API
- * @param {Array<string>} jobPaths - List of valid job paths
- * @returns {Array<Object>} List of orphaned webhooks with their details
  */
 function findOrphanedWebhooks(webhooks, jobPaths) {
-  return webhooks.filter(webhook => {
-    if (!webhook.endpoint || webhook.endpoint.__typename !== 'WebhookHttpEndpoint') {
-      return false;
-    }
-
-    return isOrphanedWebhook(webhook.endpoint.callbackUrl, jobPaths);
-  });
+  return webhooks.filter(webhook => 
+    webhook.endpoint?.__typename === 'WebhookHttpEndpoint' &&
+    isOrphanedWebhook(webhook.endpoint.callbackUrl, jobPaths)
+  );
 }
 
 /**
