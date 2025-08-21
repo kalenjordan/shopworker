@@ -40,9 +40,14 @@ export function loadJobConfig(jobPath) {
 
     // If there's a trigger, load its information too
     if (config.trigger) {
-      const triggerConfig = loadTriggerConfig(config.trigger);
-      if (triggerConfig.webhook && triggerConfig.webhook.topic) {
-        config.webhookTopic = triggerConfig.webhook.topic;
+      try {
+        const triggerConfig = loadTriggerConfig(config.trigger);
+        if (triggerConfig.webhook && triggerConfig.webhook.topic) {
+          config.webhookTopic = triggerConfig.webhook.topic;
+        }
+      } catch (triggerError) {
+        // Still return the config but with trigger error info
+        config.triggerError = triggerError.message;
       }
     }
 
@@ -57,16 +62,33 @@ export function loadJobConfig(jobPath) {
  * Load a trigger configuration
  * @param {string} triggerName - The name of the trigger
  * @returns {Object} The trigger configuration
+ * @throws {Error} If trigger configuration cannot be loaded
  */
 export function loadTriggerConfig(triggerName) {
-  const triggerPath = path.join(rootDir, 'core', 'triggers', `${triggerName}.json`);
-  try {
-    const triggerData = fs.readFileSync(triggerPath, 'utf8');
-    return JSON.parse(triggerData);
-  } catch (error) {
-    console.error(`Error loading trigger config for ${triggerName}:`, error);
-    return {};
+  // Try loading from local triggers first
+  const localTriggerPath = path.join(rootDir, 'local', 'triggers', `${triggerName}.json`);
+  if (fs.existsSync(localTriggerPath)) {
+    try {
+      const triggerData = fs.readFileSync(localTriggerPath, 'utf8');
+      return JSON.parse(triggerData);
+    } catch (error) {
+      throw new Error(`Error loading local trigger config for ${triggerName}: ${error.message}`);
+    }
   }
+  
+  // Fall back to core triggers
+  const coreTriggerPath = path.join(rootDir, 'core', 'triggers', `${triggerName}.json`);
+  if (fs.existsSync(coreTriggerPath)) {
+    try {
+      const triggerData = fs.readFileSync(coreTriggerPath, 'utf8');
+      return JSON.parse(triggerData);
+    } catch (error) {
+      throw new Error(`Error loading core trigger config for ${triggerName}: ${error.message}`);
+    }
+  }
+  
+  // Trigger not found
+  throw new Error(`Trigger '${triggerName}' not found in local/triggers/ or core/triggers/`);
 }
 
 /**

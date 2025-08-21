@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import Table from 'cli-table3';
 
 // ===================================================================
 // Display Formatting Utilities
@@ -38,29 +39,40 @@ export function applyColorIfDisabled(text, isDisabled) {
  * Display a table of jobs and their webhook status
  */
 export function displayJobsTable(jobDisplayInfos, printHeader = true) {
-  if (printHeader) {
-    console.log('\n' +
-      cropAndPad('STATUS', COLUMN_WIDTHS.status) +
-      cropAndPad('TYPE', COLUMN_WIDTHS.type) +
-      cropAndPad('ID', COLUMN_WIDTHS.id) +
-      cropAndPad('TITLE', COLUMN_WIDTHS.title) +
-      cropAndPad('WEBHOOK TOPIC', COLUMN_WIDTHS.topic)
-    );
-    console.log('-'.repeat(COLUMN_WIDTHS.status + COLUMN_WIDTHS.type + COLUMN_WIDTHS.id + COLUMN_WIDTHS.title + COLUMN_WIDTHS.topic));
-  }
+  const table = new Table({
+    head: ['STATUS', 'TYPE', 'ID', 'TITLE', 'TRIGGER'],
+    colWidths: [15, 8, 42, 37, 25],
+    style: {
+      head: ['cyan']
+    }
+  });
 
   for (const info of jobDisplayInfos) {
     const isDisabled = info.statusMsg === 'Disabled';
     const jobType = info.fullPath && info.fullPath.startsWith('core/jobs/') ? 'Core' : 'Local';
+    
+    let statusDisplay;
+    if (info.statusMsg === 'Enabled') {
+      statusDisplay = chalk.green('✓ Enabled');
+    } else if (info.statusMsg === 'Disabled') {
+      statusDisplay = chalk.gray('✗ Disabled');
+    } else if (info.statusMsg === 'Manual') {
+      statusDisplay = chalk.green('✓ Manual');
+    } else if (info.statusMsg.includes('⚠️')) {
+      statusDisplay = chalk.red(info.statusMsg);
+    } else {
+      statusDisplay = info.statusMsg;
+    }
 
-    console.log(
-      formatStatusColumn(info.statusMsg, isDisabled) +
-      applyColorIfDisabled(cropAndPad(jobType, COLUMN_WIDTHS.type), isDisabled) +
-      applyColorIfDisabled(cropAndPad(info.jobId, COLUMN_WIDTHS.id), isDisabled) +
-      applyColorIfDisabled(chalk.blue(cropAndPad(info.displayName, COLUMN_WIDTHS.title)), isDisabled) +
-      applyColorIfDisabled(cropAndPad(info.displayTopic, COLUMN_WIDTHS.topic), isDisabled)
-    );
+    const typeDisplay = isDisabled ? chalk.gray(jobType) : jobType;
+    const idDisplay = isDisabled ? chalk.gray(info.jobId) : info.jobId;
+    const titleDisplay = isDisabled ? chalk.gray(info.displayName) : chalk.blue(info.displayName);
+    const triggerDisplay = isDisabled ? chalk.gray(info.displayTopic) : info.displayTopic;
+
+    table.push([statusDisplay, typeDisplay, idDisplay, titleDisplay, triggerDisplay]);
   }
+
+  console.log('\n' + table.toString());
 }
 
 /**
@@ -74,6 +86,9 @@ export function sortJobDisplayInfos(jobDisplayInfos) {
       case '⚠️ API ERROR': return 2;
       case '⚠️ NO DATA': return 3;
       case '⚠️ TRIGGER CONFIG ERROR': return 4;
+      case '⚠️ TRIGGER MISSING': return 4;
+      case '⚠️ INVALID TRIGGER': return 4;
+      case '⚠️ INVALID CONFIG': return 4;
       case 'Enabled': return 5;
       case 'Manual': return 6;
       case 'Disabled': return 7; // Make disabled lower priority so it sorts later

@@ -154,6 +154,22 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
       shop: null
     };
   }
+  
+  // Check for trigger loading errors
+  if (jobConfig.triggerError) {
+    const errorMsg = jobConfig.triggerError.includes('not found') ? '⚠️ TRIGGER MISSING' : '⚠️ INVALID TRIGGER';
+    const jobId = jobPath.replace(/^(local|core)\/jobs\//, '');
+    const displayName = jobConfig.title || '(missing title)';
+    return {
+      jobId,
+      fullPath: jobConfig.fullPath,
+      displayName,
+      displayTopic: jobConfig.trigger || 'N/A',
+      statusMsg: errorMsg,
+      webhookIdSuffix: '-',
+      shop: jobConfig.shop || null
+    };
+  }
 
   // Set default values
   let displayTopic = jobConfig.trigger || 'N/A';
@@ -172,14 +188,15 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
     includeFields = jobConfig.webhook.includeFields;
   }
 
+  // Check if trigger field is missing
   if (!jobConfig.trigger) {
     return {
       jobId,
       fullPath,
       displayName,
-      displayTopic,
-      statusMsg,
-      webhookIdSuffix,
+      displayTopic: 'N/A',
+      statusMsg: '⚠️ TRIGGER MISSING',
+      webhookIdSuffix: '-',
       shop,
       includeFields
     };
@@ -190,14 +207,17 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
   try {
     triggerConfig = loadTriggerConfig(jobConfig.trigger);
   } catch(e) {
+    // Determine if trigger is missing or invalid
+    const errorMsg = e.message.includes('not found') ? '⚠️ TRIGGER MISSING' : '⚠️ INVALID TRIGGER';
     return {
       jobId,
       fullPath,
       displayName,
       displayTopic: jobConfig.trigger,
-      statusMsg: '⚠️ TRIGGER CONFIG ERROR',
+      statusMsg: errorMsg,
       webhookIdSuffix: '-',
-      shop
+      shop,
+      includeFields
     };
   }
 

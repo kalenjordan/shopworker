@@ -24,6 +24,7 @@
     "acorn": "^8.11.3",
     "acorn-walk": "^8.3.2",
     "chalk": "^5.4.1",
+    "cli-table3": "^0.6.5",
     "commander": "^13.1.0",
     "date-fns": "^3.2.0",
     "date-fns-tz": "^3.2.0",
