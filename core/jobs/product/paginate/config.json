@@ -1,4 +1,5 @@
 {
+  "title": "Paginate and Count Products",
   "description": "Paginate through all products and count them",
   "trigger": "manual",
   "sample": {

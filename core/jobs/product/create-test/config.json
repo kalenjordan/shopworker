@@ -1,4 +1,5 @@
 {
+  "title": "Create Test Product",
   "name": "Create product for testing",
   "description": "Creates a new product with a random name",
   "version": "1.0.0",

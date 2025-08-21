@@ -1,4 +1,5 @@
 {
+  "title": "Create Test Order",
   "name": "Create order for testing",
   "description": "Manually creates an order by fetching a customer, a product, and creating an order with a line item",
   "version": "1.0.0",

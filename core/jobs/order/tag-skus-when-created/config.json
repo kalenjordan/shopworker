@@ -1,4 +1,5 @@
 {
+  "title": "Tag Customer with Order SKUs",
   "name": "Tag SKUs in Order",
   "description": "Tags customers with SKUs from their order",
   "version": "1.0.0",

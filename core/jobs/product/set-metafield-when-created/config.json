@@ -1,4 +1,5 @@
 {
+  "title": "Set Metafield on Product Creation",
   "name": "Set Product Metafield When Created",
   "description": "Updates a product metafield with the last modified date",
   "version": "1.0.0",

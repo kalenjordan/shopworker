@@ -1,4 +1,5 @@
 {
+  "title": "Export Product to Google Sheets",
   "name": "Send product to Google Sheets",
   "description": "Sends product data to Google Sheets when a product is updated",
   "version": "1.0.0",

@@ -1,4 +1,5 @@
 {
+  "title": "Send Email on Note Change",
   "name": "Note Change Email Trigger",
   "description": "Triggers order confirmation email when order note changes",
   "version": "1.0.0",

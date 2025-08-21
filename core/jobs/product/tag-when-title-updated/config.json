@@ -1,4 +1,5 @@
 {
+  "title": "Tag Product on Title Update",
   "name": "Tag Product When Title Updated",
   "description": "Adds a tag with the current timestamp when a product title is updated",
   "trigger": "product-updated",
