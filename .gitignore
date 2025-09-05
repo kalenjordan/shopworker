@@ -14,3 +14,4 @@ core/worker/job-loader-generated.js
 /local
 
 /logs
+create-cli/*.tgz

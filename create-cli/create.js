@@ -360,19 +360,18 @@ async function createShopworkerInstance() {
 
         process.chdir(cwd);
 
-        // Now create symlink
-        const symlinkSpinner = ora('Creating symlink...').start();
+        // Now clone local repository
+        const cloneSpinner = ora('Cloning local repository...').start();
         try {
           // Ensure we're in the main directory
           process.chdir(mainDir);
 
-          // Create relative symlink
-          const relativePath = path.relative(mainDir, localDir);
-          await fs.symlink(relativePath, 'local', 'dir');
+          // Clone the local repository into the local directory
+          await execa('git', ['clone', localDir, 'local']);
 
-          symlinkSpinner.succeed('Symlink created');
+          cloneSpinner.succeed('Local repository cloned');
         } catch (error) {
-          symlinkSpinner.fail('Failed to create symlink');
+          cloneSpinner.fail('Failed to clone local repository');
           console.error(chalk.red(error.message));
           process.exit(1);
         }
@@ -622,19 +621,18 @@ async function createShopworkerInstance() {
     process.exit(1);
   }
 
-  // Create symlink from main/local to local directory
-  const symlinkSpinner = ora('Creating symlink...').start();
+  // Clone local repository
+  const cloneSpinner = ora('Cloning local repository...').start();
   try {
     // Ensure we're in the main directory
     process.chdir(mainDir);
 
-    // Create relative symlink
-    const relativePath = path.relative(mainDir, localDir);
-    await fs.symlink(relativePath, 'local', 'dir');
+    // Clone the local repository into the local directory
+    await execa('git', ['clone', localDir, 'local']);
 
-    symlinkSpinner.succeed('Symlink created');
+    cloneSpinner.succeed('Local repository cloned');
   } catch (error) {
-    symlinkSpinner.fail('Failed to create symlink');
+    cloneSpinner.fail('Failed to clone local repository');
     console.error(chalk.red(error.message));
     process.exit(1);
   }
@@ -694,7 +692,7 @@ function showSuccessMessage(isEmptyDir, currentDirName, directory, mainDir, loca
   if (isEmptyDir) {
     console.log(chalk.white(`  ${currentDirName}/                    - Main Shopworker repository`));
     console.log(chalk.white(`    ├── core/                - Core Shopworker code`));
-    console.log(chalk.white(`    └── local/               - Symlink to ${currentDirName}-local`));
+    console.log(chalk.white(`    └── local/               - Clone of ${currentDirName}-local`));
     console.log(chalk.white(`  ${currentDirName}-local/             - Your account-specific code`));
     console.log(chalk.white(`    ├── jobs/`));
     console.log(chalk.white(`    ├── triggers/`));
@@ -702,7 +700,7 @@ function showSuccessMessage(isEmptyDir, currentDirName, directory, mainDir, loca
   } else {
     console.log(chalk.white(`  ${directory}/                    - Main Shopworker repository`));
     console.log(chalk.white(`    ├── core/                - Core Shopworker code`));
-    console.log(chalk.white(`    └── local/               - Symlink to ${directory}-local`));
+    console.log(chalk.white(`    └── local/               - Clone of ${directory}-local`));
     console.log(chalk.white(`  ${directory}-local/             - Your account-specific code`));
     console.log(chalk.white(`    ├── jobs/`));
     console.log(chalk.white(`    ├── triggers/`));
@@ -756,7 +754,7 @@ async function copyTemplateFiles(src, dest, replacements) {
 
 program
   .name('create-shopworker')
-  .description('Create a new Shopworker instance with symlinks')
+  .description('Create a new Shopworker instance with cloned local repository')
   .version('1.0.0')
   .action(createShopworkerInstance);
 
