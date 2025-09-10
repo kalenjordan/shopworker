@@ -89,10 +89,6 @@ export function validateCredentials(credentials) {
     throw new Error('Resend credentials object is required');
   }
 
-  console.log('Validating Resend credentials', credentials);
-  console.log('resend_api_key', credentials.resend_api_key);
-  console.log('typeof resend_api_key', typeof credentials.resend_api_key);
-  console.log('resend_api_key starts with re_', credentials.resend_api_key.startsWith('re_'));
 
   if (!credentials.resend_api_key || typeof credentials.resend_api_key !== 'string') {
     throw new Error('Resend API key is required and must be a string');

@@ -190,11 +190,24 @@ export async function runJobTest(cliDirname, jobPath, options) {
   const step = {
     do: async (name, callback) => {
       console.log(chalk.blue(`→ Step: ${name}`));
+      
+      // Store original console.log to restore later
+      const originalConsoleLog = console.log;
+      
+      // Override console.log to add indentation during step execution
+      console.log = (...args) => {
+        originalConsoleLog('  ', ...args);
+      };
+      
       try {
         const result = await callback();
+        // Restore original console.log before logging step completion
+        console.log = originalConsoleLog;
         console.log(chalk.green(`✓ Step completed: ${name}`));
         return result;
       } catch (error) {
+        // Restore original console.log before logging step failure
+        console.log = originalConsoleLog;
         console.log(chalk.red(`✗ Step failed: ${name}`));
         throw error;
       }
