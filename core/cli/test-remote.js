@@ -138,15 +138,15 @@ export function prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDo
   webhookUrl.searchParams.set('job', jobPath);
   const shopifyWebhookAddress = webhookUrl.toString();
 
-  // Ensure payload has shop_domain for Shopify webhook format
-  const shopifyWebhookPayload = {
-    ...payload,
-    shop_domain: shopDomain
-  };
+  // Pass payload as-is (shop_domain is handled separately by the worker)
+  let shopifyWebhookPayload = payload;
 
-  // Add config overrides if provided
-  if (configOverrides) {
-    shopifyWebhookPayload._configOverrides = configOverrides;
+  // Add config overrides if provided (only for non-array payloads)
+  if (configOverrides && !Array.isArray(payload)) {
+    shopifyWebhookPayload = {
+      ...payload,
+      _configOverrides: configOverrides
+    };
   }
 
   return { shopifyWebhookAddress, shopifyWebhookPayload };
