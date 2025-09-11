@@ -30,7 +30,9 @@
     "date-fns-tz": "^3.2.0",
     "googleapis": "^131.0.0",
     "jose": "^5.10.0",
-    "papaparse": "^5.5.3"
+    "papaparse": "^5.5.3",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "eslint": "^9.27.0"
