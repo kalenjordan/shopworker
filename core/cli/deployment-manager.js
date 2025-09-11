@@ -6,6 +6,11 @@ import { needsSecretsPush, executePutSecrets } from './cloudflare-secrets.js';
 import { calculateDeploymentHash, isDeploymentNeeded } from './deployment-hash.js';
 import { getStateData, updateStateData } from './state-manager.js';
 
+// Constants
+const WRANGLER_DEPLOY_CMD = 'npx wrangler deploy';
+const CLOUDFLARE_BUNDLER_CMD = 'node core/cli/cloudflare-bundler.js';
+const WORKER_URL_PATTERN = /^https:\/\/[^.]+\.[^.]+\.workers\.dev$/;
+
 /**
  * Checks Git repository status before deployment
  * @returns {Promise<void>}
@@ -148,7 +153,7 @@ export async function restoreSymlink(projectRoot) {
  */
 export async function executeCloudflareDeployment() {
   try {
-    execSync('npx wrangler deploy', { stdio: 'inherit', encoding: 'utf8' });
+    execSync(WRANGLER_DEPLOY_CMD, { stdio: 'inherit', encoding: 'utf8' });
     console.log('Successfully deployed to Cloudflare.');
     return true;
   } catch (error) {
@@ -283,7 +288,7 @@ export async function ensureWorkerUrl(cliDirname) {
     // Check if user entered full URL
     if (input.startsWith('https://')) {
       // Validate full URL format
-      if (!input.match(/^https:\/\/[^.]+\.[^.]+\.workers\.dev$/)) {
+      if (!input.match(WORKER_URL_PATTERN)) {
         throw new Error('Invalid worker URL format. Expected format: https://project-name.subdomain.workers.dev');
       }
       workerUrl = input;
@@ -321,16 +326,13 @@ export function updateShopworkerFile(cliDirname, currentCommit, deploymentHash) 
 
 
 /**
- * Handle Cloudflare deployment logic
- * @param {string} cliDirname - The directory where cli.js is located (project root)
- * @param {boolean} force - Force deployment even if no changes detected
- * @returns {Promise<boolean>} Whether the deployment was successful
+ * Prepare for deployment by checking prerequisites
+ * @param {string} cliDirname - The CLI directory
+ * @returns {Promise<string|null>} Current commit hash or null if failed
  */
-export async function handleCloudflareDeployment(cliDirname, force = false) {
+async function prepareDeployment(cliDirname) {
   // Preparation phase
   await checkGitStatus();
-
-  // Ensure cloudflare_worker_url is set
   await ensureWorkerUrl(cliDirname);
 
   // Check if secrets need to be pushed
@@ -339,13 +341,22 @@ export async function handleCloudflareDeployment(cliDirname, force = false) {
     const secretsSuccess = await executePutSecrets(cliDirname);
     if (!secretsSuccess) {
       console.error('Failed to push secrets. Aborting deployment.');
-      return false;
+      return null;
     }
     console.log('');
   }
 
-  const currentCommit = await getCurrentCommit();
+  return await getCurrentCommit();
+}
 
+/**
+ * Handle Cloudflare deployment logic
+ * @param {string} cliDirname - The directory where cli.js is located (project root)
+ * @param {boolean} force - Force deployment even if no changes detected
+ * @returns {Promise<boolean>} Whether the deployment was successful
+ */
+export async function handleCloudflareDeployment(cliDirname, force = false) {
+  const currentCommit = await prepareDeployment(cliDirname);
   if (!currentCommit) {
     return false;
   }
@@ -367,7 +378,7 @@ export async function handleCloudflareDeployment(cliDirname, force = false) {
   // Generate the job loader for Cloudflare Workers
   console.log('Generating job loader for Cloudflare Workers...');
   try {
-    execSync('node core/cli/cloudflare-bundler.js', {
+    execSync(CLOUDFLARE_BUNDLER_CMD, {
       stdio: 'inherit',
       encoding: 'utf8',
       cwd: cliDirname

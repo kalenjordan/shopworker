@@ -11,6 +11,8 @@ import { JobDispatcher } from "./workflow.js";
 const PAYLOAD_SIZE_THRESHOLD = 1024 * 1024; // 1MB
 const WORKFLOW_ID_PREFIX = "job";
 const PAYLOAD_ID_PREFIX = "payload";
+const WEBREQUEST_TOPIC = "shopworker/webrequest";
+const CONTENT_TYPE_JSON = "application/json";
 
 /**
  * Verify that a webhook request is authentic and from Shopify
@@ -142,7 +144,7 @@ async function handleLargePayload(payload, env) {
 function createResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": CONTENT_TYPE_JSON },
   });
 }
 
@@ -151,6 +153,41 @@ function createResponse(data, status = 200) {
  */
 function createErrorResponse(message, status = 500) {
   return createResponse({ success: false, error: message }, status);
+}
+
+/**
+ * Resolve shop configuration and domain for a given topic
+ * @param {Object} shopworkerConfig - The shopworker configuration
+ * @param {string} shopDomain - The shop domain from request
+ * @param {string} topic - The webhook topic
+ * @returns {{shopConfig: Object, resolvedShopDomain: string}}
+ */
+function resolveShopConfig(shopworkerConfig, shopDomain, topic) {
+  // For webrequest jobs, always use the shop configuration domain
+  if (topic === WEBREQUEST_TOPIC) {
+    if (shopworkerConfig.shopify_domain) {
+      // Single-shop configuration
+      return {
+        shopConfig: shopworkerConfig,
+        resolvedShopDomain: shopworkerConfig.shopify_domain
+      };
+    } else if (shopworkerConfig.shops && shopworkerConfig.shops.length > 0) {
+      // Multi-shop configuration, use first shop as default
+      const firstShop = shopworkerConfig.shops[0];
+      return {
+        shopConfig: firstShop,
+        resolvedShopDomain: firstShop.shopify_domain
+      };
+    } else {
+      throw new Error("No shop configuration found for webrequest job");
+    }
+  } else {
+    // Regular webhook jobs use the shop domain from headers
+    return {
+      shopConfig: findShopConfig(shopworkerConfig, shopDomain),
+      resolvedShopDomain: shopDomain
+    };
+  }
 }
 
 /**
@@ -178,7 +215,7 @@ async function parseWebhookRequest(request) {
           bodyText: "", 
           bodyData: queryParams, 
           shopDomain: "webrequest", // Placeholder for webrequest jobs
-          topic: "shopworker/webrequest" 
+          topic: WEBREQUEST_TOPIC 
         };
       }
     } catch (e) {
@@ -213,7 +250,7 @@ async function parseWebhookRequest(request) {
  * Verify webhook authentication based on topic
  */
 async function verifyWebhookAuth(request, bodyText, topic, env, shopConfig) {
-  if (topic === "shopworker/webrequest") {
+  if (topic === WEBREQUEST_TOPIC) {
     // No authentication required for webrequest triggers
     return;
   } else if (topic === "shopworker/webhook") {
@@ -301,25 +338,7 @@ async function _handleRequest(request, env) {
 
   // Get shop configuration
   const shopworkerConfig = parseShopworkerConfig(env);
-  let shopConfig;
-  let resolvedShopDomain = shopDomain;
-  
-  // For webrequest jobs, always use the shop configuration domain
-  if (topic === "shopworker/webrequest") {
-    if (shopworkerConfig.shopify_domain) {
-      // Single-shop configuration
-      resolvedShopDomain = shopworkerConfig.shopify_domain;
-      shopConfig = shopworkerConfig;
-    } else if (shopworkerConfig.shops && shopworkerConfig.shops.length > 0) {
-      // Multi-shop configuration, use first shop as default
-      resolvedShopDomain = shopworkerConfig.shops[0].shopify_domain;
-      shopConfig = shopworkerConfig.shops[0];
-    } else {
-      throw new Error("No shop configuration found for webrequest job");
-    }
-  } else {
-    shopConfig = findShopConfig(shopworkerConfig, shopDomain);
-  }
+  const { shopConfig, resolvedShopDomain } = resolveShopConfig(shopworkerConfig, shopDomain, topic);
 
   // Verify webhook authentication
   await verifyWebhookAuth(request, bodyText, topic, env, shopConfig);
@@ -338,7 +357,7 @@ async function _handleRequest(request, env) {
     
     // If result has headers, include them
     const headers = {
-      "Content-Type": "application/json",
+      "Content-Type": CONTENT_TYPE_JSON,
       ...(result.headers || {})
     };
     
