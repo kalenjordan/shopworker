@@ -87,6 +87,7 @@ export class DatabaseConnector {
 
 /**
  * D1 Database Adapter for Cloudflare Workers
+ * Note: Schema is managed by D1 migrations, not by this adapter
  */
 class D1DatabaseAdapter {
   constructor(d1Database) {
