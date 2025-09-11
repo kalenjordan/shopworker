@@ -1,5 +1,7 @@
 {
   "name": "Web Request",
   "description": "A trigger for jobs that need to return immediate synchronous responses to webhook requests",
-  "realtime": true
+  "webhook": {
+    "topic": "shopworker/webrequest"
+  }
 }

@@ -160,14 +160,23 @@ export function prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDo
  * @param {string} shopifyWebhookTopic - The Shopify webhook topic
  * @param {string} shopDomain - The shop domain
  * @param {boolean} isShopworkerWebhook - Whether this is a Shopworker webhook trigger
+ * @param {string} triggerType - The trigger type (e.g., 'webrequest', 'webhook', etc.)
  * @returns {Promise<void>}
  */
-export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, shopConfig, shopifyWebhookTopic, shopDomain, isShopworkerWebhook = false) {
+export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, shopConfig, shopifyWebhookTopic, shopDomain, isShopworkerWebhook = false, triggerType = null) {
   // Convert payload to string
   const payloadString = JSON.stringify(shopifyWebhookPayload);
 
-  const topic = isShopworkerWebhook ? 'shopworker/webhook' : shopifyWebhookTopic;
-  const webhookType = isShopworkerWebhook ? "Shopworker webhook" : "Shopify webhook";
+  let topic = shopifyWebhookTopic;
+  let webhookType = "Shopify webhook";
+  
+  if (triggerType === 'webrequest') {
+    topic = 'shopworker/webrequest';
+    webhookType = "Web request";
+  } else if (isShopworkerWebhook) {
+    topic = 'shopworker/webhook';
+    webhookType = "Shopworker webhook";
+  }
   console.log(chalk.blue(`Sending test ${webhookType} to: ${shopifyWebhookAddress}`));
   console.log(chalk.blue(`Topic: ${topic}`));
   console.log(chalk.dim(`Payload: ${payloadString.substring(0, 100)}${payloadString.length > 100 ? '...' : ''}`));
@@ -183,7 +192,10 @@ export async function sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebho
       'X-Shopify-Test': 'true'
     };
 
-    if (isShopworkerWebhook) {
+    if (triggerType === 'webrequest') {
+      // For webrequest triggers, no authentication required
+      console.log(chalk.gray("No authentication required for webrequest triggers"));
+    } else if (isShopworkerWebhook) {
       // For Shopworker webhooks, use the shopworker webhook secret as a header
       if (!shopConfig.shopworker_webhook_secret) {
         throw new Error(`Shopworker webhook secret not found in shop config. Make sure shopworker_webhook_secret is defined in .shopworker.json.`);
@@ -257,6 +269,26 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
     payload = await loadShopworkerWebhookFixture(cliDirname, jobPath, configToUse);
     isShopworkerWebhook = true;
     console.log(chalk.yellow("Using Shopworker webhook fixture data for remote test"));
+  } else if (configToUse.trigger === 'webrequest') {
+    // For webrequest triggers, load the test payload directly
+    if (!configToUse.test || !configToUse.test.webhookPayload) {
+      throw new Error(`Job ${jobPath} has trigger 'webrequest' but is missing 'test.webhookPayload' file path in config.json`);
+    }
+    
+    const payloadPath = path.resolve(cliDirname, jobPath, configToUse.test.webhookPayload);
+    if (!fs.existsSync(payloadPath)) {
+      throw new Error(`Webrequest payload file not found: ${payloadPath}. Please ensure the file exists at the path specified in config.json.`);
+    }
+    
+    console.log(`Loading webrequest payload from: ${configToUse.test.webhookPayload}`);
+    try {
+      const payloadContent = fs.readFileSync(payloadPath, 'utf8');
+      payload = JSON.parse(payloadContent);
+    } catch (error) {
+      throw new Error(`Failed to load webrequest payload from ${payloadPath}: ${error.message}`);
+    }
+    
+    console.log(chalk.yellow("Using webrequest test payload for remote test"));
   } else {
     // For other triggers (Shopify webhook triggers), get record ID and create minimal payload
     const recordId = await getTestRecordId(cliDirname, jobPath, options);
@@ -279,5 +311,5 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   const { shopifyWebhookAddress, shopifyWebhookPayload } = prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain, finalConfigOverrides);
 
   // Send test webhook
-  await sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, shopConfig, shopifyWebhookTopic, shopDomain, isShopworkerWebhook);
+  await sendTestShopifyWebhook(shopifyWebhookAddress, shopifyWebhookPayload, shopConfig, shopifyWebhookTopic, shopDomain, isShopworkerWebhook, configToUse.trigger);
 }

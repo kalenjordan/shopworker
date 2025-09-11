@@ -183,7 +183,10 @@ async function parseWebhookRequest(request) {
  * Verify webhook authentication based on topic
  */
 async function verifyWebhookAuth(request, bodyText, topic, env, shopConfig) {
-  if (topic === "shopworker/webhook") {
+  if (topic === "shopworker/webrequest") {
+    // No authentication required for webrequest triggers
+    return;
+  } else if (topic === "shopworker/webhook") {
     const shopworkerWebhookSecret = request.headers.get("X-Shopworker-Webhook-Secret");
     if (shopworkerWebhookSecret != shopConfig.shopworker_webhook_secret) {
       throw new Error("Invalid shopworker webhook secret");
@@ -278,7 +281,7 @@ async function _handleRequest(request, env) {
   const jobConfig = await loadJobConfig(jobPath);
 
   // Check if this is a real-time trigger
-  if (jobConfig.trigger === "webrequest" || (jobConfig.triggerConfig && jobConfig.triggerConfig.realtime)) {
+  if (jobConfig.trigger === "webrequest") {
     // Execute job synchronously and return result
     const result = await executeJobSynchronously(jobPath, jobConfig, shopDomain, bodyData, shopConfig, env);
     
