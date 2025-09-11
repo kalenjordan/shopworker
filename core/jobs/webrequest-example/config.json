@@ -1,0 +1,8 @@
+{
+  "title": "Webhook Payload Transformer",
+  "trigger": "webrequest",
+  "description": "Example job that transforms webhook payloads and returns immediate responses",
+  "test": {
+    "webhookPayload": "test-payload.json"
+  }
+}

@@ -49,6 +49,38 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
     };
   }
 
+  // Handle webrequest triggers with test payloads
+  if (jobConfig.trigger === 'webrequest') {
+    if (!jobConfig.test) {
+      throw new Error(`Job ${jobPath} has trigger 'webrequest' but is missing 'test' configuration in config.json`);
+    }
+    if (!jobConfig.test.webhookPayload || typeof jobConfig.test.webhookPayload !== 'string') {
+      throw new Error(`Job ${jobPath} has trigger 'webrequest' but is missing 'test.webhookPayload' file path in config.json`);
+    }
+
+    console.log("Loading webrequest payload from fixtures...");
+    // Use the path specified in jobConfig.test.webhookPayload, relative to the job directory
+    const payloadPath = path.resolve(cliDirname, jobPath, jobConfig.test.webhookPayload);
+    if (!fs.existsSync(payloadPath)) {
+      throw new Error(`Webrequest payload file not found: ${payloadPath}. Please ensure the file exists at the path specified in config.json.`);
+    }
+    console.log(`Using webrequest payload from: ${jobConfig.test.webhookPayload}`);
+    try {
+      const payloadContent = fs.readFileSync(payloadPath, 'utf8');
+      const record = JSON.parse(payloadContent);
+      const recordName = `webrequest-payload-${path.basename(payloadPath)}`;
+      return {
+        record,
+        recordName,
+        shopify,
+        triggerConfig,
+        jobConfig: configToUse
+      };
+    } catch (error) {
+      throw new Error(`Failed to load webrequest payload from ${payloadPath}: ${error.message}`);
+    }
+  }
+
   // Check if this is a webhook job and validate required test configuration
   if (jobConfig.trigger === 'webhook') {
     if (!jobConfig.test) {
@@ -215,15 +247,27 @@ export async function runJobTest(cliDirname, jobPath, options) {
   };
 
   // Pass process.env as env, shopConfig as shopConfig, and secrets for consistency with worker environment
-  await jobModule.process({
+  const jobParams = {
     payload: record,
     shopify: shopify,
     env: process.env,   // Pass Node.js process.env as env
     shopConfig: shopConfig,  // Pass shopConfig separately
     jobConfig: configToUse,  // Pass the job config (with potential overrides) to the process function
     secrets: secrets,    // Pass secrets to the process function
-    step: step          // Pass the mock step object
-  });
+  };
+
+  // Only add step parameter for non-webrequest jobs
+  if (jobConfig.trigger !== 'webrequest') {
+    jobParams.step = step;
+  }
+
+  const result = await jobModule.process(jobParams);
+
+  // For webrequest jobs, show the response that would be returned
+  if (jobConfig.trigger === 'webrequest') {
+    console.log(chalk.green('\n📤 Webrequest Response:'));
+    console.log(JSON.stringify(result, null, 2));
+  }
 
   console.log('Processing complete!');
 }

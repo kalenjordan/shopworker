@@ -214,6 +214,52 @@ async function createJobWorkflow(env, params) {
 }
 
 /**
+ * Execute job synchronously for real-time triggers
+ */
+async function executeJobSynchronously(jobPath, jobConfig, shopDomain, bodyData, shopConfig, env) {
+  // Create Shopify client
+  const accessToken = shopConfig?.shopify_token || env.SHOPIFY_ACCESS_TOKEN;
+  if (!accessToken) {
+    throw new Error("Shopify API access token not configured");
+  }
+
+  const shopify = createShopifyClient({
+    shop: shopDomain,
+    accessToken,
+    apiVersion: jobConfig?.apiVersion,
+  });
+
+  // Load job module
+  const jobModule = await loadJobModule(jobPath);
+
+  // Load secrets from environment
+  const secrets = {};
+  for (const key in env) {
+    if (key.startsWith("SECRET_")) {
+      const secretKey = key.substring(7);
+      try {
+        secrets[secretKey] = JSON.parse(env[key]);
+      } catch (e) {
+        secrets[secretKey] = env[key];
+      }
+    }
+  }
+
+  // Execute job directly (synchronously)
+  const result = await jobModule.process({
+    shopify,
+    payload: bodyData,
+    shopConfig,
+    jobConfig,
+    env,
+    secrets,
+    // Note: No 'step' parameter for synchronous execution
+  });
+
+  return result;
+}
+
+/**
  * Process the webhook request
  */
 async function _handleRequest(request, env) {
@@ -231,7 +277,28 @@ async function _handleRequest(request, env) {
   const jobPath = getJobPathFromUrl(request);
   const jobConfig = await loadJobConfig(jobPath);
 
-  // Handle large payloads
+  // Check if this is a real-time trigger
+  if (jobConfig.trigger === "webrequest" || (jobConfig.triggerConfig && jobConfig.triggerConfig.realtime)) {
+    // Execute job synchronously and return result
+    const result = await executeJobSynchronously(jobPath, jobConfig, shopDomain, bodyData, shopConfig, env);
+    
+    // If result has a status code, use it, otherwise default to 200
+    const statusCode = result.statusCode || 200;
+    
+    // If result has headers, include them
+    const headers = {
+      "Content-Type": "application/json",
+      ...(result.headers || {})
+    };
+    
+    // Return the job result as the HTTP response
+    return new Response(JSON.stringify(result.body || result), {
+      status: statusCode,
+      headers
+    });
+  }
+
+  // Handle large payloads for async processing
   const payloadInfo = await handleLargePayload(bodyData, env);
 
   // Create workflow parameters
