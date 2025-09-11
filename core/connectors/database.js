@@ -203,7 +203,7 @@ class SQLiteDatabaseAdapter {
  */
 export function createQuizDatabase(config = {}) {
   return new DatabaseConnector({
-    sqliteFile: config.sqliteFile || './local/data/quiz-sessions.db'
+    sqliteFile: config.sqliteFile || './data/shopworker.db'
   });
 }
 

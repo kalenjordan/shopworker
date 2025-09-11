@@ -235,6 +235,16 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
 
   const displayTopic = triggerConfig.webhook?.topic || jobConfig.trigger;
 
+  // For webrequest triggers, show as enabled since they work immediately when deployed
+  if (displayTopic === 'shopworker/webrequest') {
+    return {
+      ...baseInfo,
+      displayTopic,
+      statusMsg: 'Enabled',
+      webhookIdSuffix: '-'
+    };
+  }
+
   // For non-webhook triggers, return manual status
   if (!triggerConfig.webhook?.topic) {
     return {
