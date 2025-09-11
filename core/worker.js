@@ -157,6 +157,36 @@ function createErrorResponse(message, status = 500) {
  * Parse webhook request and extract necessary data
  */
 async function parseWebhookRequest(request) {
+  // Handle GET requests for webrequest jobs
+  if (request.method === "GET") {
+    const url = new URL(request.url);
+    const jobPath = url.searchParams.get("job");
+    
+    // Check if this is a webrequest job
+    try {
+      const jobConfig = await loadJobConfig(jobPath);
+      if (jobConfig.trigger === "webrequest") {
+        // For webrequest GET requests, use query parameters as payload
+        const queryParams = {};
+        for (const [key, value] of url.searchParams.entries()) {
+          if (key !== "job") {  // Exclude the job parameter
+            queryParams[key] = value;
+          }
+        }
+        
+        return { 
+          bodyText: "", 
+          bodyData: queryParams, 
+          shopDomain: "webrequest", // Placeholder for webrequest jobs
+          topic: "shopworker/webrequest" 
+        };
+      }
+    } catch (e) {
+      // If job config loading fails, continue with normal processing
+    }
+  }
+
+  // Handle POST requests (original logic)
   const bodyText = await request.clone().text();
   let bodyData;
 
@@ -271,7 +301,25 @@ async function _handleRequest(request, env) {
 
   // Get shop configuration
   const shopworkerConfig = parseShopworkerConfig(env);
-  const shopConfig = findShopConfig(shopworkerConfig, shopDomain);
+  let shopConfig;
+  let resolvedShopDomain = shopDomain;
+  
+  // For webrequest jobs, always use the shop configuration domain
+  if (topic === "shopworker/webrequest") {
+    if (shopworkerConfig.shopify_domain) {
+      // Single-shop configuration
+      resolvedShopDomain = shopworkerConfig.shopify_domain;
+      shopConfig = shopworkerConfig;
+    } else if (shopworkerConfig.shops && shopworkerConfig.shops.length > 0) {
+      // Multi-shop configuration, use first shop as default
+      resolvedShopDomain = shopworkerConfig.shops[0].shopify_domain;
+      shopConfig = shopworkerConfig.shops[0];
+    } else {
+      throw new Error("No shop configuration found for webrequest job");
+    }
+  } else {
+    shopConfig = findShopConfig(shopworkerConfig, shopDomain);
+  }
 
   // Verify webhook authentication
   await verifyWebhookAuth(request, bodyText, topic, env, shopConfig);
@@ -283,7 +331,7 @@ async function _handleRequest(request, env) {
   // Check if this is a real-time trigger
   if (jobConfig.trigger === "webrequest") {
     // Execute job synchronously and return result
-    const result = await executeJobSynchronously(jobPath, jobConfig, shopDomain, bodyData, shopConfig, env);
+    const result = await executeJobSynchronously(jobPath, jobConfig, resolvedShopDomain, bodyData, shopConfig, env);
     
     // If result has a status code, use it, otherwise default to 200
     const statusCode = result.statusCode || 200;
@@ -306,7 +354,7 @@ async function _handleRequest(request, env) {
 
   // Create workflow parameters
   const workflowParams = {
-    shopDomain,
+    shopDomain: resolvedShopDomain,
     jobPath,
     ...(payloadInfo.isLargePayload
       ? { r2Key: payloadInfo.r2Key, isLargePayload: true }
@@ -332,8 +380,23 @@ async function _handleRequest(request, env) {
  * Handle incoming webhook requests
  */
 async function handleRequest(request, env) {
-  if (request.method !== "POST") {
+  // Allow GET requests for webrequest jobs, otherwise require POST
+  if (request.method !== "POST" && request.method !== "GET") {
     return new Response("Method not allowed", { status: 405 });
+  }
+
+  // For GET requests, check if it's a webrequest job
+  if (request.method === "GET") {
+    try {
+      const jobPath = getJobPathFromUrl(request);
+      const jobConfig = await loadJobConfig(jobPath);
+      
+      if (jobConfig.trigger !== "webrequest") {
+        return new Response("GET method only allowed for webrequest jobs", { status: 405 });
+      }
+    } catch (error) {
+      return new Response("Invalid job path for GET request", { status: 400 });
+    }
   }
 
   try {

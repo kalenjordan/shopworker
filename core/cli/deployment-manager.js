@@ -70,7 +70,6 @@ export async function replaceSymlinkWithCopy(projectRoot) {
     // Check if 'local' exists and is a symlink
     const stats = fs.lstatSync(localPath);
     if (!stats.isSymbolicLink()) {
-      console.log("'local' is not a symlink, proceeding with deployment as-is.");
       return true;
     }
 
