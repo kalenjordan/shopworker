@@ -139,20 +139,43 @@ async function handleLargePayload(payload, env) {
 }
 
 /**
+ * Get CORS headers for web requests
+ */
+function getCorsHeaders(origin = null) {
+  const headers = {
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Shopify-Topic, X-Shopify-Shop-Domain, X-Shopify-Test",
+    "Access-Control-Max-Age": "86400", // 24 hours
+  };
+
+  // Allow specific origins or all origins for webrequest jobs
+  if (origin) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  } else {
+    headers["Access-Control-Allow-Origin"] = "*";
+  }
+
+  return headers;
+}
+
+/**
  * Create a JSON response
  */
-function createResponse(data, status = 200) {
+function createResponse(data, status = 200, additionalHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": CONTENT_TYPE_JSON },
+    headers: { 
+      "Content-Type": CONTENT_TYPE_JSON,
+      ...additionalHeaders
+    },
   });
 }
 
 /**
  * Create an error response
  */
-function createErrorResponse(message, status = 500) {
-  return createResponse({ success: false, error: message }, status);
+function createErrorResponse(message, status = 500, additionalHeaders = {}) {
+  return createResponse({ success: false, error: message }, status, additionalHeaders);
 }
 
 /**
@@ -358,6 +381,7 @@ async function _handleRequest(request, env) {
     // If result has headers, include them
     const headers = {
       "Content-Type": CONTENT_TYPE_JSON,
+      ...getCorsHeaders(request.headers.get("Origin")),
       ...(result.headers || {})
     };
     
@@ -399,7 +423,30 @@ async function _handleRequest(request, env) {
  * Handle incoming webhook requests
  */
 async function handleRequest(request, env) {
-  // Allow GET requests for webrequest jobs, otherwise require POST
+  // Handle CORS preflight requests for webrequest jobs
+  if (request.method === "OPTIONS") {
+    // Check if this could be a webrequest job
+    try {
+      const jobPath = getJobPathFromUrl(request);
+      const jobConfig = await loadJobConfig(jobPath);
+      
+      if (jobConfig.trigger === "webrequest") {
+        return new Response(null, {
+          status: 204,
+          headers: getCorsHeaders(request.headers.get("Origin"))
+        });
+      }
+    } catch (error) {
+      // If job path is invalid, still return CORS headers for OPTIONS
+      return new Response(null, {
+        status: 204,
+        headers: getCorsHeaders(request.headers.get("Origin"))
+      });
+    }
+    return new Response("Method not allowed", { status: 405 });
+  }
+
+  // Allow GET and POST requests for webrequest jobs, otherwise require POST
   if (request.method !== "POST" && request.method !== "GET") {
     return new Response("Method not allowed", { status: 405 });
   }

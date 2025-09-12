@@ -99,5 +99,29 @@ If you need a trigger not listed:
 2. Refer to https://shopify.dev/docs/api/webhooks?reference=toml for the complete list of Shopify webhook topics
 3. Use the exact webhook topic name from Shopify's documentation
 
+## Database Operations
+
+### Using the Database in Jobs
+- Access the D1 database through the `env.QUIZ_DB` binding in job functions
+- Use standard SQL queries with prepared statements for safety
+- Database operations should always be wrapped in `step.do()` calls for durability
+
+### Database Migrations
+- **Migration files** are located in `local/migrations/` directory
+- Use incremental numbering: `0001_description.sql`, `0002_next_change.sql`, etc.
+- Include descriptive comments and timestamps in migration files
+
+### Applying Migrations to Remote Database
+- Run `wrangler d1 migrations apply shopworker --remote` to apply pending migrations
+- Check migration status with `wrangler d1 migrations list shopworker --remote`
+- Always apply migrations before deploying code changes that depend on schema updates
+
+### Database Development Workflow
+1. Create migration file in `local/migrations/` with next sequential number
+2. Test migration syntax and logic locally if possible
+3. Apply migration to remote D1 database: `wrangler d1 migrations apply shopworker --remote`
+4. Update or create jobs that use the new schema
+5. Deploy the worker to production
+
 ## Reference Existing Jobs
 Always examine similar jobs in **jobs/** directory before creating new ones to ensure consistency with existing patterns.
