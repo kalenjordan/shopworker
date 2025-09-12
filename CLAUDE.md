@@ -35,6 +35,25 @@ ShopWorker is a framework for building Shopify webhook-driven automation jobs.
 - Use the CLI for managing webhooks and job deployments
 - To verify code changes, use linting and type checking if available
 
+## Database Migrations
+
+### Migration Structure
+- **Migration files** are stored in `local/migrations/` directory
+- Follow the naming pattern: `XXXX_description.sql` (e.g., `0001_initial_quiz_schema.sql`)
+- Each migration file should include a timestamp header comment
+
+### Applying Migrations
+- Migrations are automatically applied to the D1 database during deployment
+- The `wrangler.toml` file configures the migration directory: `migrations_dir = "local/migrations"`
+- Use `wrangler d1 migrations apply shopworker --remote` to manually apply pending migrations to remote database
+- Use `wrangler d1 migrations list shopworker --remote` to check migration status
+
+### Migration Development Workflow
+1. Create new migration files in `local/migrations/` with incremental numbers
+2. Test migrations locally if needed using Wrangler D1 local development
+3. Apply migrations to remote database using `wrangler d1 migrations apply shopworker`
+4. Deploy the worker to ensure the application code matches the database schema
+
 ## Getting Help
 - Check existing jobs in `core/jobs/` for implementation patterns
 - Review `local/CLAUDE.md` for job creation guidelines
