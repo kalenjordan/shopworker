@@ -1,12 +1,15 @@
 /**
- * Database connector that abstracts between SQLite (local/CLI) and D1 (Cloudflare Workers)
- * Automatically detects environment and uses appropriate database implementation
+ * Database connector for Cloudflare D1
+ * Uses D1 in both worker and local development environments
  */
 
 import { isWorkerEnvironment, isCliEnvironment } from '../shared/env.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import Database from 'better-sqlite3';
 
 /**
- * Database connector class that provides unified interface for both SQLite and D1
+ * Database connector class that provides unified interface for D1
  */
 export class DatabaseConnector {
   constructor(config = {}) {
@@ -16,7 +19,7 @@ export class DatabaseConnector {
   }
 
   /**
-   * Initialize the database connection based on environment
+   * Initialize the D1 database connection
    * @param {Object} context - Environment context (env from worker or local config)
    */
   async init(context) {
@@ -26,15 +29,18 @@ export class DatabaseConnector {
 
     if (isWorkerEnvironment(context)) {
       // Use D1 database in Cloudflare Workers
+      if (!context.QUIZ_DB) {
+        throw new Error('QUIZ_DB binding not found in worker environment');
+      }
       this.db = new D1DatabaseAdapter(context.QUIZ_DB);
-      console.log('Initialized D1 database connection');
+      console.log('Initialized D1 database connection (Worker)');
     } else if (isCliEnvironment(context)) {
-      // Use SQLite in Node.js/CLI environment
-      this.db = new SQLiteDatabaseAdapter(this.config.sqliteFile || './quiz-sessions.db');
+      // Use local D1 database via better-sqlite3 for CLI testing
+      this.db = new LocalD1Adapter();
       await this.db.init();
-      console.log('Initialized SQLite database connection');
+      console.log('Initialized D1 database connection (Local)');
     } else {
-      throw new Error('Unsupported environment for database connector');
+      throw new Error('Unable to determine environment for database initialization');
     }
 
     this.isInitialized = true;
@@ -120,12 +126,11 @@ class D1DatabaseAdapter {
 }
 
 /**
- * SQLite Database Adapter for Node.js/CLI environment
+ * Local D1 Adapter for CLI/testing environment
+ * Connects directly to the Wrangler local D1 SQLite database
  */
-class SQLiteDatabaseAdapter {
-  constructor(dbPath) {
-    this.dbPath = dbPath;
-    this.sqlite = null;
+class LocalD1Adapter {
+  constructor() {
     this.db = null;
   }
 
@@ -133,64 +138,73 @@ class SQLiteDatabaseAdapter {
     if (this.db) return this.db;
 
     try {
-      // Dynamic import of sqlite3 for Node.js environments
-      const { default: sqlite3 } = await import('sqlite3');
-      const { open } = await import('sqlite');
+      // Get the project root directory
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = dirname(__filename);
+      const projectRoot = join(__dirname, '..', '..');
       
-      this.db = await open({
-        filename: this.dbPath,
-        driver: sqlite3.Database
-      });
-
-      // Create tables if they don't exist
-      await this.createTables();
+      // Path to the local D1 database created by Wrangler
+      const dbPath = join(projectRoot, '.wrangler', 'state', 'v3', 'd1', 'miniflare-D1DatabaseObject', 
+        '5b20f538b0120769d3976a850f52402ae26ae21ba6161c2ef3b47737bcad2c11.sqlite');
       
+      // Connect to the local D1 database
+      this.db = new Database(dbPath);
       return this.db;
     } catch (error) {
-      // If sqlite dependencies aren't available, provide helpful error
-      if (error.code === 'ERR_MODULE_NOT_FOUND') {
+      if (error.code === 'SQLITE_CANTOPEN') {
         throw new Error(
-          'SQLite dependencies not found. Install with: npm install sqlite3 sqlite'
+          'Local D1 database not found. Run "wrangler d1 migrations apply shopworker --local" first.'
         );
       }
       throw error;
     }
   }
 
-  async createTables() {
-    // Generic tables can be created here if needed
-    // Specific table schemas should be handled by local migrations
-  }
-
   async execute(query, params = []) {
     await this.init();
-    const result = await this.db.run(query, params);
-    return {
-      success: result.changes > 0,
-      changes: result.changes,
-      lastRowId: result.lastID
-    };
+    try {
+      const stmt = this.db.prepare(query);
+      const result = stmt.run(...params);
+      return {
+        success: result.changes > 0,
+        changes: result.changes,
+        lastRowId: result.lastInsertRowid
+      };
+    } catch (error) {
+      console.error('Database execute error:', error);
+      throw error;
+    }
   }
 
   async first(query, params = []) {
     await this.init();
-    return this.db.get(query, params);
+    try {
+      const stmt = this.db.prepare(query);
+      return stmt.get(...params);
+    } catch (error) {
+      console.error('Database first error:', error);
+      throw error;
+    }
   }
 
   async all(query, params = []) {
     await this.init();
-    return this.db.all(query, params);
+    try {
+      const stmt = this.db.prepare(query);
+      const results = stmt.all(...params);
+      return { results };
+    } catch (error) {
+      console.error('Database all error:', error);
+      throw error;
+    }
   }
 }
 
 /**
  * Create a generic database connector instance
  * @param {Object} config - Configuration options
- * @param {string} config.sqliteFile - SQLite file path for local environment
  * @returns {DatabaseConnector} Database connector instance
  */
 export function createDatabase(config = {}) {
-  return new DatabaseConnector({
-    sqliteFile: config.sqliteFile || './data/shopworker.db'
-  });
+  return new DatabaseConnector(config);
 }

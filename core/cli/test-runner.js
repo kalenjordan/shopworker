@@ -266,7 +266,18 @@ export async function runJobTest(cliDirname, jobPath, options) {
   // For webrequest jobs, show the response that would be returned
   if (jobConfig.trigger === 'webrequest') {
     console.log(chalk.green('\n📤 Webrequest Response:'));
-    console.log(JSON.stringify(result, null, 2));
+    
+    // Check if the response is plain text
+    if (result.headers && result.headers['Content-Type'] === 'text/plain') {
+      console.log(chalk.gray('Status:'), result.statusCode);
+      console.log(chalk.gray('Content-Type:'), 'text/plain');
+      console.log(chalk.gray('\n--- Response Body ---\n'));
+      console.log(result.body);
+      console.log(chalk.gray('\n--- End Response ---'));
+    } else {
+      // JSON response
+      console.log(JSON.stringify(result, null, 2));
+    }
   }
 
   console.log('Processing complete!');
