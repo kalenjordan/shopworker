@@ -17,6 +17,18 @@ ShopWorker is a framework for building Shopify webhook-driven automation jobs.
 
 - **cli/** - Command-line interface tools
 
+## CLI Development
+
+### Adding New CLI Commands
+**Rule**: Follow the established pattern for creating and registering CLI commands
+**Pattern**:
+1. Create the command file in `cli/commands/` directory
+2. Import and register the command in `core/cli.js` using `program.command()`
+3. The command should appear in the main CLI help menu
+4. Don't create npm run scripts for CLI commands - they should be accessed via `node cli.js <command>`
+
+**Reason**: This maintains consistency in the ShopWorker CLI interface and ensures all commands are discoverable through the main CLI help system.
+
 ## Development Guidelines
 
 ### Working with the Framework
