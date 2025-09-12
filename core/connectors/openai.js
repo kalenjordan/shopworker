@@ -29,22 +29,6 @@ export class OpenAIAssistantClient {
     };
   }
 
-  /**
-   * Format quiz responses for OpenAI assistant
-   * @param {Array} quizResponses - Array of quiz question/answer objects
-   * @returns {string} Formatted prompt for the assistant
-   */
-  formatQuizResponses(quizResponses) {
-    const formattedResponses = quizResponses.map(item => {
-      const question = item.question_title;
-      const answer = Array.isArray(item.question_value) 
-        ? item.question_value.join(', ') 
-        : item.question_value;
-      return `Q: ${question}\nA: ${answer}`;
-    }).join('\n\n');
-
-    return `Please analyze these skincare quiz responses and provide personalized routine recommendations:\n\n${formattedResponses}`;
-  }
 
   /**
    * Create a thread for the conversation
@@ -157,23 +141,22 @@ export class OpenAIAssistantClient {
   }
 
   /**
-   * Process quiz responses with the OpenAI assistant
-   * @param {Array} quizResponses - Array of quiz question/answer objects
+   * Process content with the OpenAI assistant
+   * @param {string} content - Content to send to the assistant
    * @returns {Promise<Object>} Parsed assistant response
    */
-  async processQuizResponses(quizResponses) {
+  async processContent(content) {
     let lastError;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        console.log(`Processing quiz with OpenAI assistant (attempt ${attempt + 1}/${this.maxRetries + 1})`);
+        console.log(`Processing content with OpenAI assistant (attempt ${attempt + 1}/${this.maxRetries + 1})`);
         
         // Create thread
         const threadId = await this.createThread();
         
-        // Format and add message
-        const formattedPrompt = this.formatQuizResponses(quizResponses);
-        await this.addMessage(threadId, formattedPrompt);
+        // Add message
+        await this.addMessage(threadId, content);
         
         // Run assistant
         const runId = await this.runAssistant(threadId);
@@ -181,7 +164,7 @@ export class OpenAIAssistantClient {
         // Wait for completion and get result
         const result = await this.waitForRunCompletion(threadId, runId);
         
-        console.log('Successfully processed quiz with OpenAI assistant');
+        console.log('Successfully processed content with OpenAI assistant');
         return result;
         
       } catch (error) {
