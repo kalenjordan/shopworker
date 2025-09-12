@@ -9,6 +9,7 @@ export function registerTestCommand(program, projectRoot) {
     .option('-q, --query <queryString>', 'Query string to filter results (e.g. "status:any")')
     .option('-s, --shop <shopDomain>', 'Override the shop domain in the job config')
     .option('-l, --limit <number>', 'Override the limit for the number of records to fetch (default: 1)', parseInt)
+    .option('-p, --params <params>', 'Override or add payload parameters (JSON or key=value pairs)')
     .option('--dry-run [boolean]', 'Override the dry run setting in the job config (true/false)', (value) => {
       if (value === 'false') return false;
       if (value === 'true') return true;

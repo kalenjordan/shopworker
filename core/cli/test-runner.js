@@ -1,6 +1,43 @@
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
+
+/**
+ * Parse command-line parameters from various formats
+ * Supports: JSON, URL query string format (key=value&key=value), or single key=value
+ * @param {string} params - Parameter string from command line
+ * @returns {Object} Parsed parameters object
+ */
+function parseParams(params) {
+  // First try to parse as JSON
+  if (params.startsWith('{')) {
+    try {
+      return JSON.parse(params);
+    } catch (e) {
+      // Not valid JSON, fall through to key=value parsing
+    }
+  }
+  
+  // Parse as key=value pairs (& separated like URL query strings)
+  const result = {};
+  const pairs = params.includes('&') ? params.split('&') : [params];
+  
+  for (const pair of pairs) {
+    const [key, ...valueParts] = pair.trim().split('=');
+    if (key && valueParts.length > 0) {
+      const value = valueParts.join('='); // Handle values with = in them
+      // Try to parse value as JSON for nested objects/arrays
+      try {
+        result[key] = JSON.parse(value);
+      } catch (e) {
+        // If not JSON, treat as string
+        result[key] = value;
+      }
+    }
+  }
+  
+  return result;
+}
 import chalk from 'chalk';
 import { loadJobConfig, loadTriggerConfig } from './job-discovery.js';
 import { initShopify } from '../shared/shopify.js';
@@ -10,12 +47,12 @@ import { getShopConfig, loadSecrets } from '../shared/config-helpers.js';
  * Find a sample record for testing a job
  * @param {string} cliDirname - The directory where cli.js is located (project root)
  * @param {string} jobPath - The job path relative to jobs/
- * @param {string} queryParam - Optional query parameter for filtering results
- * @param {string} shopParam - Optional shop domain to override the one in job config
+ * @param {Object} options - Options object containing query, shop, params, etc.
  * @returns {Promise<{record: Object, recordName: string, shopify: Object, triggerConfig: Object, jobConfig: Object}>}
  * The sample record and related configuration
  */
-export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, shopParam) {
+export async function findSampleRecordForJob(cliDirname, jobPath, options = {}) {
+  const { query: queryParam, shop: shopParam } = options;
   const jobConfig = loadJobConfig(jobPath);
   if (!jobConfig.trigger) {
     throw new Error(`Job ${jobPath} doesn't have a trigger defined`);
@@ -51,34 +88,46 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
 
   // Handle webrequest triggers with test payloads
   if (jobConfig.trigger === 'webrequest') {
-    if (!jobConfig.test) {
-      throw new Error(`Job ${jobPath} has trigger 'webrequest' but is missing 'test' configuration in config.json`);
+    let record = {};
+    
+    // Check if test configuration exists and file is present
+    if (jobConfig.test && jobConfig.test.webhookPayload) {
+      const payloadPath = path.resolve(cliDirname, jobPath, jobConfig.test.webhookPayload);
+      
+      if (fs.existsSync(payloadPath)) {
+        console.log("Loading webrequest payload from fixtures...");
+        console.log(`Using webrequest payload from: ${jobConfig.test.webhookPayload}`);
+        try {
+          const payloadContent = fs.readFileSync(payloadPath, 'utf8');
+          record = JSON.parse(payloadContent);
+        } catch (error) {
+          throw new Error(`Failed to load webrequest payload from ${payloadPath}: ${error.message}`);
+        }
+      } else if (!options.params) {
+        // Only warn if no params provided via CLI
+        console.log(chalk.yellow(`Warning: Webrequest payload file not found: ${payloadPath}`));
+        console.log(chalk.yellow('Using empty payload. Provide parameters via --params flag.'));
+      }
+    } else if (!options.params) {
+      console.log(chalk.yellow('No test payload configured. Using empty payload.'));
+      console.log(chalk.yellow('Provide parameters via --params flag.'));
     }
-    if (!jobConfig.test.webhookPayload || typeof jobConfig.test.webhookPayload !== 'string') {
-      throw new Error(`Job ${jobPath} has trigger 'webrequest' but is missing 'test.webhookPayload' file path in config.json`);
+    
+    // Apply command-line parameter overrides if provided
+    if (options.params) {
+      const paramOverrides = parseParams(options.params);
+      record = { ...record, ...paramOverrides };
+      console.log(chalk.yellow('Applied parameter overrides:'), paramOverrides);
     }
-
-    console.log("Loading webrequest payload from fixtures...");
-    // Use the path specified in jobConfig.test.webhookPayload, relative to the job directory
-    const payloadPath = path.resolve(cliDirname, jobPath, jobConfig.test.webhookPayload);
-    if (!fs.existsSync(payloadPath)) {
-      throw new Error(`Webrequest payload file not found: ${payloadPath}. Please ensure the file exists at the path specified in config.json.`);
-    }
-    console.log(`Using webrequest payload from: ${jobConfig.test.webhookPayload}`);
-    try {
-      const payloadContent = fs.readFileSync(payloadPath, 'utf8');
-      const record = JSON.parse(payloadContent);
-      const recordName = `webrequest-payload-${path.basename(payloadPath)}`;
-      return {
-        record,
-        recordName,
-        shopify,
-        triggerConfig,
-        jobConfig: configToUse
-      };
-    } catch (error) {
-      throw new Error(`Failed to load webrequest payload from ${payloadPath}: ${error.message}`);
-    }
+    
+    const recordName = `webrequest-payload`;
+    return {
+      record,
+      recordName,
+      shopify,
+      triggerConfig,
+      jobConfig: configToUse
+    };
   }
 
   // Check if this is a webhook job and validate required test configuration
@@ -102,7 +151,15 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
     console.log(`Using webhook payload from: ${jobConfig.test.webhookPayload}`);
     try {
       const payloadContent = fs.readFileSync(payloadPath, 'utf8');
-      const record = JSON.parse(payloadContent);
+      let record = JSON.parse(payloadContent);
+      
+      // Apply command-line parameter overrides if provided
+      if (options.params) {
+        const paramOverrides = parseParams(options.params);
+        record = { ...record, ...paramOverrides };
+        console.log(chalk.yellow('Applied parameter overrides:'), paramOverrides);
+      }
+      
       const recordName = `webhook-payload-${path.basename(payloadPath)}`;
       return {
         record,
@@ -161,7 +218,7 @@ export async function findSampleRecordForJob(cliDirname, jobPath, queryParam, sh
  * @param {Object} options - CLI options object containing query, shop, limit, dryRun, etc.
  */
 export async function runJobTest(cliDirname, jobPath, options) {
-  const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobPath, options.query, options.shop);
+  const { record, recordName, shopify, topLevelKey, jobConfig } = await findSampleRecordForJob(cliDirname, jobPath, options);
 
   // Start with the base job config
   let configToUse = jobConfig;
