@@ -6,6 +6,8 @@ This guide covers creating and editing custom ShopWorker jobs in the local direc
 
 - **local/jobs/** - Create ALL your custom jobs here (in subdirectories)
 - **local/triggers/** - Create custom triggers here if needed
+- **local/shared/** - Shared utilities and helpers for jobs
+- **local/migrations/** - Database migration files
 
 ## Quick Start for Job Creation
 
@@ -91,6 +93,61 @@ The `process()` function receives:
 ### Testing Jobs
 - Don't test jobs via prompts. The user can test jobs via the test feature.
 
+## Shared Utilities
+
+The `local/shared/` directory contains reusable utilities for jobs:
+
+### Available Utilities
+
+1. **database.js** - Database operations with automatic snake_case to camelCase conversion
+   ```javascript
+   import { createQuizDatabase, QuizDatabase } from '../../shared/database.js';
+   ```
+
+2. **response-utils.js** - Common response formatting functions
+   ```javascript
+   import { createSuccessResponse, createErrorResponse } from '../../shared/response-utils.js';
+   ```
+
+3. **quiz-constants.js** - Shared configuration constants
+   ```javascript
+   import { OPENAI_CONFIG, RESPONSE_FIELDS } from '../../shared/quiz-constants.js';
+   ```
+
+### Naming Conventions
+
+**IMPORTANT**: Maintain consistent naming across your codebase:
+
+- **JavaScript/JSON**: Use `camelCase` for all properties
+  - Example: `responseTime`, `shopDomain`, `createdAt`
+- **SQL/Database**: Use `snake_case` for column names
+  - Example: `response_time`, `shop_domain`, `created_at`
+- **Automatic Conversion**: The database layer in `shared/database.js` automatically converts between snake_case (database) and camelCase (JavaScript)
+
+### Using Shared Utilities in Jobs
+
+When creating jobs that need common functionality:
+
+1. **For API responses**: Use the response utilities instead of creating custom response functions
+2. **For database access**: Use the shared database module which handles naming conversion
+3. **For configuration**: Import constants from quiz-constants.js instead of hardcoding values
+
+Example job structure with shared utilities:
+```javascript
+import { createSuccessResponse, createErrorResponse } from '../../shared/response-utils.js';
+import { createQuizDatabase, QuizDatabase } from '../../shared/database.js';
+
+export async function process({ payload, shopConfig, env }) {
+  try {
+    // Your job logic here
+    const data = { /* ... */ };
+    return createSuccessResponse(data, "Operation successful");
+  } catch (error) {
+    return createErrorResponse(error.message, 500);
+  }
+}
+```
+
 ## Available Triggers
 Check **core/triggers/** and **local/triggers/** for webhook topics you can use in config.json.
 
@@ -102,9 +159,11 @@ If you need a trigger not listed:
 ## Database Operations
 
 ### Using the Database in Jobs
+- Import database operations from `local/shared/database.js` for quiz-related operations
 - Access the D1 database through the `env.QUIZ_DB` binding in job functions
 - Use standard SQL queries with prepared statements for safety
 - Database operations should always be wrapped in `step.do()` calls for durability
+- The database layer automatically converts snake_case (SQL) to camelCase (JavaScript)
 
 ### Database Migrations
 - **Migration files** are located in `local/migrations/` directory

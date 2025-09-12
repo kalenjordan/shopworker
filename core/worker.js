@@ -356,6 +356,34 @@ async function executeJobSynchronously(jobPath, jobConfig, shopDomain, bodyData,
 }
 
 /**
+ * Create a properly formatted response for webrequest jobs
+ * @param {Object} result - The job execution result
+ * @param {string} origin - The request origin for CORS headers
+ * @returns {Response} Formatted HTTP response
+ */
+function createWebrequestResponse(result, origin) {
+  const statusCode = result.statusCode || 200;
+  const isTextResponse = result.headers?.['Content-Type'] === 'text/plain';
+  
+  // Build response headers
+  const headers = {
+    "Content-Type": isTextResponse ? 'text/plain' : CONTENT_TYPE_JSON,
+    ...getCorsHeaders(origin),
+    ...(result.headers || {})
+  };
+  
+  // Format response body based on content type
+  const responseBody = isTextResponse 
+    ? result.body 
+    : JSON.stringify(result.body || result);
+  
+  return new Response(responseBody, {
+    status: statusCode,
+    headers
+  });
+}
+
+/**
  * Process the webhook request
  */
 async function _handleRequest(request, env) {
@@ -377,29 +405,7 @@ async function _handleRequest(request, env) {
   if (jobConfig.trigger === "webrequest") {
     // Execute job synchronously and return result
     const result = await executeJobSynchronously(jobPath, jobConfig, resolvedShopDomain, bodyData, shopConfig, env);
-    
-    // If result has a status code, use it, otherwise default to 200
-    const statusCode = result.statusCode || 200;
-    
-    // If result has headers, include them
-    const headers = {
-      "Content-Type": CONTENT_TYPE_JSON,
-      ...getCorsHeaders(request.headers.get("Origin")),
-      ...(result.headers || {})
-    };
-    
-    // Check if the response should be plain text
-    const isTextResponse = result.headers && result.headers['Content-Type'] === 'text/plain';
-    
-    // Return the job result as the HTTP response
-    const responseBody = isTextResponse 
-      ? result.body 
-      : JSON.stringify(result.body || result);
-    
-    return new Response(responseBody, {
-      status: statusCode,
-      headers
-    });
+    return createWebrequestResponse(result, request.headers.get("Origin"));
   }
 
   // Handle large payloads for async processing

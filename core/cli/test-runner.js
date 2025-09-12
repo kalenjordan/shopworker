@@ -9,39 +9,98 @@ import { pathToFileURL } from 'url';
  * @returns {Object} Parsed parameters object
  */
 function parseParams(params) {
-  // First try to parse as JSON
   if (params.startsWith('{')) {
-    try {
-      return JSON.parse(params);
-    } catch (e) {
-      // Not valid JSON, fall through to key=value parsing
-    }
+    return parseJsonParams(params);
   }
-  
-  // Parse as key=value pairs (& separated like URL query strings)
-  const result = {};
+  return parseKeyValueParams(params);
+}
+
+/**
+ * Parse JSON format parameters
+ * @param {string} params - JSON string
+ * @returns {Object} Parsed JSON object
+ */
+function parseJsonParams(params) {
+  try {
+    return JSON.parse(params);
+  } catch (e) {
+    // If JSON parsing fails, try key-value parsing as fallback
+    return parseKeyValueParams(params);
+  }
+}
+
+/**
+ * Parse key=value format parameters
+ * @param {string} params - Key-value pairs string
+ * @returns {Object} Parsed parameters object
+ */
+function parseKeyValueParams(params) {
   const pairs = params.includes('&') ? params.split('&') : [params];
+  const result = {};
   
   for (const pair of pairs) {
     const [key, ...valueParts] = pair.trim().split('=');
     if (key && valueParts.length > 0) {
       const value = valueParts.join('='); // Handle values with = in them
-      // Try to parse value as JSON for nested objects/arrays
-      try {
-        result[key] = JSON.parse(value);
-      } catch (e) {
-        // If not JSON, treat as string
-        result[key] = value;
-      }
+      result[key] = parseParamValue(value);
     }
   }
   
   return result;
 }
+
+/**
+ * Parse a parameter value, attempting JSON parse first
+ * @param {string} value - The value to parse
+ * @returns {*} Parsed value or original string
+ */
+function parseParamValue(value) {
+  try {
+    return JSON.parse(value);
+  } catch (e) {
+    return value; // Return as string if not valid JSON
+  }
+}
 import chalk from 'chalk';
 import { loadJobConfig, loadTriggerConfig } from './job-discovery.js';
 import { initShopify } from '../shared/shopify.js';
 import { getShopConfig, loadSecrets } from '../shared/config-helpers.js';
+
+/**
+ * Display a webrequest response in appropriate format
+ * @param {Object} result - The job result to display
+ */
+function displayWebrequestResponse(result) {
+  console.log(chalk.green('\n📤 Webrequest Response:'));
+  
+  const isTextResponse = result.headers?.['Content-Type'] === 'text/plain';
+  
+  if (isTextResponse) {
+    displayTextResponse(result);
+  } else {
+    displayJsonResponse(result);
+  }
+}
+
+/**
+ * Display a text response with formatting
+ * @param {Object} result - The job result with text body
+ */
+function displayTextResponse(result) {
+  console.log(chalk.gray('Status:'), result.statusCode);
+  console.log(chalk.gray('Content-Type:'), 'text/plain');
+  console.log(chalk.gray('\n--- Response Body ---\n'));
+  console.log(result.body);
+  console.log(chalk.gray('\n--- End Response ---'));
+}
+
+/**
+ * Display a JSON response with formatting
+ * @param {Object} result - The job result to display as JSON
+ */
+function displayJsonResponse(result) {
+  console.log(JSON.stringify(result, null, 2));
+}
 
 /**
  * Find a sample record for testing a job
@@ -322,19 +381,7 @@ export async function runJobTest(cliDirname, jobPath, options) {
 
   // For webrequest jobs, show the response that would be returned
   if (jobConfig.trigger === 'webrequest') {
-    console.log(chalk.green('\n📤 Webrequest Response:'));
-    
-    // Check if the response is plain text
-    if (result.headers && result.headers['Content-Type'] === 'text/plain') {
-      console.log(chalk.gray('Status:'), result.statusCode);
-      console.log(chalk.gray('Content-Type:'), 'text/plain');
-      console.log(chalk.gray('\n--- Response Body ---\n'));
-      console.log(result.body);
-      console.log(chalk.gray('\n--- End Response ---'));
-    } else {
-      // JSON response
-      console.log(JSON.stringify(result, null, 2));
-    }
+    displayWebrequestResponse(result);
   }
 
   console.log('Processing complete!');
