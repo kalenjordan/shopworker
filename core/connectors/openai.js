@@ -50,6 +50,7 @@ export class OpenAIChatClient {
     this.maxRetries = options.maxRetries || MAX_RETRIES;
     this.temperature = options.temperature || 0.7;
     this.maxTokens = options.maxTokens || 4000;
+    this.debug = options.debug || false; // Debug mode disabled by default
   }
 
   /**
@@ -98,8 +99,10 @@ export class OpenAIChatClient {
       requestBody.temperature = this.temperature;
     }
     
-    // Log the request body for debugging
-    console.log('OpenAI API Request Body:', JSON.stringify(requestBody, null, 2));
+    // Log the request body if debug mode is enabled
+    if (this.debug) {
+      console.log('OpenAI API Request Body:', JSON.stringify(requestBody, null, 2));
+    }
     
     const response = await fetch(`${OPENAI_API_BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -113,8 +116,11 @@ export class OpenAIChatClient {
     }
 
     const jsonResponse = await response.json();
-    console.log('API Response Status:', response.status);
-    console.log('API Response Headers:', Object.fromEntries(response.headers.entries()));
+    
+    if (this.debug) {
+      console.log('API Response Status:', response.status);
+      console.log('API Response Headers:', Object.fromEntries(response.headers.entries()));
+    }
     
     return jsonResponse;
   }
@@ -137,41 +143,54 @@ export class OpenAIChatClient {
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
         const startTime = Date.now();
-        console.log(`Processing content with OpenAI ${this.model} (attempt ${attempt + 1}/${this.maxRetries + 1})`);
+        if (this.debug) {
+          console.log(`Processing content with OpenAI ${this.model} (attempt ${attempt + 1}/${this.maxRetries + 1})`);
+        }
         
         const response = await this.callChatCompletion(messages, responseSchema);
         const runtime = Date.now() - startTime;
         
-        // Log raw response for debugging
-        console.log('OpenAI Raw Response:', JSON.stringify(response, null, 2));
+        // Log raw response if debug mode is enabled
+        if (this.debug) {
+          console.log('OpenAI Raw Response:', JSON.stringify(response, null, 2));
+        }
         
         // Extract the response content
         const content = response.choices[0]?.message?.content;
         if (!content) {
-          console.error('Failed to extract content from response:', {
-            hasChoices: !!response.choices,
-            choicesLength: response.choices?.length,
-            firstChoice: response.choices?.[0],
-            message: response.choices?.[0]?.message
-          });
+          if (this.debug) {
+            console.error('Failed to extract content from response:', {
+              hasChoices: !!response.choices,
+              choicesLength: response.choices?.length,
+              firstChoice: response.choices?.[0],
+              message: response.choices?.[0]?.message
+            });
+          }
           throw new Error('No valid response from OpenAI');
         }
         
         // Parse JSON response
-        console.log('Content to parse:', content);
+        if (this.debug) {
+          console.log('Content to parse:', content);
+        }
         let result;
         try {
           result = JSON.parse(content);
         } catch (parseError) {
-          console.error('Failed to parse JSON response:', parseError.message);
-          console.error('Raw content:', content);
+          if (this.debug) {
+            console.error('Failed to parse JSON response:', parseError.message);
+            console.error('Raw content:', content);
+          }
           throw new Error(`Invalid JSON in OpenAI response: ${parseError.message}`);
         }
         
         const reasoningInfo = this.model.startsWith('gpt-5') && response.usage?.reasoning_tokens
           ? ` (${response.usage.reasoning_tokens} reasoning tokens)`
           : '';
-        console.log(`Successfully processed content with OpenAI ${this.model} in ${runtime}ms${reasoningInfo}`);
+        
+        if (this.debug) {
+          console.log(`Successfully processed content with OpenAI ${this.model} in ${runtime}ms${reasoningInfo}`);
+        }
         
         // Include token usage information for GPT-5 models
         const returnData = { result, runtime };
@@ -182,13 +201,17 @@ export class OpenAIChatClient {
         return returnData;
         
       } catch (error) {
-        console.error(`OpenAI attempt ${attempt + 1} failed:`, error.message);
+        if (this.debug) {
+          console.error(`OpenAI attempt ${attempt + 1} failed:`, error.message);
+        }
         lastError = error;
         
         // Don't retry on the last attempt
         if (attempt < this.maxRetries) {
           const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
-          console.log(`Retrying in ${delay}ms...`);
+          if (this.debug) {
+            console.log(`Retrying in ${delay}ms...`);
+          }
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
@@ -205,6 +228,7 @@ export class OpenAIAssistantClient {
     this.assistantId = assistantId;
     this.timeout = options.timeout || DEFAULT_TIMEOUT;
     this.maxRetries = options.maxRetries || MAX_RETRIES;
+    this.debug = options.debug || false; // Debug mode disabled by default
   }
 
   getHeaders() {
@@ -316,23 +340,31 @@ export class OpenAIAssistantClient {
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        console.log(`Processing content with OpenAI assistant (attempt ${attempt + 1}/${this.maxRetries + 1})`);
+        if (this.debug) {
+          console.log(`Processing content with OpenAI assistant (attempt ${attempt + 1}/${this.maxRetries + 1})`);
+        }
         
         const threadId = await this.createThread();
         await this.addMessage(threadId, content);
         const runId = await this.runAssistant(threadId);
         const result = await this.waitForRunCompletion(threadId, runId);
         
-        console.log('Successfully processed content with OpenAI assistant');
+        if (this.debug) {
+          console.log('Successfully processed content with OpenAI assistant');
+        }
         return result;
         
       } catch (error) {
-        console.error(`OpenAI assistant attempt ${attempt + 1} failed:`, error.message);
+        if (this.debug) {
+          console.error(`OpenAI assistant attempt ${attempt + 1} failed:`, error.message);
+        }
         lastError = error;
         
         if (attempt < this.maxRetries) {
           const delay = Math.pow(2, attempt) * 1000;
-          console.log(`Retrying in ${delay}ms...`);
+          if (this.debug) {
+            console.log(`Retrying in ${delay}ms...`);
+          }
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
