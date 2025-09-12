@@ -51,7 +51,7 @@ ShopWorker is a framework for building Shopify webhook-driven automation jobs.
 ### Migration Development Workflow
 1. Create new migration files in `local/migrations/` with incremental numbers
 2. Test migrations locally if needed using Wrangler D1 local development
-3. Apply migrations to remote database using `wrangler d1 migrations apply shopworker`
+3. Apply migrations to remote database using `wrangler d1 migrations apply shopworker --remote`
 4. Deploy the worker to ensure the application code matches the database schema
 
 ## Getting Help
