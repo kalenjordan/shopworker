@@ -56,17 +56,33 @@ export function generateJobLoader() {
   const coreJobs = findJobs(coreJobsDir, path.join(projectRoot, 'core', 'jobs'));
   const localJobs = findJobs(localJobsDir, path.join(projectRoot, 'local', 'jobs'));
   
-  // Track all jobs with their source
+  // Track all jobs with their source and validate uniqueness by job name
   const allJobs = new Map();
+  const jobNameMap = new Map(); // jobName -> { source, fullPath }
   
   // Add core jobs
   for (const jobPath of coreJobs) {
-    allJobs.set(jobPath, { source: 'core', path: jobPath });
+    // Use the full path as the job name (e.g., "order/create-test" or "hello-world")
+    const jobName = jobPath;
+    allJobs.set(jobPath, { source: 'core', path: jobPath, name: jobName });
+    jobNameMap.set(jobName, { source: 'core', fullPath: `core/jobs/${jobPath}` });
   }
   
-  // Add local jobs (overrides core if same path)
+  // Add local jobs and check for conflicts
   for (const jobPath of localJobs) {
-    allJobs.set(jobPath, { source: 'local', path: jobPath });
+    // Use the full path as the job name (e.g., "quiz-get" or "some/nested/job")
+    const jobName = jobPath;
+    
+    if (jobNameMap.has(jobName)) {
+      const existing = jobNameMap.get(jobName);
+      throw new Error(
+        `Job name conflict: "${jobName}" exists in both ${existing.source} (${existing.fullPath}) and local (local/jobs/${jobPath}). ` +
+        `Job names must be unique across core and local directories.`
+      );
+    }
+    
+    allJobs.set(jobPath, { source: 'local', path: jobPath, name: jobName });
+    jobNameMap.set(jobName, { source: 'local', fullPath: `local/jobs/${jobPath}` });
   }
   
   // Generate import statements for each job
@@ -109,6 +125,13 @@ export const jobModules = {
 ${jobModules.join(',\n')}
 };
 
+// Job name to path mapping for clean URL routing
+export const jobNameToPath = {
+${Array.from(jobNameMap.entries()).map(([name, info]) => 
+  `  '${name}': '${info.fullPath.replace(/^(core|local)\/jobs\//, '')}'`
+).join(',\n')}
+};
+
 export function getJobModule(jobPath) {
   const job = jobModules[jobPath];
   if (!job) {
@@ -123,6 +146,14 @@ export function getJobConfig(jobPath) {
     throw new Error(\`Job not found: \${jobPath}\`);
   }
   return job.config;
+}
+
+export function getJobPathFromName(jobName) {
+  const jobPath = jobNameToPath[jobName];
+  if (!jobPath) {
+    throw new Error(\`Job not found: \${jobName}\`);
+  }
+  return jobPath;
 }
 `;
   

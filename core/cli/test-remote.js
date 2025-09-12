@@ -133,9 +133,11 @@ export async function getTestRecordId(cliDirname, jobPath, options) {
  * @returns {Object} Object containing Shopify webhook URL and payload
  */
 export function prepareShopifyWebhookRequest(workerUrl, jobPath, payload, shopDomain, configOverrides = null) {
-  // Format Shopify webhook URL
+  // Format webhook URL with job name in path
   const webhookUrl = new URL(workerUrl);
-  webhookUrl.searchParams.set('job', jobPath);
+  // Clean the job path by removing local/jobs/ or core/jobs/ prefix
+  const jobName = jobPath.replace(/^(local|core)\/jobs\//, '');
+  webhookUrl.pathname = `/${jobName}`;
   const shopifyWebhookAddress = webhookUrl.toString();
 
   // Pass payload as-is (shop_domain is handled separately by the worker)

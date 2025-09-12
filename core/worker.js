@@ -4,7 +4,7 @@
 
 import { createShopifyClient } from "./shared/shopify.js";
 import { hmacSha256 } from "./shared/crypto.js";
-import { loadJobConfig as workerLoadJobConfig, loadJobModule } from "./worker/job-loader.js";
+import { loadJobConfig as workerLoadJobConfig, loadJobModule, resolveJobPath } from "./worker/job-loader.js";
 import { JobDispatcher } from "./workflow.js";
 
 // Constants
@@ -92,17 +92,21 @@ function findShopConfig(shopworkerConfig, shopDomain) {
 }
 
 /**
- * Get job path from URL parameters
+ * Get job name from URL path and resolve to full job path
  */
 function getJobPathFromUrl(request) {
   const url = new URL(request.url);
-  const jobPath = url.searchParams.get("job");
+  const pathname = url.pathname;
+  
+  // Extract job name from path (remove leading slash)
+  const jobName = pathname.replace(/^\//, '');
 
-  if (!jobPath) {
-    throw new Error("Job path must be specified in the URL");
+  if (!jobName) {
+    throw new Error("Job name must be specified in the URL path");
   }
 
-  return jobPath;
+  // Resolve job name to full path
+  return resolveJobPath(jobName);
 }
 
 /**
@@ -220,18 +224,17 @@ async function parseWebhookRequest(request) {
   // Handle GET requests for webrequest jobs
   if (request.method === "GET") {
     const url = new URL(request.url);
-    const jobPath = url.searchParams.get("job");
+    const jobName = url.pathname.replace(/^\//, '');
     
     // Check if this is a webrequest job
     try {
+      const jobPath = resolveJobPath(jobName);
       const jobConfig = await loadJobConfig(jobPath);
       if (jobConfig.trigger === "webrequest") {
         // For webrequest GET requests, use query parameters as payload
         const queryParams = {};
         for (const [key, value] of url.searchParams.entries()) {
-          if (key !== "job") {  // Exclude the job parameter
-            queryParams[key] = value;
-          }
+          queryParams[key] = value;
         }
         
         return { 
@@ -437,7 +440,7 @@ async function handleRequest(request, env) {
         });
       }
     } catch (error) {
-      // If job path is invalid, still return CORS headers for OPTIONS
+      // If job name is invalid, still return CORS headers for OPTIONS
       return new Response(null, {
         status: 204,
         headers: getCorsHeaders(request.headers.get("Origin"))
@@ -461,7 +464,7 @@ async function handleRequest(request, env) {
         return new Response("GET method only allowed for webrequest jobs", { status: 405 });
       }
     } catch (error) {
-      return new Response("Invalid job path for GET request", { status: 400 });
+      return new Response("Invalid job name for GET request", { status: 400 });
     }
   }
 

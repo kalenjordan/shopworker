@@ -3,7 +3,7 @@
  * These functions use statically imported jobs for Cloudflare Workers compatibility
  */
 
-import { getJobModule, getJobConfig } from './job-loader-generated.js';
+import { getJobModule, getJobConfig, getJobPathFromName } from './job-loader-generated.js';
 
 /**
  * Load job configuration in the worker environment
@@ -25,6 +25,15 @@ export async function loadJobConfig(jobPath) {
       throw new Error(`Job not found: ${jobPath}`);
     }
   }
+}
+
+/**
+ * Resolve job name to full job path
+ * @param {string} jobName - The job name (e.g., 'quiz-get')
+ * @returns {string} The full job path
+ */
+export function resolveJobPath(jobName) {
+  return getJobPathFromName(jobName);
 }
 
 /**
