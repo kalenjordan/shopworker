@@ -158,20 +158,8 @@ class SQLiteDatabaseAdapter {
   }
 
   async createTables() {
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS quiz_sessions (
-        id TEXT PRIMARY KEY,
-        questions TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        shop_domain TEXT NOT NULL
-      );
-      
-      CREATE INDEX IF NOT EXISTS idx_quiz_sessions_shop_domain 
-      ON quiz_sessions(shop_domain);
-      
-      CREATE INDEX IF NOT EXISTS idx_quiz_sessions_created_at 
-      ON quiz_sessions(created_at);
-    `);
+    // Generic tables can be created here if needed
+    // Specific table schemas should be handled by local migrations
   }
 
   async execute(query, params = []) {
@@ -196,76 +184,13 @@ class SQLiteDatabaseAdapter {
 }
 
 /**
- * Create a database connector instance for quiz operations
+ * Create a generic database connector instance
  * @param {Object} config - Configuration options
  * @param {string} config.sqliteFile - SQLite file path for local environment
  * @returns {DatabaseConnector} Database connector instance
  */
-export function createQuizDatabase(config = {}) {
+export function createDatabase(config = {}) {
   return new DatabaseConnector({
     sqliteFile: config.sqliteFile || './data/shopworker.db'
   });
-}
-
-/**
- * Quiz-specific database operations
- */
-export class QuizDatabase {
-  constructor(dbConnector) {
-    this.db = dbConnector;
-  }
-
-  /**
-   * Save a quiz session
-   * @param {string} sessionHash - Unique session identifier
-   * @param {Array} questions - Array of quiz questions
-   * @param {string} shopDomain - Shop domain
-   * @returns {Promise<Object>} Save result
-   */
-  async saveQuizSession(sessionHash, questions, shopDomain) {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const questionsJson = JSON.stringify(questions);
-
-    return this.db.execute(
-      'INSERT INTO quiz_sessions (id, questions, created_at, shop_domain) VALUES (?, ?, ?, ?)',
-      [sessionHash, questionsJson, timestamp, shopDomain]
-    );
-  }
-
-  /**
-   * Get a quiz session by hash and shop domain
-   * @param {string} sessionHash - Session identifier
-   * @param {string} shopDomain - Shop domain
-   * @returns {Promise<Object|null>} Quiz session data or null
-   */
-  async getQuizSession(sessionHash, shopDomain) {
-    const result = await this.db.first(
-      'SELECT id, questions, created_at, shop_domain FROM quiz_sessions WHERE id = ? AND shop_domain = ?',
-      [sessionHash, shopDomain]
-    );
-
-    if (result && result.questions) {
-      try {
-        result.questions = JSON.parse(result.questions);
-      } catch (parseError) {
-        console.error('Error parsing stored questions JSON:', parseError);
-        throw new Error('Data corruption: Unable to parse quiz questions');
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * Get all quiz sessions for a shop (optional, for analytics)
-   * @param {string} shopDomain - Shop domain
-   * @param {number} limit - Maximum number of results
-   * @returns {Promise<Array>} Array of quiz sessions
-   */
-  async getShopQuizSessions(shopDomain, limit = 100) {
-    return this.db.all(
-      'SELECT id, created_at, shop_domain FROM quiz_sessions WHERE shop_domain = ? ORDER BY created_at DESC LIMIT ?',
-      [shopDomain, limit]
-    );
-  }
 }
