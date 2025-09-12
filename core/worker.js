@@ -388,8 +388,15 @@ async function _handleRequest(request, env) {
       ...(result.headers || {})
     };
     
+    // Check if the response should be plain text
+    const isTextResponse = result.headers && result.headers['Content-Type'] === 'text/plain';
+    
     // Return the job result as the HTTP response
-    return new Response(JSON.stringify(result.body || result), {
+    const responseBody = isTextResponse 
+      ? result.body 
+      : JSON.stringify(result.body || result);
+    
+    return new Response(responseBody, {
       status: statusCode,
       headers
     });
