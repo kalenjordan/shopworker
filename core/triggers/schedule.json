@@ -1,0 +1,10 @@
+{
+  "name": "Scheduled Trigger",
+  "description": "A trigger type for jobs that run on a cron schedule",
+  "test": {
+    "data": {
+      "scheduledTime": "2025-01-15T07:00:00Z",
+      "cron": "0 7 * * *"
+    }
+  }
+}

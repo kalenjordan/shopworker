@@ -36,6 +36,7 @@
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
+    "@iarna/toml": "^2.2.5",
     "eslint": "^9.27.0"
   }
 }

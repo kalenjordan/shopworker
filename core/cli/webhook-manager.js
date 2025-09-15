@@ -11,6 +11,40 @@ import WEBHOOK_CREATE_MUTATION from '../graphql/webhookSubscriptionCreate.js';
 import WEBHOOK_DELETE_MUTATION from '../graphql/webhookSubscriptionDelete.js';
 import GET_WEBHOOKS_QUERY from '../graphql/webhooksGet.js';
 import chalk from 'chalk';
+import fs from 'fs';
+import path from 'path';
+import toml from '@iarna/toml';
+
+// ===================================================================
+// Wrangler Configuration Functions
+// ===================================================================
+
+/**
+ * Get active cron expressions from wrangler.toml
+ * @param {string} cliDirname - The directory where cli.js is located (project root)
+ * @returns {Array<string>} Array of active cron expressions
+ */
+function getActiveCronExpressions(cliDirname) {
+  try {
+    const wranglerPath = path.join(cliDirname, 'wrangler.toml');
+    if (!fs.existsSync(wranglerPath)) {
+      return [];
+    }
+
+    const wranglerContent = fs.readFileSync(wranglerPath, 'utf8');
+    const wranglerConfig = toml.parse(wranglerContent);
+
+    if (wranglerConfig.triggers && wranglerConfig.triggers.crons) {
+      // Filter out any non-string values (in case of parsing issues)
+      return wranglerConfig.triggers.crons.filter(cron => typeof cron === 'string');
+    }
+
+    return [];
+  } catch (error) {
+    console.warn('Failed to parse wrangler.toml for cron expressions:', error.message);
+    return [];
+  }
+}
 
 // ===================================================================
 // Webhook Utility Functions
@@ -251,6 +285,20 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
       ...baseInfo,
       displayTopic,
       statusMsg: 'Enabled',
+      webhookIdSuffix: '-'
+    };
+  }
+
+  // For scheduled triggers, check if enabled in wrangler.toml
+  if (jobConfig.trigger === 'schedule') {
+    const cronExpression = jobConfig.schedule || 'Not configured';
+    const activeCrons = getActiveCronExpressions(cliDirname);
+    const isEnabled = activeCrons.includes(cronExpression);
+
+    return {
+      ...baseInfo,
+      displayTopic: `schedule (${cronExpression})`,
+      statusMsg: isEnabled ? 'Enabled' : 'Disabled',
       webhookIdSuffix: '-'
     };
   }

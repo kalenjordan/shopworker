@@ -266,6 +266,13 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
     // For manual triggers, create an empty payload
     payload = {};
     console.log(chalk.yellow("Using empty payload for manual trigger job"));
+  } else if (configToUse.trigger === 'schedule') {
+    // For scheduled triggers, create a synthetic payload similar to what the scheduled handler provides
+    payload = {
+      scheduledTime: new Date().toISOString(),
+      cron: configToUse.schedule || '* * * * *'
+    };
+    console.log(chalk.yellow("Using synthetic scheduled payload for remote test"));
   } else if (configToUse.trigger === 'webhook') {
     // For Shopworker webhook triggers, load the fixture data
     payload = await loadShopworkerWebhookFixture(cliDirname, jobPath, configToUse);

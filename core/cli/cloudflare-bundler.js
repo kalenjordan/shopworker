@@ -43,10 +43,10 @@ function findJobs(dir, baseDir) {
 }
 
 /**
- * Generates a job loader module that statically imports all jobs
+ * Generates a job manifest module that statically imports all jobs
  * This allows Cloudflare Workers to bundle all job modules at build time
  */
-export function generateJobLoader() {
+export function generateJobManifest() {
   const projectRoot = path.resolve(__dirname, '../..');
   
   // Find all jobs in core and local directories
@@ -94,12 +94,12 @@ export function generateJobLoader() {
     const varName = `job_${index}`;
     const configVarName = `config_${index}`;
     
-    // Determine the actual file path based on source
+    // Determine the actual file path based on source (relative to project root)
     let importPath;
     if (jobInfo.source === 'core') {
-      importPath = `../jobs/${jobPath}/job.js`;
+      importPath = `./core/jobs/${jobPath}/job.js`;
     } else {
-      importPath = `../../local/jobs/${jobPath}/job.js`;
+      importPath = `./local/jobs/${jobPath}/job.js`;
     }
     
     imports.push(`import * as ${varName} from '${importPath}';`);
@@ -113,9 +113,9 @@ export function generateJobLoader() {
     index++;
   }
   
-  // Generate the job loader module
+  // Generate the job manifest module
   const loaderContent = `/**
- * Auto-generated job loader for Cloudflare Workers
+ * Auto-generated job manifest for Cloudflare Workers
  * This file statically imports all jobs to ensure they're bundled at build time
  */
 
@@ -157,14 +157,14 @@ export function getJobPathFromName(jobName) {
 }
 `;
   
-  const outputPath = path.join(projectRoot, 'core/worker/job-loader-generated.js');
+  const outputPath = path.join(projectRoot, 'job-manifest.js');
   fs.writeFileSync(outputPath, loaderContent, 'utf8');
-  
-  console.log(`Generated job loader at ${outputPath}`);
+
+  console.log(`Generated job manifest at ${outputPath}`);
   console.log(`Bundled ${allJobs.size} jobs (${coreJobs.length} core, ${localJobs.length} local)`);
 }
 
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  generateJobLoader();
+  generateJobManifest();
 }

@@ -3,7 +3,7 @@
  * These functions use statically imported jobs for Cloudflare Workers compatibility
  */
 
-import { getJobModule, getJobConfig, getJobPathFromName } from './job-loader-generated.js';
+import { getJobModule, getJobConfig, getJobPathFromName } from '../../job-manifest.js';
 
 /**
  * Load job configuration in the worker environment

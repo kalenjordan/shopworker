@@ -5,6 +5,7 @@
 import { createShopifyClient } from "./shared/shopify.js";
 import { hmacSha256 } from "./shared/crypto.js";
 import { loadJobConfig as workerLoadJobConfig, loadJobModule, resolveJobPath } from "./worker/job-loader.js";
+import { jobModules } from "../job-manifest.js";
 import { JobDispatcher } from "./workflow.js";
 
 // Constants
@@ -499,11 +500,137 @@ async function handleRequest(request, env) {
 }
 
 /**
+ * Find all jobs that match a given cron schedule
+ * @param {string} cronExpression - The cron expression to match
+ * @returns {Array} Array of job paths that match the schedule
+ */
+function findScheduledJobs(cronExpression) {
+  const matchingJobs = [];
+
+  for (const [jobPath, jobData] of Object.entries(jobModules)) {
+    const config = jobData.config;
+    if (config.trigger === "schedule" && config.schedule === cronExpression) {
+      matchingJobs.push(jobPath);
+    }
+  }
+
+  return matchingJobs;
+}
+
+/**
+ * Execute a scheduled job
+ * @param {string} jobPath - The job path to execute
+ * @param {Object} scheduledData - Data about the scheduled execution
+ * @param {Object} env - Environment variables
+ * @returns {Promise<Object>} The workflow ID or execution result
+ */
+async function executeScheduledJob(jobPath, scheduledData, env) {
+  try {
+    const jobConfig = await loadJobConfig(jobPath);
+    const shopworkerConfig = parseShopworkerConfig(env);
+
+    // For scheduled jobs, use the first available shop configuration
+    let shopConfig, shopDomain;
+    if (shopworkerConfig.shopify_domain) {
+      // Single-shop configuration
+      shopConfig = shopworkerConfig;
+      shopDomain = shopworkerConfig.shopify_domain;
+    } else if (shopworkerConfig.shops && shopworkerConfig.shops.length > 0) {
+      // Multi-shop configuration, use first shop as default
+      shopConfig = shopworkerConfig.shops[0];
+      shopDomain = shopConfig.shopify_domain;
+    } else {
+      throw new Error("No shop configuration found for scheduled job");
+    }
+
+    // Create workflow parameters with scheduled data as payload
+    const workflowParams = {
+      shopDomain,
+      jobPath,
+      payload: scheduledData,
+      isLargePayload: false,
+      shopConfig,
+      jobConfig,
+      topic: "shopworker/schedule",
+      timestamp: new Date().toISOString(),
+    };
+
+    // Start workflow
+    const workflowId = await createJobWorkflow(env, workflowParams);
+
+    return {
+      success: true,
+      jobPath,
+      workflowId,
+      scheduledTime: scheduledData.scheduledTime,
+      cron: scheduledData.cron,
+    };
+  } catch (error) {
+    console.error(`Failed to execute scheduled job ${jobPath}:`, error.message, error.stack);
+    return {
+      success: false,
+      jobPath,
+      error: error.message,
+      scheduledTime: scheduledData.scheduledTime,
+      cron: scheduledData.cron,
+    };
+  }
+}
+
+/**
+ * Handle scheduled cron triggers
+ * @param {Object} controller - The scheduled event controller
+ * @param {Object} env - Environment variables
+ * @param {Object} ctx - Execution context
+ */
+async function handleScheduled(controller, env, ctx) {
+  const cronExpression = controller.cron;
+  const scheduledTime = new Date(controller.scheduledTime).toISOString();
+
+  console.log(`Scheduled handler triggered: cron="${cronExpression}", time="${scheduledTime}"`);
+
+  // Find all jobs that match this cron expression
+  const matchingJobs = findScheduledJobs(cronExpression);
+
+  if (matchingJobs.length === 0) {
+    console.warn(`No jobs found for cron expression: ${cronExpression}`);
+    return;
+  }
+
+  console.log(`Found ${matchingJobs.length} job(s) for cron expression: ${cronExpression}`);
+
+  // Execute all matching jobs
+  const results = await Promise.all(
+    matchingJobs.map(jobPath =>
+      executeScheduledJob(jobPath, {
+        scheduledTime,
+        cron: cronExpression,
+      }, env)
+    )
+  );
+
+  // Log results
+  for (const result of results) {
+    if (result.success) {
+      console.log(`Successfully started scheduled job: ${result.jobPath} (workflow: ${result.workflowId})`);
+    } else {
+      console.error(`Failed to start scheduled job: ${result.jobPath} - ${result.error}`);
+    }
+  }
+
+  return results;
+}
+
+/**
  * Main event handler for the Cloudflare Worker
  */
 export default {
   async fetch(request, env, ctx) {
     return await handleRequest(request, env);
+  },
+
+  async scheduled(controller, env, ctx) {
+    return await handleScheduled(controller, env, ctx);
   },
 };
 

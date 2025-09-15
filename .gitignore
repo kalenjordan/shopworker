@@ -1,14 +1,14 @@
 node_modules
 .env
-/wrangler.toml
+.secrets/
+wrangler.toml
 .wrangler
 .shopworker.json
 .shopworker-state.json
 google-sheets-credentials.json
 docs/codebase-structure.md
-.secrets/
 fixtures/
-core/worker/job-loader-generated.js
+job-manifest.js
 
 # Account-specific local directory (symlink)
 /local

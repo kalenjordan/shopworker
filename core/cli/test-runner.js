@@ -211,14 +211,14 @@ export async function findSampleRecordForJob(cliDirname, jobPath, options = {}) 
     try {
       const payloadContent = fs.readFileSync(payloadPath, 'utf8');
       let record = JSON.parse(payloadContent);
-      
+
       // Apply command-line parameter overrides if provided
       if (options.params) {
         const paramOverrides = parseParams(options.params);
         record = { ...record, ...paramOverrides };
         console.log(chalk.yellow('Applied parameter overrides:'), paramOverrides);
       }
-      
+
       const recordName = `webhook-payload-${path.basename(payloadPath)}`;
       return {
         record,
@@ -230,6 +230,32 @@ export async function findSampleRecordForJob(cliDirname, jobPath, options = {}) 
     } catch (error) {
       throw new Error(`Failed to load webhook payload from ${payloadPath}: ${error.message}`);
     }
+  }
+
+  // Check if this is a scheduled job test
+  if (jobConfig.trigger === 'schedule') {
+    console.log("Testing scheduled job...");
+    // Create a synthetic payload similar to what the scheduled handler would provide
+    const record = {
+      scheduledTime: new Date().toISOString(),
+      cron: jobConfig.schedule || '* * * * *'
+    };
+
+    // Apply command-line parameter overrides if provided
+    if (options.params) {
+      const paramOverrides = parseParams(options.params);
+      Object.assign(record, paramOverrides);
+      console.log(chalk.yellow('Applied parameter overrides:'), paramOverrides);
+    }
+
+    const recordName = `schedule-test-${jobConfig.schedule || 'default'}`;
+    return {
+      record,
+      recordName,
+      shopify,
+      triggerConfig,
+      jobConfig: configToUse
+    };
   }
 
   if (!triggerConfig.test || !triggerConfig.test.query) {
