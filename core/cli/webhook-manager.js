@@ -21,8 +21,11 @@ function convertToGraphqlTopic(topic) {
 }
 
 function createWebhookUrl(baseUrl, jobPath) {
+  // Use only the job name, not the full path
+  const jobName = cleanJobPath(jobPath);
+  // Create URL with job name in the path, not as a query parameter
   const webhookUrl = new URL(baseUrl);
-  webhookUrl.searchParams.set('job', jobPath);
+  webhookUrl.pathname = `/${jobName}`;
   return webhookUrl.toString();
 }
 
@@ -51,8 +54,15 @@ function cleanJobPath(jobPath) {
 function parseJobFromWebhookUrl(webhookUrl) {
   try {
     const url = new URL(webhookUrl);
+    // First check query parameter (for backwards compatibility with old webhooks)
     const jobParam = url.searchParams.get('job');
-    return jobParam ? decodeURIComponent(jobParam) : null;
+    if (jobParam) {
+      return decodeURIComponent(jobParam);
+    }
+
+    // Check path format (new format)
+    const pathname = url.pathname.replace(/^\//, '').replace(/\/$/, '');
+    return pathname || null;
   } catch (e) {
     return null;
   }
@@ -537,9 +547,24 @@ async function displayDetailedWebhookStatus(cliDirname, jobPath, jobConfig, trig
  */
 export async function enableJobWebhook(cliDirname, jobPath, workerUrl) {
   try {
-    // Validate webhook configuration first
-    const { jobConfig, triggerConfig } = loadAndValidateWebhookConfigs(cliDirname, jobPath);
-    if (!jobConfig || !triggerConfig) return;
+    // Load job configuration directly
+    const jobConfig = loadJobConfig(jobPath);
+    if (!jobConfig) {
+      console.error(`Could not load configuration for job: ${jobPath}`);
+      return;
+    }
+
+    // Load trigger configuration
+    if (!jobConfig.trigger) {
+      console.error(`Job ${jobPath} does not have a trigger configured`);
+      return;
+    }
+
+    const triggerConfig = loadTriggerConfig(jobConfig.trigger);
+    if (!triggerConfig || !triggerConfig.webhook) {
+      console.error(`Could not load webhook configuration for trigger: ${jobConfig.trigger}`);
+      return;
+    }
 
     const webhookAddress = createWebhookUrl(workerUrl, jobPath);
     console.log(`Shop: ${chalk.magenta(jobConfig.shop)}`);
@@ -668,9 +693,24 @@ async function createWebhook(shopify, topic, webhookSubscription) {
  */
 export async function disableJobWebhook(cliDirname, jobPath, workerUrl) {
   try {
-    // Validate webhook configuration first
-    const { jobConfig, triggerConfig } = loadAndValidateWebhookConfigs(cliDirname, jobPath);
-    if (!jobConfig || !triggerConfig) return;
+    // Load job configuration directly
+    const jobConfig = loadJobConfig(jobPath);
+    if (!jobConfig) {
+      console.error(`Could not load configuration for job: ${jobPath}`);
+      return;
+    }
+
+    // Load trigger configuration
+    if (!jobConfig.trigger) {
+      console.error(`Job ${jobPath} does not have a trigger configured`);
+      return;
+    }
+
+    const triggerConfig = loadTriggerConfig(jobConfig.trigger);
+    if (!triggerConfig || !triggerConfig.webhook) {
+      console.error(`Could not load webhook configuration for trigger: ${jobConfig.trigger}`);
+      return;
+    }
 
     const webhookAddress = createWebhookUrl(workerUrl, jobPath);
     console.log(`Shop: ${chalk.magenta(jobConfig.shop)}`);
