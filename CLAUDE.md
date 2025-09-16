@@ -46,6 +46,30 @@ ShopWorker is a framework for building Shopify webhook-driven automation jobs.
 - This ensures new projects created via the CLI have the most up-to-date documentation and guidelines
 - Both files should always remain synchronized to maintain consistency across all ShopWorker projects
 
+### Environment Detection
+**Rule**: Always use the utility functions from `core/shared/env.js` to detect runtime environment
+**Why**: Reliable detection of Cloudflare Worker vs CLI/Node.js environments for conditional behavior
+
+**Functions**:
+- `isWorkerEnvironment(env)` - Check if running in Cloudflare Worker
+- `isCliEnvironment(env)` - Check if running in CLI/Node.js environment
+
+**Implementation**: These functions check for `env.PATH` which exists in Node.js but not in Cloudflare Workers
+
+**Example**:
+```javascript
+import { isCliEnvironment, isWorkerEnvironment } from "../../../core/shared/env.js";
+
+// Skip email in CLI, send in Worker
+if (isWorkerEnvironment(env)) {
+  // Send email in production
+} else if (isCliEnvironment(env)) {
+  console.log("Email skipped in CLI environment");
+}
+```
+
+**Avoid**: Never detect environment by checking specific env variables like `env.R2_BUCKET` or `env.SHOPIFY_ACCESS_TOKEN` as these are not reliable indicators.
+
 ### Key Concepts
 - **Jobs** - Webhook-driven automation tasks that respond to Shopify events
 - **Triggers** - Webhook topic definitions that jobs listen to
