@@ -3,6 +3,7 @@ export default `#graphql
     orders(first: 1, query: $tag) {
       nodes {
         id: legacyResourceId
+        name
         tags
       }
     }
