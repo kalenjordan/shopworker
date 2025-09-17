@@ -377,6 +377,22 @@ export async function runJobTest(cliDirname, jobPath, options) {
         const result = await callback();
         // Restore original console.log before logging step completion
         console.log = originalConsoleLog;
+
+        // Display the JSON response in gray if there is a result
+        if (result !== undefined) {
+          const compactJson = JSON.stringify(result);
+          if (compactJson.length > 400) {
+            // For very long responses, truncate to 150 characters
+            const truncated = compactJson.substring(0, 147) + '...';
+            console.log('  ' + chalk.gray(truncated));
+          } else {
+            // For responses under 400 chars, show formatted JSON with indentation
+            const jsonString = JSON.stringify(result, null, 2);
+            const indentedJson = jsonString.split('\n').map(line => '  ' + line).join('\n');
+            console.log(chalk.gray(indentedJson));
+          }
+        }
+
         console.log(chalk.green(`✓ Step completed: ${name}`));
         return result;
       } catch (error) {
