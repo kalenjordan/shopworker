@@ -300,7 +300,7 @@ async function createJobWorkflow(env, params) {
 
   console.log(`Creating workflow with ID: ${workflowId}`);
   
-  await env.JOB_DISPATCHER.create({
+  await env.WORKFLOW.create({
     id: workflowId,
     params,
   });
