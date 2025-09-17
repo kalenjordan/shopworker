@@ -15,8 +15,8 @@ head_sampling_rate = 1 # optional. default = 1.
 
 # Workflows configuration
 [[workflows]]
-binding = "JOB_DISPATCHER"
-name = "job-dispatcher"
+binding = "WORKFLOW"
+name = "{REPONAME}--workflow"
 class_name = "JobDispatcher"
 
 # R2 bucket for storing large job payloads

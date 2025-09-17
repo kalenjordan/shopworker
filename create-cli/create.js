@@ -434,17 +434,19 @@ async function createShopworkerInstance() {
 
   // .gitignore already includes /local from the template, no need to update it
 
-  // Create wrangler.toml file
+  // Create wrangler.toml files (in local directory and root)
+  // Note: The template wrangler.toml is already copied to local by copyTemplateFiles,
+  // but we need to also create one at the root for wrangler commands
   const wranglerSpinner = ora('Creating wrangler.toml...').start();
   try {
-    const wranglerTemplatePath = path.join(__dirname, 'template', 'wrangler.toml');
-    let wranglerContent = await fs.readFile(wranglerTemplatePath, 'utf8');
+    // Read the wrangler.toml that was copied to local directory
+    const localWranglerPath = path.join(localDir, 'wrangler.toml');
+    const wranglerContent = await fs.readFile(localWranglerPath, 'utf8');
 
-    // Replace placeholders
-    wranglerContent = wranglerContent.replace(/\{REPONAME\}/g, repoName);
-
+    // Also write to root (gitignored but needed for wrangler commands)
     await fs.writeFile('wrangler.toml', wranglerContent);
-    wranglerSpinner.succeed('wrangler.toml created');
+
+    wranglerSpinner.succeed('wrangler.toml created in local and root');
   } catch (error) {
     wranglerSpinner.fail('Failed to create wrangler.toml');
     console.error(chalk.red(error.message));
@@ -502,7 +504,7 @@ function showSuccessMessage(isEmptyDir, currentDirName, directory, mainDir, loca
 
   console.log(chalk.cyan('Configuration:'));
   console.log(chalk.white(`  ✓ .shopworker.json created with credentials for ${shopifyDomain}`));
-  console.log(chalk.white(`  ✓ wrangler.toml created with name: ${repoName}`));
+  console.log(chalk.white(`  ✓ wrangler.toml created with name: ${repoName} (in local and root)`));
   console.log(chalk.white(`  ✓ Dependencies installed\n`));
 
   console.log(chalk.cyan('Next steps:'));

@@ -361,6 +361,22 @@ export async function handleCloudflareDeployment(cliDirname, force = false) {
     return false;
   }
 
+  // Copy wrangler.toml from local directory to project root
+  const localWranglerPath = path.join(cliDirname, 'local', 'wrangler.toml');
+  const rootWranglerPath = path.join(cliDirname, 'wrangler.toml');
+
+  try {
+    if (fs.existsSync(localWranglerPath)) {
+      console.log('Copying wrangler.toml from local directory...');
+      fs.copyFileSync(localWranglerPath, rootWranglerPath);
+    } else {
+      console.warn('No wrangler.toml found in local directory, using existing root wrangler.toml');
+    }
+  } catch (error) {
+    console.error('Error copying wrangler.toml:', error.message);
+    return false;
+  }
+
   // Get R2 bucket name from wrangler.toml
   const bucketName = getR2BucketName(cliDirname);
   if (!bucketName) {
