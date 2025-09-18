@@ -36,6 +36,11 @@ ShopWorker is a framework for building Shopify webhook-driven automation jobs.
 - Custom jobs should be created in the `local/` directory
 - CLI commands and framework improvements can be made outside these directories
 
+### Wrangler.toml Management
+- **CRITICAL**: Never modify the root-level `wrangler.toml` directly as it is not version controlled
+- Always make wrangler.toml changes in `local/wrangler.toml` which is properly versioned
+- The root wrangler.toml is generated/deployed from the local version during deployment
+
 ### File Synchronization Requirements
 - **CRITICAL**: Anytime changes are made to `local/CLAUDE.md`, the same changes MUST be applied to `create-cli/template/CLAUDE.md`
 - This ensures new projects created via the CLI have the most up-to-date documentation and guidelines

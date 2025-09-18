@@ -9,6 +9,12 @@ This guide covers creating and editing custom ShopWorker jobs in the local direc
 - **local/shared/** - Shared utilities and helpers for jobs
 - **local/migrations/** - Database migration files
 
+## Wrangler.toml Management
+
+- **CRITICAL**: Never modify the root-level `wrangler.toml` directly as it is not version controlled
+- Always make wrangler.toml changes in `local/wrangler.toml` which is properly versioned
+- The root wrangler.toml is generated/deployed from the local version during deployment
+
 ## Quick Start for Job Creation
 
 When asked to create a new job, follow these steps:
