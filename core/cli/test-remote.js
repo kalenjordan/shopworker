@@ -250,7 +250,7 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
   const workerUrl = validateWorkerUrl(options.worker);
 
     // Load job and trigger configs
-  const { jobConfig, shopifyWebhookTopic } = loadJobConfigsForRemoteTest(jobPath);
+  const { jobConfig, shopifyWebhookTopic } = await loadJobConfigsForRemoteTest(jobPath);
 
   // Apply any job config overrides
   const configToUse = applyJobConfigOverrides(jobConfig, options);
@@ -310,10 +310,10 @@ export async function runJobRemoteTest(cliDirname, jobPath, options) {
 
   // Prepare Shopify webhook payload and URL
   const configOverrides = {};
-  if (options.limit && options.limit !== 1) {
+  if (options.limit) {
     configOverrides.limit = options.limit;
   }
-  if (options.batchSize && options.batchSize !== 50) {
+  if (options.batchSize) {
     configOverrides.batchSize = options.batchSize;
   }
   const finalConfigOverrides = Object.keys(configOverrides).length > 0 ? configOverrides : null;

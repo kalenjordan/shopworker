@@ -6,7 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Recursively finds all job directories containing both config.json and job.js
+ * Recursively finds all job directories containing both a config file (config.js or config.json) and job.js
  * @param {string} dir - Directory to search
  * @param {string} baseDir - Base directory for relative paths
  * @returns {Array} Array of job paths relative to baseDir
@@ -25,10 +25,14 @@ function findJobs(dir, baseDir) {
     
     if (entry.isDirectory()) {
       // Check if this directory contains a job
-      const configPath = path.join(fullPath, 'config.json');
+      const configJsonPath = path.join(fullPath, 'config.json');
+      const configJsPath = path.join(fullPath, 'config.js');
       const jobPath = path.join(fullPath, 'job.js');
-      
-      if (fs.existsSync(configPath) && fs.existsSync(jobPath)) {
+
+      // Check for either config.js or config.json
+      const hasConfig = fs.existsSync(configJsPath) || fs.existsSync(configJsonPath);
+
+      if (hasConfig && fs.existsSync(jobPath)) {
         // This is a job directory
         const relativePath = path.relative(baseDir, fullPath);
         jobs.push(relativePath);
@@ -93,17 +97,34 @@ export function generateJobManifest() {
   for (const [jobPath, jobInfo] of allJobs) {
     const varName = `job_${index}`;
     const configVarName = `config_${index}`;
-    
+
     // Determine the actual file path based on source (relative to project root)
     let importPath;
+    let configImportPath;
     if (jobInfo.source === 'core') {
       importPath = `./core/jobs/${jobPath}/job.js`;
+      // Check which config file exists
+      const configJsPath = path.join(projectRoot, 'core', 'jobs', jobPath, 'config.js');
+      const configJsonPath = path.join(projectRoot, 'core', 'jobs', jobPath, 'config.json');
+      if (fs.existsSync(configJsPath)) {
+        configImportPath = `./core/jobs/${jobPath}/config.js`;
+      } else {
+        configImportPath = `./core/jobs/${jobPath}/config.json`;
+      }
     } else {
       importPath = `./local/jobs/${jobPath}/job.js`;
+      // Check which config file exists
+      const configJsPath = path.join(projectRoot, 'local', 'jobs', jobPath, 'config.js');
+      const configJsonPath = path.join(projectRoot, 'local', 'jobs', jobPath, 'config.json');
+      if (fs.existsSync(configJsPath)) {
+        configImportPath = `./local/jobs/${jobPath}/config.js`;
+      } else {
+        configImportPath = `./local/jobs/${jobPath}/config.json`;
+      }
     }
-    
+
     imports.push(`import * as ${varName} from '${importPath}';`);
-    imports.push(`import ${configVarName} from '${importPath.replace('/job.js', '/config.json')}';`);
+    imports.push(`import ${configVarName} from '${configImportPath}';`);
     
     jobModules.push(`  '${jobPath}': {
     module: ${varName},
