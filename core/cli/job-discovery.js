@@ -18,48 +18,78 @@ const rootDir = path.join(__dirname, '..', '..');  // Go up two levels to get to
 
 /**
  * Resolve config path for a job, checking local first then core
+ * Supports both config.js and config.json (with config.js taking precedence)
  */
 function resolveJobConfigPath(jobPath) {
   const cleanJobPath = jobPath.replace(/^(local|core)\/jobs\//, '');
-  
-  const localPath = path.join(rootDir, 'local', 'jobs', cleanJobPath, 'config.json');
-  const corePath = path.join(rootDir, 'core', 'jobs', cleanJobPath, 'config.json');
-  
-  // Check local first unless explicitly requesting core
-  if (!jobPath.startsWith('core/') && fs.existsSync(localPath)) {
-    return { configPath: localPath, location: 'local', cleanPath: cleanJobPath };
+
+  // Check for both .js and .json extensions
+  const tryPaths = [
+    { base: path.join(rootDir, 'local', 'jobs', cleanJobPath), location: 'local' },
+    { base: path.join(rootDir, 'core', 'jobs', cleanJobPath), location: 'core' },
+    { base: path.join(rootDir, jobPath), location: jobPath.includes('local/') ? 'local' : 'core' }
+  ];
+
+  // Try each path with both extensions
+  for (const { base, location } of tryPaths) {
+    // Skip core paths if explicitly not requesting core
+    if (location === 'core' && !jobPath.startsWith('core/') && tryPaths[0].location === 'local') {
+      // Only check core if local doesn't exist
+      const localJs = path.join(tryPaths[0].base, 'config.js');
+      const localJson = path.join(tryPaths[0].base, 'config.json');
+      if (fs.existsSync(localJs) || fs.existsSync(localJson)) {
+        continue;
+      }
+    }
+
+    // Check for config.js first (takes precedence)
+    const jsPath = path.join(base, 'config.js');
+    if (fs.existsSync(jsPath)) {
+      return { configPath: jsPath, location, cleanPath: cleanJobPath, isJs: true };
+    }
+
+    // Then check for config.json
+    const jsonPath = path.join(base, 'config.json');
+    if (fs.existsSync(jsonPath)) {
+      return { configPath: jsonPath, location, cleanPath: cleanJobPath, isJs: false };
+    }
   }
-  
-  if (fs.existsSync(corePath)) {
-    return { configPath: corePath, location: 'core', cleanPath: cleanJobPath };
-  }
-  
-  // Fallback: check if the path already includes local/jobs or core/jobs
-  const fallbackPath = path.join(rootDir, jobPath, 'config.json');
-  if (fs.existsSync(fallbackPath)) {
-    return { configPath: fallbackPath, location: jobPath.includes('local/') ? 'local' : 'core', cleanPath: cleanJobPath };
-  }
-  
+
   return null;
 }
 
 /**
- * Load a job configuration from a config.json file
+ * Load a job configuration from a config.js or config.json file
  * @param {string} jobPath - The job path relative to jobs/ or fully qualified path
  * @returns {Object} The job configuration
  */
-export function loadJobConfig(jobPath) {
+export async function loadJobConfig(jobPath) {
   try {
     const resolved = resolveJobConfigPath(jobPath);
     if (!resolved) {
       throw new Error(`Config file not found for job: ${jobPath}`);
     }
-    
-    const { configPath, location, cleanPath: cleanJobPath } = resolved;
+
+    const { configPath, location, cleanPath: cleanJobPath, isJs } = resolved;
     const jobLocation = location;
-    
-    const configData = fs.readFileSync(configPath, 'utf8');
-    const config = JSON.parse(configData);
+
+    let config;
+
+    if (isJs) {
+      // Import the JS module
+      const configModule = await import(configPath);
+      // Support both default export and named export
+      config = configModule.default || configModule.config || configModule;
+
+      // If the module exports a function, call it
+      if (typeof config === 'function') {
+        config = config();
+      }
+    } else {
+      // Load JSON file
+      const configData = fs.readFileSync(configPath, 'utf8');
+      config = JSON.parse(configData);
+    }
 
     // Add the jobPath and full path to the config for reference
     config.jobPath = cleanJobPath;
@@ -156,6 +186,7 @@ export function loadTriggerConfig(triggerName) {
  */
 export async function loadJobsConfig() {
   const jobs = {};
+  const loadPromises = [];
 
   // Helper function to scan a job directory
   const scanJobDirectory = (jobsDir, prefix) => {
@@ -163,32 +194,42 @@ export async function loadJobsConfig() {
 
     const findJobDirectories = (dir, relativePath = '') => {
       const entries = fs.readdirSync(dir);
-      
+
       for (const entry of entries) {
         const fullPath = path.join(dir, entry);
         const entryRelativePath = relativePath ? path.join(relativePath, entry) : entry;
-        
+
         if (fs.statSync(fullPath).isDirectory()) {
-          // Check for config.json
-          if (fs.existsSync(path.join(fullPath, 'config.json'))) {
+          // Check for config.js or config.json
+          const hasConfigJs = fs.existsSync(path.join(fullPath, 'config.js'));
+          const hasConfigJson = fs.existsSync(path.join(fullPath, 'config.json'));
+
+          if (hasConfigJs || hasConfigJson) {
             const fullJobPath = path.join(prefix, 'jobs', entryRelativePath);
-            const config = loadJobConfig(fullJobPath);
-            if (config) {
-              jobs[fullJobPath] = config;
-            }
+            const promise = loadJobConfig(fullJobPath).then(config => {
+              if (config) {
+                jobs[fullJobPath] = config;
+              }
+            }).catch(err => {
+              console.error(`Error loading config for ${fullJobPath}:`, err);
+            });
+            loadPromises.push(promise);
           }
           // Recurse into subdirectories
           findJobDirectories(fullPath, entryRelativePath);
         }
       }
     };
-    
+
     findJobDirectories(jobsDir);
   };
 
   // Scan both local and core directories
   scanJobDirectory(path.join(rootDir, 'local', 'jobs'), 'local');
   scanJobDirectory(path.join(rootDir, 'core', 'jobs'), 'core');
+
+  // Wait for all configs to load
+  await Promise.all(loadPromises);
 
   return jobs;
 }
@@ -217,8 +258,11 @@ export const getAvailableJobDirs = (cliDirname, currentDir = null) => {
       const entryRelativePath = prefix ? path.join(prefix, entry) : entry;
 
       if (fs.statSync(fullPath).isDirectory()) {
-        // Check if this directory contains a config.json file
-        if (fs.existsSync(path.join(fullPath, 'config.json'))) {
+        // Check if this directory contains a config.js or config.json file
+        const hasConfigJs = fs.existsSync(path.join(fullPath, 'config.js'));
+        const hasConfigJson = fs.existsSync(path.join(fullPath, 'config.json'));
+
+        if (hasConfigJs || hasConfigJson) {
           jobDirs.add(entryRelativePath);
         }
 
@@ -267,14 +311,14 @@ export const getAvailableJobDirs = (cliDirname, currentDir = null) => {
  * @param {boolean} throwOnError - Whether to throw an error if job is not found (default: true)
  * @returns {string|null} The resolved job directory path, or null if not found and throwOnError is false
  */
-export const ensureAndResolveJobName = (cliDirname, jobNameArg, jobDirOption, throwOnError = true) => {
+export const ensureAndResolveJobName = async (cliDirname, jobNameArg, jobDirOption, throwOnError = true) => {
   // First check if job name was provided as argument
   if (jobNameArg) {
     // Clean up the job name - remove any local/jobs or core/jobs prefix
     const cleanJobName = jobNameArg.replace(/^(local|core)\/jobs\//, '');
     
     // Try to load the job config to verify it exists
-    const config = loadJobConfig(cleanJobName);
+    const config = await loadJobConfig(cleanJobName);
     if (config) {
       // Return the full path from the config
       return config.fullPath;
@@ -293,7 +337,7 @@ export const ensureAndResolveJobName = (cliDirname, jobNameArg, jobDirOption, th
     const cleanJobDir = jobDirOption.replace(/^(local|core)\/jobs\//, '');
     
     // Try to load the job config to verify it exists
-    const config = loadJobConfig(cleanJobDir);
+    const config = await loadJobConfig(cleanJobDir);
     if (config) {
       return config.fullPath;
     }
@@ -342,11 +386,14 @@ export const detectJobDirectory = (cliDirname, currentDir) => {
   const projectRoot = path.resolve(cliDirname);
   
   while (checkDir.startsWith(projectRoot) && checkDir !== projectRoot) {
-    // Check if this directory has a config.json file
-    if (fs.existsSync(path.join(checkDir, 'config.json'))) {
+    // Check if this directory has a config.js or config.json file
+    const hasConfigJs = fs.existsSync(path.join(checkDir, 'config.js'));
+    const hasConfigJson = fs.existsSync(path.join(checkDir, 'config.json'));
+
+    if (hasConfigJs || hasConfigJson) {
       // Found a job directory - determine its path relative to the jobs root
       const relativeToRoot = path.relative(cliDirname, checkDir);
-      
+
       // Return the full path format (e.g., "local/jobs/my-job" or "core/jobs/my-job")
       if (relativeToRoot.includes('local') && relativeToRoot.includes('jobs')) {
         return relativeToRoot;
@@ -354,7 +401,7 @@ export const detectJobDirectory = (cliDirname, currentDir) => {
         return relativeToRoot;
       }
     }
-    
+
     // Move up one directory
     checkDir = path.dirname(checkDir);
   }
@@ -367,15 +414,15 @@ export const detectJobDirectory = (cliDirname, currentDir) => {
  * @param {string} cliDirname - The directory where cli.js is located
  * @returns {Object} Object with validConfigs array and errors array
  */
-export const loadAndValidateWebhookConfigs = (cliDirname) => {
+export const loadAndValidateWebhookConfigs = async (cliDirname) => {
   const validConfigs = [];
   const errors = [];
-  
+
   const jobDirs = getAvailableJobDirs(cliDirname);
-  
+
   for (const jobDir of jobDirs) {
     try {
-      const config = loadJobConfig(jobDir);
+      const config = await loadJobConfig(jobDir);
       if (!config) {
         errors.push({ job: jobDir, error: 'Could not load config' });
         continue;

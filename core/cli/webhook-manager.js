@@ -216,7 +216,7 @@ async function getWebhookStatus(cliDirname, jobPath, triggerConfig, displayName,
   const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
   
   try {
-    const shopifyForJob = initShopify(cliDirname, jobPath);
+    const shopifyForJob = await initShopify(cliDirname, jobPath);
     const response = await shopifyForJob.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
     if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
@@ -247,7 +247,7 @@ export async function getJobDisplayInfo(cliDirname, jobPath) {
   // Load job configuration
   let jobConfig;
   try {
-    jobConfig = loadJobConfig(jobPath);
+    jobConfig = await loadJobConfig(jobPath);
   } catch (e) {
     return handleJobConfigError(jobPath, e);
   }
@@ -413,7 +413,7 @@ async function checkForOrphanedWebhooks(cliDirname, jobDirs) {
 
   for (const jobPath of jobDirs) {
     try {
-      const jobConfig = loadJobConfig(jobPath);
+      const jobConfig = await loadJobConfig(jobPath);
       if (jobConfig && jobConfig.shop) {
         shopNames.add(jobConfig.shop);
       }
@@ -428,7 +428,7 @@ async function checkForOrphanedWebhooks(cliDirname, jobDirs) {
     let jobForShop = null;
     for (const jobPath of jobDirs) {
       try {
-        const jobConfig = loadJobConfig(jobPath);
+        const jobConfig = await loadJobConfig(jobPath);
         if (jobConfig && jobConfig.shop === shopName) {
           jobForShop = jobPath;
           break;
@@ -441,7 +441,7 @@ async function checkForOrphanedWebhooks(cliDirname, jobDirs) {
     if (!jobForShop) continue;
 
     try {
-      const shopify = initShopify(cliDirname, jobForShop);
+      const shopify = await initShopify(cliDirname, jobForShop);
       const response = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
       if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
@@ -494,7 +494,7 @@ export async function getAllJobDisplayInfo(cliDirname, jobDirs) {
  */
 export async function handleSingleJobStatus(cliDirname, jobPath) {
   try {
-    const jobConfig = loadJobConfig(jobPath);
+    const jobConfig = await loadJobConfig(jobPath);
     if (!jobConfig) {
       console.error(`Error: Could not load job configuration for ${jobPath}`);
       return;
@@ -539,7 +539,7 @@ async function displayDetailedWebhookStatus(cliDirname, jobPath, jobConfig, trig
   const graphqlTopic = convertToGraphqlTopic(triggerConfig.webhook.topic);
 
   try {
-    const shopifyForJob = initShopify(cliDirname, jobPath);
+    const shopifyForJob = await initShopify(cliDirname, jobPath);
     const response = await shopifyForJob.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
     if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
@@ -596,7 +596,7 @@ async function displayDetailedWebhookStatus(cliDirname, jobPath, jobConfig, trig
 export async function enableJobWebhook(cliDirname, jobPath, workerUrl) {
   try {
     // Load job configuration directly
-    const jobConfig = loadJobConfig(jobPath);
+    const jobConfig = await loadJobConfig(jobPath);
     if (!jobConfig) {
       console.error(`Could not load configuration for job: ${jobPath}`);
       return;
@@ -621,7 +621,7 @@ export async function enableJobWebhook(cliDirname, jobPath, workerUrl) {
     console.log(`Endpoint: ${webhookAddress}`);
 
     // Check if subscription already exists
-    const shopify = initShopify(cliDirname, jobPath);
+    const shopify = await initShopify(cliDirname, jobPath);
     const response = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
     if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
@@ -742,7 +742,7 @@ async function createWebhook(shopify, topic, webhookSubscription) {
 export async function disableJobWebhook(cliDirname, jobPath, workerUrl) {
   try {
     // Load job configuration directly
-    const jobConfig = loadJobConfig(jobPath);
+    const jobConfig = await loadJobConfig(jobPath);
     if (!jobConfig) {
       console.error(`Could not load configuration for job: ${jobPath}`);
       return;
@@ -767,7 +767,7 @@ export async function disableJobWebhook(cliDirname, jobPath, workerUrl) {
     console.log(`Endpoint: ${webhookAddress}`);
 
     // Find the subscription
-    const shopify = initShopify(cliDirname, jobPath);
+    const shopify = await initShopify(cliDirname, jobPath);
     const response = await shopify.graphql(GET_WEBHOOKS_QUERY, { first: 100 });
 
     if (!isValidResponse(response, 'webhookSubscriptions.nodes')) {
@@ -866,7 +866,7 @@ async function deleteWebhook(shopify, webhookId) {
  */
 export async function deleteWebhookById(cliDirname, jobPath, webhookId) {
   try {
-    const jobConfig = loadJobConfig(jobPath);
+    const jobConfig = await loadJobConfig(jobPath);
     if (!jobConfig) {
       console.error(`Error: Could not load job configuration for ${jobPath}`);
       return;
@@ -877,7 +877,7 @@ export async function deleteWebhookById(cliDirname, jobPath, webhookId) {
     console.log(`For job: ${chalk.blue(jobConfig.name || jobPath)}`);
     console.log(`Deleting webhook ID: ${webhookId}`);
 
-    const shopify = initShopify(cliDirname, jobPath);
+    const shopify = await initShopify(cliDirname, jobPath);
     await deleteWebhook(shopify, fullWebhookId);
 
     console.log(chalk.green('\n✓ Webhook deleted successfully'));

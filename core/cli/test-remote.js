@@ -25,8 +25,8 @@ export function validateWorkerUrl(workerUrlOption) {
  * @returns {Object} Object containing job config, trigger config, and Shopify webhook topic
  * @throws {Error} If job config cannot be loaded
  */
-export function loadJobConfigsForRemoteTest(jobPath) {
-  const jobConfig = loadJobConfig(jobPath);
+export async function loadJobConfigsForRemoteTest(jobPath) {
+  const jobConfig = await loadJobConfig(jobPath);
   if (!jobConfig) {
     throw new Error(`Could not load configuration for job: ${jobPath}`);
   }

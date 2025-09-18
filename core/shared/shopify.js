@@ -208,28 +208,19 @@ export function createShopifyClient({ shop, accessToken, apiVersion = '2025-04',
  * @param {string} shopParam - Optional shop domain or name to override the one in job config
  * @returns {Object} The Shopify client
  */
-export function initShopify(cliDir, jobPath, shopParam) {
+export async function initShopify(cliDir, jobPath, shopParam) {
   try {
     if (!jobPath) {
       throw new Error('jobPath is required to initialize Shopify client.');
     }
 
-    // Strip the local/jobs/ or core/jobs/ prefix if present
-    const cleanJobPath = jobPath.replace(/^(local|core)\/jobs\//, '');
+    // Use the job-discovery module to load config (supports both .js and .json)
+    const { loadJobConfig } = await import('../cli/job-discovery.js');
+    const jobConfig = await loadJobConfig(jobPath);
 
-    // First try local jobs directory
-    let jobConfigPath = path.join(cliDir, 'local', 'jobs', cleanJobPath, 'config.json');
-    
-    if (!fs.existsSync(jobConfigPath)) {
-      // If not found in local, try core jobs directory
-      jobConfigPath = path.join(cliDir, 'core', 'jobs', cleanJobPath, 'config.json');
-      
-      if (!fs.existsSync(jobConfigPath)) {
-        throw new Error(`Job configuration file not found in either local or core directories for: ${cleanJobPath}`);
-      }
+    if (!jobConfig) {
+      throw new Error(`Could not load job configuration for: ${jobPath}`);
     }
-    const jobConfigFile = fs.readFileSync(jobConfigPath, 'utf8');
-    const jobConfig = JSON.parse(jobConfigFile);
 
     // Get shop identifier from job config
     let shopIdentifier = jobConfig.shop;

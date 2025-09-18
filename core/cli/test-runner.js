@@ -112,7 +112,7 @@ function displayJsonResponse(result) {
  */
 export async function findSampleRecordForJob(cliDirname, jobPath, options = {}) {
   const { query: queryParam, shop: shopParam } = options;
-  const jobConfig = loadJobConfig(jobPath);
+  const jobConfig = await loadJobConfig(jobPath);
   if (!jobConfig.trigger) {
     throw new Error(`Job ${jobPath} doesn't have a trigger defined`);
   }
@@ -133,7 +133,7 @@ export async function findSampleRecordForJob(cliDirname, jobPath, options = {}) 
     console.log(chalk.yellow(`Overriding shop with: ${shopConfig.name} (${shopConfig.shopify_domain})`));
   }
 
-  const shopify = initShopify(cliDirname, jobPath, shopParam);
+  const shopify = await initShopify(cliDirname, jobPath, shopParam);
 
   if (jobConfig.trigger === 'manual') {
     return {
