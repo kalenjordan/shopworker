@@ -17,7 +17,8 @@ import {
   registerRemoteTestCommand,
   registerDeleteWebhookCommand,
   registerWebhooksCommand,
-  registerDbCommand
+  registerDbCommand,
+  registerWorkflowRunsCommand
 } from './core/cli/commands/index.js';
 
 // Get directory name in ESM
@@ -48,5 +49,6 @@ registerRemoteTestCommand(program, projectRoot);
 registerDeleteWebhookCommand(program, projectRoot);
 registerWebhooksCommand(program, projectRoot);
 registerDbCommand(program, projectRoot);
+registerWorkflowRunsCommand(program, projectRoot);
 
 program.parse(process.argv);

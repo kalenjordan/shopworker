@@ -12,3 +12,4 @@ export { registerRemoteTestCommand } from './remote-test.js';
 export { registerDeleteWebhookCommand } from './delete-webhook.js';
 export { registerWebhooksCommand } from './webhooks.js';
 export { registerDbCommand } from './db.js';
+export { registerWorkflowRunsCommand } from './workflow-runs.js';
