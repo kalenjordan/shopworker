@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import readline from 'readline';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -460,4 +461,96 @@ export const loadAndValidateWebhookConfigs = async (cliDirname) => {
   }
   
   return { validConfigs, errors };
+};
+
+/**
+ * Interactively prompt user to select a job from available jobs
+ * @param {string} cliDirname - The directory where cli.js is located (project root)
+ * @returns {Promise<string>} The selected job path
+ * @throws {Error} If no job is selected or invalid selection
+ */
+export const selectJobInteractively = async (cliDirname) => {
+  // Get all available jobs (both local and core)
+  const jobDirs = getAvailableJobDirs(cliDirname);
+
+  if (jobDirs.length === 0) {
+    throw new Error('No jobs found in the project');
+  }
+
+  // Load job configs to get titles
+  const jobsWithInfo = [];
+  for (const jobDir of jobDirs) {
+    try {
+      const config = await loadJobConfig(jobDir);
+      const cleanName = jobDir.replace(/^(local|core)\/jobs\//, '');
+      const isLocal = jobDir.startsWith('local/');
+
+      jobsWithInfo.push({
+        path: jobDir,
+        name: cleanName,
+        title: config?.title || 'No title',
+        trigger: config?.trigger || 'No trigger',
+        type: isLocal ? 'Local' : 'Core'
+      });
+    } catch (error) {
+      // Skip jobs that can't be loaded
+      console.warn(`Warning: Could not load job ${jobDir}: ${error.message}`);
+    }
+  }
+
+  if (jobsWithInfo.length === 0) {
+    throw new Error('No valid jobs found');
+  }
+
+  // Sort jobs: local first, then alphabetically by name
+  jobsWithInfo.sort((a, b) => {
+    if (a.type !== b.type) {
+      return a.type === 'Local' ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  // Display numbered list with better formatting
+  console.log('\n📋 Available jobs:\n');
+
+  let currentType = null;
+  jobsWithInfo.forEach((job, index) => {
+    // Add section headers
+    if (job.type !== currentType) {
+      currentType = job.type;
+      console.log(`  ${currentType} Jobs:`);
+    }
+
+    // Format: number. name - title [trigger]
+    const triggerInfo = job.trigger ? ` [${job.trigger}]` : '';
+    console.log(`    ${index + 1}. ${job.name} - ${job.title}${triggerInfo}`);
+  });
+
+  // Create readline interface for user input
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  // Prompt user for selection
+  const answer = await new Promise((resolve) => {
+    rl.question('\n🔢 Select a job number (or press Enter to cancel): ', resolve);
+  });
+  rl.close();
+
+  // Handle empty input (cancel)
+  if (!answer.trim()) {
+    throw new Error('No job selected');
+  }
+
+  // Parse and validate selection
+  const selection = parseInt(answer);
+  if (isNaN(selection) || selection < 1 || selection > jobsWithInfo.length) {
+    throw new Error(`Invalid selection: ${answer}. Please enter a number between 1 and ${jobsWithInfo.length}`);
+  }
+
+  // Return the selected job path
+  const selectedJob = jobsWithInfo[selection - 1];
+  console.log(`\n✅ Selected: ${selectedJob.name} - ${selectedJob.title}\n`);
+  return selectedJob.path;
 };
