@@ -362,9 +362,18 @@ export async function runJobTest(cliDirname, jobPath, options) {
 
   // Create a mock step object for CLI execution
   const step = {
-    do: async (name, callback) => {
-      console.log(chalk.blue(`→ Step: ${name}`));
-      
+    do: async (name, optionsOrCallback, callbackIfOptions) => {
+      // Handle both signatures: (name, callback) and (name, options, callback)
+      const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : callbackIfOptions;
+      const options = typeof optionsOrCallback === 'function' ? {} : optionsOrCallback;
+
+      // Log step name with retry info if configured
+      if (options.retries) {
+        console.log(chalk.blue(`→ Step: ${name} (with ${options.retries.limit} retries)`));
+      } else {
+        console.log(chalk.blue(`→ Step: ${name}`));
+      }
+
       // Store original console.log to restore later
       const originalConsoleLog = console.log;
       
