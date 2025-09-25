@@ -21,6 +21,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@inquirer/select": "^4.3.4",
     "acorn": "^8.11.3",
     "acorn-walk": "^8.3.2",
     "better-sqlite3": "^12.2.0",

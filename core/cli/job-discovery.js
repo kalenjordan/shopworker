@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import readline from 'readline';
+import select from '@inquirer/select';
 
 // Get directory name in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -510,47 +511,46 @@ export const selectJobInteractively = async (cliDirname) => {
     return a.name.localeCompare(b.name);
   });
 
-  // Display numbered list with better formatting
-  console.log('\n📋 Available jobs:\n');
-
+  // Create choices for inquirer select
+  const choices = [];
   let currentType = null;
-  jobsWithInfo.forEach((job, index) => {
-    // Add section headers
+
+  jobsWithInfo.forEach((job) => {
+    // Add section separators
     if (job.type !== currentType) {
       currentType = job.type;
-      console.log(`  ${currentType} Jobs:`);
+      choices.push({
+        name: `━━━ ${currentType} Jobs ━━━`,
+        value: null,
+        disabled: true
+      });
     }
 
-    // Format: number. name - title [trigger]
+    // Format: name - title [trigger]
     const triggerInfo = job.trigger ? ` [${job.trigger}]` : '';
-    console.log(`    ${index + 1}. ${job.name} - ${job.title}${triggerInfo}`);
+    choices.push({
+      name: `${job.name} - ${job.title}${triggerInfo}`,
+      value: job.path,
+      description: `Type: ${job.type} | Trigger: ${job.trigger}`
+    });
   });
 
-  // Create readline interface for user input
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
+  try {
+    // Use inquirer select with arrow key navigation
+    const selectedPath = await select({
+      message: 'Select a job to test (use arrow keys):',
+      choices: choices,
+      pageSize: 15,  // Show 15 items at a time
+      loop: true     // Allow looping from bottom to top
+    });
 
-  // Prompt user for selection
-  const answer = await new Promise((resolve) => {
-    rl.question('\n🔢 Select a job number (or press Enter to cancel): ', resolve);
-  });
-  rl.close();
+    // Find the selected job info for display
+    const selectedJob = jobsWithInfo.find(job => job.path === selectedPath);
+    console.log(`\n✅ Selected: ${selectedJob.name} - ${selectedJob.title}\n`);
 
-  // Handle empty input (cancel)
-  if (!answer.trim()) {
+    return selectedPath;
+  } catch (error) {
+    // User cancelled (Ctrl+C or Esc)
     throw new Error('No job selected');
   }
-
-  // Parse and validate selection
-  const selection = parseInt(answer);
-  if (isNaN(selection) || selection < 1 || selection > jobsWithInfo.length) {
-    throw new Error(`Invalid selection: ${answer}. Please enter a number between 1 and ${jobsWithInfo.length}`);
-  }
-
-  // Return the selected job path
-  const selectedJob = jobsWithInfo[selection - 1];
-  console.log(`\n✅ Selected: ${selectedJob.name} - ${selectedJob.title}\n`);
-  return selectedJob.path;
 };
