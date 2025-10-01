@@ -7,6 +7,7 @@
  * Send an email using Resend API
  * @param {Object} options - Email options
  * @param {string} options.to - Recipient email address (or array of addresses)
+ * @param {string} [options.cc] - CC email address (or array of addresses)
  * @param {string} options.from - Sender email address
  * @param {string} [options.replyTo] - Reply-to email address
  * @param {string} options.subject - Email subject
@@ -24,7 +25,7 @@ export async function sendEmail(options, apiKey) {
     throw new Error('Resend API key is required');
   }
 
-  const { to, from, replyTo, subject, text, html, attachments } = options;
+  const { to, cc, from, replyTo, subject, text, html, attachments } = options;
 
   if (!to || !from || !subject) {
     throw new Error('to, from, and subject are required fields');
@@ -37,6 +38,11 @@ export async function sendEmail(options, apiKey) {
     from,
     subject
   };
+
+  // Add cc if provided
+  if (cc) {
+    emailData.cc = Array.isArray(cc) ? cc : [cc];
+  }
 
   // Add reply-to if provided
   if (replyTo) {
