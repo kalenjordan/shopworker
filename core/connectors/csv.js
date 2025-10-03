@@ -228,7 +228,7 @@ export function joinArray(value, separator = ', ') {
  * @param {string} [options.contentType] - MIME type for R2 storage
  * @param {Object} [options.metadata] - Custom metadata for R2 storage
  * @param {Object} env - Environment object (should contain R2_BUCKET for worker env)
- * @returns {Promise<void>}
+ * @returns {Promise<string>} Returns the storage path
  */
 export async function saveFile(content, options, env) {
   const { filename, contentType = 'text/plain', metadata = {} } = options;
@@ -250,6 +250,7 @@ export async function saveFile(content, options, env) {
           ...metadata
         }
       });
+      return r2Path;
     } catch (error) {
       console.error(`✗ Failed to save file to R2: ${error.message}`);
       throw error;
@@ -264,6 +265,7 @@ export async function saveFile(content, options, env) {
 
       const desktopPath = path.join(os.homedir(), 'Desktop', filename);
       fs.writeFileSync(desktopPath, content, 'utf8');
+      return filename; // Return just filename so loadContent knows to look on Desktop
     } catch (error) {
       console.error(`✗ Failed to save file to Desktop: ${error.message}`);
       throw error;
