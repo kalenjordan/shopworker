@@ -1,33 +1,38 @@
-# Shopworker CLI
+# ShopWorker
 
-A CLI tool for creating and managing Shopify automation jobs using the Admin API.
-
-## Using with Cursor
-
-This tool is designed to be used with Cursor to one-shot or few-shot prompt most use cases. With Cursor's AI-powered coding assistant, you can quickly generate job implementations by describing what you want to accomplish.
-
-### Example: Order Created External API Job
-
-The [order-created-external-api](/jobs/order-created-external-api) job is an example of a job that was created with this prompt:
-
-> Create a job that triggers when an order is created and hits an external API at https://jsonplaceholder.typicode.com/posts/1 - gets the body from that json and sets it as the custom message on the orderInvoiceSend mutation
-
-The job that it generated:
-
-1. Triggers on order creation
-2. Pings an external API endpoint
-3. Uses a field from the response
-4. Passes the data into the invoice send mutation
-
+A framework for building Shopify webhook-driven automation jobs that run on Cloudflare Workers.
 
 ## Installation
 
-1. Clone this repository
-2. Create a `.env` file based on the `env.example` template
-3. Install dependencies:
-   ```
-   npm install
-   ```
+Create a new ShopWorker instance using npx:
+
+```bash
+npx create-shopworker
+```
+
+This will:
+1. Clone the main ShopWorker repository
+2. Create a GitHub repository for your account-specific code
+3. Set up a `local/` directory (cloned from your account repo) for your custom jobs
+4. Create `.shopworker.json` with your Shopify credentials
+5. Install dependencies
+
+## Project Structure
+
+```
+your-project/
+├── core/                  # ShopWorker framework (reference only)
+│   ├── jobs/             # Example jobs (order, product, review, webrequest-example)
+│   ├── triggers/         # Available webhook triggers
+│   └── graphql/          # Reusable GraphQL queries
+├── local/                # Your account-specific code (separate git repo)
+│   ├── jobs/            # Your custom jobs go here
+│   ├── triggers/        # Custom webhook triggers
+│   └── wrangler.toml    # Your deployment configuration
+└── cli/                  # Command-line tools
+```
+
+The `local/` directory is a separate git repository for your account-specific customizations, while `core/` contains the ShopWorker framework code.
 
 ## Quick Start
 
@@ -36,22 +41,10 @@ The job that it generated:
 To see the status of all jobs in your project:
 
 ```bash
-npm run status
+node cli.js status
 ```
 
-Example output:
-```
-JOB STATUS SUMMARY
---------------------------------------------------------------------------------
-JOB                            TRIGGER              STATUS          WEBHOOK ID
---------------------------------------------------------------------------------
-order-create                   manual               MANUAL          N/A
-order-created-external-api     orders/create        ENABLED         1393197220026
-order-created-tag-skus         orders/create        NOT CONFIGURED  None for this job
-product-create                 manual-trigger       MANUAL          N/A
-product-created-metafield      products/create      ENABLED         1393191649466
---------------------------------------------------------------------------------
-```
+This shows the status of all jobs in both `core/jobs/` and `local/jobs/`.
 
 Status types:
 - `MANUAL`: Job is triggered manually (no webhook needed)
@@ -64,7 +57,7 @@ Status types:
 To enable a job by registering a webhook:
 
 ```bash
-npm run enable -- order-created-tag-skus
+node cli.js enable your-job-name
 ```
 
 This will create a webhook in your Shopify store that triggers the job.
@@ -74,127 +67,113 @@ This will create a webhook in your Shopify store that triggers the job.
 To disable a job by removing its webhook:
 
 ```bash
-npm run disable -- order-created-tag-skus
+node cli.js disable your-job-name
 ```
 
 ### Test a Job
 
-To test a job with the most recent data:
+To test a job locally with sample data:
 
 ```bash
-npm run test -- order-created-tag-skus
+node cli.js test your-job-name
 ```
 
-You can filter the test data:
+You can provide custom parameters:
 
 ```bash
-npm run test -- order-created-tag-skus --query "created_at:>2023-01-01"
-```
-
-To test a job when you're already in the job directory:
-
-```bash
-cd jobs/order-created-tag-skus
-npm test
+node cli.js test your-job-name --param key=value
 ```
 
 ## Creating New Jobs
 
-Jobs are located in the `jobs/` directory. Each job has:
+Create your custom jobs in the `local/jobs/` directory. Each job requires:
 - `config.json`: Specifies which trigger to use
 - `job.js`: The job implementation
 
 Example job structure:
 ```javascript
-// jobs/example-job/job.js
-export async function process(data, shopify) {
-  console.log("Processing:", data);
-
-  // Your job logic here
-  const response = await shopify.graphql(YourGraphQLQuery, variables);
+// local/jobs/example-job/job.js
+/**
+ * Brief description of what this job does
+ */
+export async function process({ payload, shopify, step, env }) {
+  // Use step.do() for all operations
+  const result = await step.do("operation-name", async () => {
+    // Your job logic here
+    return await shopify.graphql(YourGraphQLQuery, variables);
+  });
 
   console.log("Job completed successfully!");
 }
 ```
 
-## Available Jobs
+See `local/CLAUDE.md` for detailed job development guidelines.
 
-- **order-create**: Creates a new order manually
-- **order-created-external-api**: Adds data from an external API to order invoices
-- **order-created-tag-skus**: Tags orders with the SKUs of line items
-- **product-create**: Creates a new product with random details
-- **product-created-metafield**: Adds a metafield to newly created products
+## Example Jobs
+
+The `core/jobs/` directory contains example jobs for reference:
+
+- **order**: Order processing examples
+- **product**: Product management examples
+- **review**: Review handling examples
+- **webrequest-example**: Web request handling patterns
+
+Your custom jobs go in `local/jobs/` and are specific to your Shopify store's needs.
+
+## Configuration
+
+ShopWorker uses `.shopworker.json` for Shopify credentials (created by `npx create-shopworker`):
+
+```json
+{
+  "shopify_domain": "your-store.myshopify.com",
+  "shopify_token": "shpat_...",
+  "shopify_api_secret_key": "..."
+}
+```
+
+Your Cloudflare account ID is configured in `local/wrangler.toml`.
 
 ## Deployment
 
 ### Deploying to Cloudflare Workers
 
-To deploy your jobs to Cloudflare Workers:
-
-1. Install Wrangler CLI:
+1. Ensure you have Wrangler CLI installed (should be installed via npm):
    ```bash
-   npm install -g wrangler
+   npx wrangler login
    ```
 
-2. Create a `wrangler.toml` file using the example template:
+2. Update `local/wrangler.toml` with your configuration if needed (this file is version controlled)
+
+3. Deploy using the CLI:
    ```bash
-   cp wrangler.toml.example wrangler.toml
+   node cli.js deploy
    ```
 
-3. Update your `wrangler.toml` file with your account details and environment variables:
-   ```toml
-   name = "shopworker"
-   main = "worker.js"
-   compatibility_date = "2023-06-01"
+   The deploy command automatically:
+   - Copies `local/wrangler.toml` to the root (for wrangler to use)
+   - Deploys your worker to Cloudflare
+   - Applies any pending database migrations
 
-   [vars]
-   SHOP = "your-shop.myshopify.com"
-   # Add any other environment variables your worker needs
-   ```
-
-4. Authenticate with Cloudflare:
+4. Enable your jobs to register webhooks:
    ```bash
-   wrangler login
+   node cli.js enable your-job-name
    ```
 
-5. Deploy the worker:
-   ```bash
-   wrangler publish
-   ```
+**Note:** The root `wrangler.toml` is gitignored and automatically synced from `local/wrangler.toml` during deployment. Always edit `local/wrangler.toml`, never the root one.
 
-6. Once deployed, update your `.env` file with the worker URL:
-   ```
-   CLOUDFLARE_WORKER_URL=https://shopworker.your-account.workers.dev
-   ```
+## Updating ShopWorker Framework
 
-7. Enable your jobs using the CLI to register webhooks pointing to your worker:
-   ```bash
-   npm run enable -- your-job-name
-   ```
+To update the core ShopWorker framework:
 
-For more details on Cloudflare Workers, see the [Cloudflare Workers documentation](https://developers.cloudflare.com/workers/).
-
-## Environment Variables
-
-Create a `.env` file with:
-
-```
-SHOPIFY_ACCESS_TOKEN=your_access_token
-SHOP=your-shop.myshopify.com
-CLOUDFLARE_WORKER_URL=https://your-worker-url.workers.dev
+```bash
+git pull origin master
 ```
 
-- `SHOPIFY_ACCESS_TOKEN`: Your Shopify admin API access token
-- `SHOP`: Your shop URL
-- `CLOUDFLARE_WORKER_URL`: URL for your Cloudflare worker (for webhook delivery)
+Your `local/` directory is a separate repository, so framework updates won't affect your custom jobs.
 
-## TODOS:
+## Learn More
 
-- Implement cloudflare job queue
-- Add documentation related to forking and merging upstream changes in
-
-
-git clone --origin upstream https://github.com/kalenjordan/shopworker shopworker-new
-cd shopworker-new
-git remote rename origin upstream
-git remote add origin https://github.com/kalenjordan/shopworker-new
+- See `CLAUDE.md` for development guidelines
+- See `local/CLAUDE.md` for job creation patterns
+- Check `core/jobs/` for example implementations
