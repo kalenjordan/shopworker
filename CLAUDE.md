@@ -29,6 +29,37 @@ ShopWorker is a framework for building Shopify webhook-driven automation jobs.
 
 **Reason**: This maintains consistency in the ShopWorker CLI interface and ensures all commands are discoverable through the main CLI help system.
 
+### Terminal Output Formatting
+**Rule**: Always use the `chalk` library for colored terminal output in CLI commands
+**Reason**: Ensures consistent, readable terminal output across all CLI commands and avoids raw ANSI escape codes
+
+**Pattern**:
+1. Import chalk at the top of CLI command files: `import chalk from 'chalk';`
+2. Use built-in color methods for standard colors: `chalk.red()`, `chalk.green()`, `chalk.gray()`, etc.
+3. Use `chalk.hex()` for custom colors like orange: `chalk.hex('#FFA500')('text')`
+4. Never use raw ANSI escape codes when chalk is available
+
+**Examples**:
+```javascript
+import chalk from 'chalk';
+
+// Standard colors
+console.log(chalk.green('Success!'));
+console.log(chalk.red('Error occurred'));
+console.log(chalk.gray('Disabled item'));
+
+// Custom colors
+console.log(chalk.hex('#FFA500')('Warning: Check configuration'));
+
+// Combined styling
+const config = {
+  'Enabled': { symbol: '✓', color: chalk.green },
+  'Disabled': { symbol: '✗', color: chalk.gray }
+};
+```
+
+**Reference**: See `core/cli/display-formatter.js` and other CLI command files for consistent usage patterns
+
 ## Development Guidelines
 
 ### Working with the Framework

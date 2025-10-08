@@ -1,5 +1,8 @@
 import { detectJobDirectory, ensureAndResolveJobName } from '../job-discovery.js';
 import { handleAllJobsStatus, handleSingleJobStatus } from '../webhook-manager.js';
+import { execSync } from 'child_process';
+import path from 'path';
+import chalk from 'chalk';
 
 export function registerStatusCommand(program, projectRoot) {
   program
@@ -10,6 +13,24 @@ export function registerStatusCommand(program, projectRoot) {
     .action(async (jobNameArg, options) => {
       // Determine the actual working directory - when run via npm, INIT_CWD contains the real directory
       const actualWorkingDir = process.env.INIT_CWD || process.cwd();
+
+      // Check for git diffs in local/ directory
+      try {
+        const localDir = path.join(projectRoot, 'local');
+        const diff = execSync('git diff', {
+          cwd: localDir,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        if (diff.trim()) {
+          console.log('\n' + chalk.yellow('Changes detected in local/') + '\n');
+          console.log(diff);
+          console.log(''); // Add blank line after diff
+        }
+      } catch (error) {
+        // Silently ignore git errors (not a git repo, git not installed, etc.)
+      }
 
       // If a specific job is specified, use that
       if (jobNameArg) {
