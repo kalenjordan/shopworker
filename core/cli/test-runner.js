@@ -468,7 +468,7 @@ export async function runJobTest(cliDirname, jobPath, options) {
         const errorEmail = {
           to: configToUse.email_to || ['kalenj@gmail.com'],
           from: configToUse.email_from || 'ShopWorker <worker@shopworker.dev>',
-          subject: `❌ Job Failed: ${configToUse.title || jobPath} - ${shopConfig.shopify_domain}`,
+          subject: `❌ Job Failed: ${configToUse.title || jobPath} - ${shopConfig.shopify_domain} - ${timestamp}`,
           html: `
             <h2>Job Execution Failed</h2>
             <p><strong>Job:</strong> ${configToUse.title || jobPath}</p>

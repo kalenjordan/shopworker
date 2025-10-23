@@ -75,21 +75,18 @@ export async function loadContent(path, env) {
       throw error;
     }
   } else {
-    // CLI environment - load from Desktop or full path
-    console.log(`Loading from filesystem: ${path}`);
+    // CLI environment - load from Desktop
+    const filename = path.split('/').pop();
+    console.log(`Loading from Desktop: ${filename}`);
     try {
       const { default: fs } = await import('fs');
       const { default: pathModule } = await import('path');
       const { default: os } = await import('os');
 
-      // If it's a full path, use it; otherwise look on Desktop
-      const filePath = path.includes('/')
-        ? path
-        : pathModule.join(os.homedir(), 'Desktop', pathModule.basename(path));
-
-      return fs.readFileSync(filePath, 'utf8');
+      const desktopPath = pathModule.join(os.homedir(), 'Desktop', filename);
+      return fs.readFileSync(desktopPath, 'utf8');
     } catch (error) {
-      console.error(`Failed to load from filesystem: ${error.message}`);
+      console.error(`Failed to load from Desktop: ${error.message}`);
       throw error;
     }
   }
@@ -142,17 +139,15 @@ export async function exists(path, env) {
       return false;
     }
   } else {
-    // CLI environment - check filesystem
+    // CLI environment - check Desktop
+    const filename = path.split('/').pop();
     try {
       const { default: fs } = await import('fs');
       const { default: pathModule } = await import('path');
       const { default: os } = await import('os');
 
-      const filePath = path.includes('/')
-        ? path
-        : pathModule.join(os.homedir(), 'Desktop', pathModule.basename(path));
-
-      return fs.existsSync(filePath);
+      const desktopPath = pathModule.join(os.homedir(), 'Desktop', filename);
+      return fs.existsSync(desktopPath);
     } catch {
       return false;
     }
@@ -176,20 +171,18 @@ export async function deleteFile(path, env) {
       throw error;
     }
   } else {
-    // CLI environment - delete from filesystem
-    console.log(`Deleting from filesystem: ${path}`);
+    // CLI environment - delete from Desktop
+    const filename = path.split('/').pop();
+    console.log(`Deleting from Desktop: ${filename}`);
     try {
       const { default: fs } = await import('fs');
       const { default: pathModule } = await import('path');
       const { default: os } = await import('os');
 
-      const filePath = path.includes('/')
-        ? path
-        : pathModule.join(os.homedir(), 'Desktop', pathModule.basename(path));
-
-      fs.unlinkSync(filePath);
+      const desktopPath = pathModule.join(os.homedir(), 'Desktop', filename);
+      fs.unlinkSync(desktopPath);
     } catch (error) {
-      console.error(`Failed to delete from filesystem: ${error.message}`);
+      console.error(`Failed to delete from Desktop: ${error.message}`);
       throw error;
     }
   }

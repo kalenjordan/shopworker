@@ -111,7 +111,7 @@ export class JobDispatcher extends WorkflowEntrypoint {
             const errorEmail = {
               to: finalJobConfig.email_to || ['kalenj@gmail.com'],
               from: finalJobConfig.email_from || 'ShopWorker <worker@shopworker.dev>',
-              subject: `❌ Job Failed: ${finalJobConfig.title || jobPath} - ${shopDomain}`,
+              subject: `❌ Job Failed: ${finalJobConfig.title || jobPath} - ${shopDomain} - ${timestamp}`,
               html: `
             <h2>Job Execution Failed</h2>
             <p><strong>Job:</strong> ${finalJobConfig.title || jobPath}</p>
