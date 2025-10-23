@@ -1,0 +1,1 @@
+- try to avoid duplicating the error handling email that is in both core/workflow.js and cli/test-runner.js

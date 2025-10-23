@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import { sendEmail, validateCredentials } from '../connectors/resend.js';
+import { isWorkerEnvironment } from '../shared/env.js';
 
 /**
  * Parse command-line parameters from various formats
@@ -444,6 +446,49 @@ export async function runJobTest(cliDirname, jobPath, options) {
       console.log(chalk.gray('\nStack trace:'));
       console.log(chalk.gray(error.stack));
     }
+
+    // Send error notification email if configured
+    const shouldSendErrorEmail = configToUse.send_email !== false;
+
+    if (shouldSendErrorEmail && shopConfig.resend_api_key) {
+      try {
+        validateCredentials({ resend_api_key: shopConfig.resend_api_key });
+
+        const timestamp = new Date().toLocaleString('en-US', {
+          timeZone: 'America/Chicago',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZoneName: 'short'
+        });
+
+        const errorEmail = {
+          to: configToUse.email_to || ['kalenj@gmail.com'],
+          from: configToUse.email_from || 'ShopWorker <worker@shopworker.dev>',
+          subject: `❌ Job Failed: ${configToUse.title || jobPath} - ${shopConfig.shopify_domain}`,
+          html: `
+            <h2>Job Execution Failed</h2>
+            <p><strong>Job:</strong> ${configToUse.title || jobPath}</p>
+            <p><strong>Error:</strong> ${error.message}</p>
+            <p><strong>Shop:</strong> ${shopConfig.shopify_domain}</p>
+            <p><strong>Environment:</strong> CLI Test</p>
+            <p><strong>Time:</strong> ${timestamp}</p>
+            <h3>Stack Trace:</h3>
+            <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px;">${error.stack}</pre>
+          `,
+          text: `Job Execution Failed\n\nJob: ${configToUse.title || jobPath}\nError: ${error.message}\nShop: ${shopConfig.shopify_domain}\nTime: ${timestamp}\n\nStack:\n${error.stack}`
+        };
+
+        await sendEmail(errorEmail, shopConfig.resend_api_key);
+        console.log(chalk.green(`\n✓ Error notification email sent to ${errorEmail.to} - Subject: "${errorEmail.subject}"`));
+      } catch (emailError) {
+        console.log(chalk.yellow(`\n⚠ Failed to send error notification email: ${emailError.message}`));
+      }
+    }
+
     throw error; // Re-throw to maintain exit code behavior
   }
 }
