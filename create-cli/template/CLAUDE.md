@@ -162,6 +162,29 @@ If you need a trigger not listed:
 2. Refer to https://shopify.dev/docs/api/webhooks?reference=toml for the complete list of Shopify webhook topics
 3. Use the exact webhook topic name from Shopify's documentation
 
+### External Webhook Integration
+When creating jobs with trigger "webhook" that will be called from external sources (e.g., Google Apps Script), the external webhook sender must include these specific headers:
+
+**Required Headers**:
+- `X-Shopify-Shop-Domain`: The shop domain (e.g., "johnnie-oadmin.myshopify.com")
+- `X-Shopify-Topic`: Must be "shopworker/webhook" (not "app/webhook" or other topics)
+
+**Important**: This is different from regular Shopify webhooks which use actual Shopify webhook topics like "products/create". The ShopWorker framework specifically looks for the topic "shopworker/webhook" for webhook-triggered jobs.
+
+Example external webhook call:
+```javascript
+// Google Apps Script or other external service
+const response = UrlFetchApp.fetch('your-webhook-url', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Shopify-Shop-Domain': 'johnnie-oadmin.myshopify.com',
+    'X-Shopify-Topic': 'shopworker/webhook'
+  },
+  payload: JSON.stringify(yourPayloadData)
+});
+```
+
 ## Database Operations
 
 ### Using the Database in Jobs
@@ -187,6 +210,27 @@ If you need a trigger not listed:
 3. Apply migration to remote D1 database: `wrangler d1 migrations apply shopworker --remote`
 4. Update or create jobs that use the new schema
 5. Deploy the worker to production
+
+## Email Configuration
+
+### Resend Email Settings
+**Rule**: Always use the standard ShopWorker "from" address for all email sending jobs
+**From Address**: "ShopWorker <worker@shopworker.dev>"
+**Reason**: Provides consistent branding and uses the verified domain for Resend
+
+**Example**:
+```javascript
+// Correct approach for Resend email jobs
+const emailData = {
+  from: 'ShopWorker <worker@shopworker.dev>',
+  to: customerEmail,
+  subject: 'Your Order Confirmation',
+  html: emailContent
+};
+
+// Avoid generic placeholder addresses
+// WRONG: from: 'noreply@yourdomain.com'
+```
 
 ## Reference Existing Jobs
 Always examine similar jobs in **jobs/** directory before creating new ones to ensure consistency with existing patterns.

@@ -38,6 +38,12 @@ export function registerTestCommand(program, projectRoot) {
       }
 
       if (!jobName) return;
-      await runJobTest(projectRoot, jobName, options);
+
+      try {
+        await runJobTest(projectRoot, jobName, options);
+      } catch (error) {
+        // Error already displayed by test runner, just exit with error code
+        process.exit(1);
+      }
     });
 }

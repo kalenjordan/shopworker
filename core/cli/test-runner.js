@@ -428,12 +428,22 @@ export async function runJobTest(cliDirname, jobPath, options) {
     jobParams.step = step;
   }
 
-  const result = await jobModule.process(jobParams);
+  try {
+    const result = await jobModule.process(jobParams);
 
-  // For webrequest jobs, show the response that would be returned
-  if (jobConfig.trigger === 'webrequest') {
-    displayWebrequestResponse(result);
+    // For webrequest jobs, show the response that would be returned
+    if (jobConfig.trigger === 'webrequest') {
+      displayWebrequestResponse(result);
+    }
+
+    console.log('Processing complete!');
+  } catch (error) {
+    console.log(chalk.red('\n✗ Job failed with error:'));
+    console.log(chalk.red(`  ${error.message}`));
+    if (error.stack) {
+      console.log(chalk.gray('\nStack trace:'));
+      console.log(chalk.gray(error.stack));
+    }
+    throw error; // Re-throw to maintain exit code behavior
   }
-
-  console.log('Processing complete!');
 }
